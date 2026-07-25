@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "request_id": "request-offline-001",
+  "profile_id": "profile-local-001",
+  "save_slot_id": "save-01",
+  "companion_id": "companion-01",
+  "device_id": "device-phone-001",
+  "session_id": "session-offline-001",
+  "interaction_mode": "Offline",
+  "response_id": "response-offline-001",
+  "display_text": "중요한 일정이 있구나. 너무 무리하지 말고 천천히 준비해 보자.",
+  "command_candidates": [],
+  "memory_candidates": [
+    {
+      "candidate_id": "memory-candidate-001",
+      "type": "UserSharedEvent",
+      "summary": "사용자가 중요한 일정을 앞두고 긴장된다고 직접 말했다.",
+      "source_ids": ["message-user-001"],
+      "source_mode": "Offline",
+      "occurred_at": "2026-07-15T13:00:00+09:00",
+      "confidence": 1.0
+    }
+  ],
+  "ai_metadata": {
+    "provider": "mock",
+    "model_version": "mock-v1",
+    "prompt_version": "mock-v1"
+  }
+}

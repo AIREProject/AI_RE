@@ -1,0 +1,342 @@
+openapi: 3.1.0
+info:
+  title: AI_RE Backend API
+  version: 0.1.0
+  description: Contract-first API for the A PC, B WebApp, and C Backend topology.
+servers:
+  - url: http://localhost:8000
+    description: Local mock Backend
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [System]
+      responses:
+        "200":
+          description: Backend process is available.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /api/v1/system/capabilities:
+    get:
+      operationId: getCapabilities
+      tags: [System]
+      responses:
+        "200":
+          description: Features exposed by the current Backend mode.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapabilitiesResponse"
+  /api/v1/devices/register-game:
+    post:
+      operationId: registerGameDevice
+      tags: [Devices]
+      security:
+        - GameBootstrapBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/device-pairing.schema.json#/$defs/registerGameRequest"
+      responses:
+        "200":
+          description: Persistent GameClient identity and one-time token response.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceTokenResponse"
+        "400": { $ref: "#/components/responses/ContractError" }
+        "401": { $ref: "#/components/responses/ContractError" }
+        "409": { $ref: "#/components/responses/ContractError" }
+        "503": { $ref: "#/components/responses/ContractError" }
+  /api/v1/devices/pairing-codes:
+    post:
+      operationId: createPairingCode
+      tags: [Devices]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/device-pairing.schema.json#/$defs/createPairingCodeRequest"
+      responses:
+        "200":
+          description: Short-lived one-time Pairing Code.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/pairingCodeResponse"
+        "400": { $ref: "#/components/responses/ContractError" }
+        "401": { $ref: "#/components/responses/ContractError" }
+        "403": { $ref: "#/components/responses/ContractError" }
+  /api/v1/devices/pair:
+    post:
+      operationId: pairWebDevice
+      tags: [Devices]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/device-pairing.schema.json#/$defs/pairDeviceRequest"
+      responses:
+        "200":
+          description: Persistent WebClient identity and one-time token response.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceTokenResponse"
+        "400": { $ref: "#/components/responses/ContractError" }
+        "409": { $ref: "#/components/responses/ContractError" }
+        "410": { $ref: "#/components/responses/ContractError" }
+  /api/v1/devices/me:
+    get:
+      operationId: getCurrentDevice
+      tags: [Devices]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      responses:
+        "200":
+          description: Active identity for the authenticated WebClient.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceSelfResponse"
+        "401": { $ref: "#/components/responses/ContractError" }
+        "403": { $ref: "#/components/responses/ContractError" }
+    delete:
+      operationId: revokeCurrentDevice
+      tags: [Devices]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      responses:
+        "200":
+          description: Revocation result for the authenticated WebClient itself.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceRevocationResponse"
+        "401": { $ref: "#/components/responses/ContractError" }
+        "403": { $ref: "#/components/responses/ContractError" }
+  /api/v1/devices:
+    get:
+      operationId: listDevices
+      tags: [Devices]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      responses:
+        "200":
+          description: Devices belonging to the authenticated GameClient profile.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceListResponse"
+        "401": { $ref: "#/components/responses/ContractError" }
+        "403": { $ref: "#/components/responses/ContractError" }
+  /api/v1/devices/{device_id}:
+    delete:
+      operationId: revokeWebDevice
+      tags: [Devices]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - name: device_id
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Idempotent WebClient revocation result.
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/device-pairing.schema.json#/$defs/deviceRevocationResponse"
+        "401": { $ref: "#/components/responses/ContractError" }
+        "403": { $ref: "#/components/responses/ContractError" }
+        "404": { $ref: "#/components/responses/ContractError" }
+  /api/v1/chat:
+    post:
+      operationId: createChatResponse
+      tags: [Chat]
+      security:
+        - DeviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/chat-request.schema.json"
+      responses:
+        "200":
+          description: Normalized dialogue and optional untrusted candidates.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "./schemas/chat-response.schema.json"
+        "400":
+          $ref: "#/components/responses/ContractError"
+        "401":
+          $ref: "#/components/responses/ContractError"
+        "403":
+          $ref: "#/components/responses/ContractError"
+        "409":
+          $ref: "#/components/responses/ContractError"
+        "413":
+          $ref: "#/components/responses/ContractError"
+        "500":
+          $ref: "#/components/responses/ContractError"
+        "503":
+          $ref: "#/components/responses/ContractError"
+        "504":
+          $ref: "#/components/responses/ContractError"
+  /api/v1/events:
+    post:
+      operationId: recordGameEvent
+      tags: [Events]
+      security:
+        - DeviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas/event.schema.json"
+      responses:
+        "202":
+          description: Event accepted. Repeated event IDs are idempotent.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [schema_version, request_id, event_id, status]
+                properties:
+                  schema_version:
+                    type: integer
+                    const: 1
+                  request_id:
+                    type: string
+                  event_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [Accepted, Duplicate]
+        "400":
+          $ref: "#/components/responses/ContractError"
+        "401":
+          $ref: "#/components/responses/ContractError"
+components:
+  parameters:
+    RequestIdHeader:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: >-
+        Optional transport correlation ID. When a request body also contains
+        request_id, both values must match. When the header is absent, a body
+        request_id becomes effective; requests without either receive a Backend
+        UUID. The effective value is returned in X-Request-ID.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+  headers:
+    RequestId:
+      description: Effective request correlation ID.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  securitySchemes:
+    GameBootstrapBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: local-bootstrap-token
+      description: Local environment-only token accepted by register-game only.
+    DeviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-device-token
+      description: >-
+        C resolves Profile, Device, and Device role from a persisted HMAC hash.
+        Raw pairing-issued tokens are never stored by the Backend.
+  responses:
+    ContractError:
+      description: Stable error envelope.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "./schemas/error-envelope.schema.json"
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [service, status, schema_version, ai_mode]
+      properties:
+        service:
+          type: string
+          const: aire-backend
+        status:
+          type: string
+          const: ok
+        schema_version:
+          type: integer
+          const: 1
+        ai_mode:
+          type: string
+          enum: [mock, local]
+    CapabilitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, ai_mode, capabilities]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        ai_mode:
+          type: string
+          enum: [mock, local]
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            type: string

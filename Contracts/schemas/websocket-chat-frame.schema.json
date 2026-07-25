@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/websocket-chat-frame.schema.json",
+  "title": "WebSocket Chat Frames",
+  "$defs": {
+    "mobileAuthFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "token"],
+      "properties": {
+        "type": { "const": "auth" },
+        "token": { "type": "string", "minLength": 32, "maxLength": 512 }
+      }
+    },
+    "chatRequestFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "chat" },
+        "payload": { "$ref": "./chat-request.schema.json" }
+      }
+    },
+    "chatResponseFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "chat_response" },
+        "payload": { "$ref": "./chat-response.schema.json" }
+      }
+    },
+    "errorFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "error" },
+        "payload": { "$ref": "./error-envelope.schema.json" }
+      }
+    },
+    "clientFrame": {
+      "oneOf": [
+        { "$ref": "#/$defs/mobileAuthFrame" },
+        { "$ref": "#/$defs/chatRequestFrame" }
+      ]
+    },
+    "serverFrame": {
+      "oneOf": [
+        { "$ref": "#/$defs/chatResponseFrame" },
+        { "$ref": "#/$defs/errorFrame" }
+      ]
+    }
+  }
+}

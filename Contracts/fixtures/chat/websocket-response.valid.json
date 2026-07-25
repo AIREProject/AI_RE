@@ -1,0 +1,22 @@
+{
+  "type": "chat_response",
+  "payload": {
+    "schema_version": 1,
+    "request_id": "request-ingame-001",
+    "profile_id": "profile-local-001",
+    "save_slot_id": "save-01",
+    "companion_id": "companion-01",
+    "device_id": "device-game-001",
+    "session_id": "session-ingame-001",
+    "interaction_mode": "InGame",
+    "response_id": "response-ingame-001",
+    "display_text": "알겠어. 여기서 잠깐 기다릴게.",
+    "command_candidates": [],
+    "memory_candidates": [],
+    "ai_metadata": {
+      "provider": "mock",
+      "model_version": "mock-v1",
+      "prompt_version": "mock-v1"
+    }
+  }
+}

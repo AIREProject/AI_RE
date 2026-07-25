@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/register-game-request.schema.json",
+  "$ref": "https://aire.local/contracts/device-pairing.schema.json#/$defs/registerGameRequest"
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "request_id": "request-invalid-001",
+  "profile_id": "profile-local-001",
+  "save_slot_id": "save-01",
+  "companion_id": "companion-01",
+  "device_id": "device-phone-001",
+  "session_id": "session-offline-001",
+  "interaction_mode": "Offline",
+  "message_id": "message-user-invalid-001",
+  "user_message": "시간 정보가 없는 잘못된 요청이야.",
+  "recent_event_ids": []
+}

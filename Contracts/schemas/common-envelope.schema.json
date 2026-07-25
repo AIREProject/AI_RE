@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/common-envelope.schema.json",
+  "title": "Common Envelope",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "request_id",
+    "save_slot_id",
+    "companion_id",
+    "session_id",
+    "interaction_mode"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "request_id": { "$ref": "#/$defs/stableId" },
+    "profile_id": {
+      "$ref": "#/$defs/stableId",
+      "description": "Optional client claim. The Backend trusts the authenticated token identity and rejects a mismatch."
+    },
+    "save_slot_id": { "$ref": "#/$defs/stableId" },
+    "companion_id": { "$ref": "#/$defs/stableId" },
+    "device_id": {
+      "$ref": "#/$defs/stableId",
+      "description": "Optional client claim. The Backend trusts the authenticated token identity and rejects a mismatch."
+    },
+    "session_id": { "$ref": "#/$defs/stableId" },
+    "interaction_mode": {
+      "type": "string",
+      "enum": ["InGame", "Offline"]
+    }
+  },
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    }
+  }
+}

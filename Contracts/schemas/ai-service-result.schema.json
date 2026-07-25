@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/ai-service-result.schema.json",
+  "title": "AIService Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "display_text",
+    "command_candidates",
+    "memory_candidates",
+    "metadata"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "display_text": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "command_candidates": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "./command.schema.json" }
+    },
+    "memory_candidates": {
+      "type": "array",
+      "maxItems": 8,
+      "items": { "$ref": "./memory-candidate.schema.json" }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model_version", "prompt_version"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "model_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "prompt_version": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    }
+  }
+}

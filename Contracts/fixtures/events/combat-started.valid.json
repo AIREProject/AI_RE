@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "request_id": "request-event-001",
+  "profile_id": "profile-local-001",
+  "save_slot_id": "save-01",
+  "companion_id": "companion-01",
+  "device_id": "device-game-001",
+  "session_id": "session-ingame-001",
+  "interaction_mode": "InGame",
+  "event_id": "event-combat-started-001",
+  "event_type": "Event.Combat.Started",
+  "occurred_at": "2026-07-15T05:00:01Z",
+  "importance": "Normal",
+  "actor_id": "companion-01",
+  "target_ids": ["enemy-42"],
+  "payload": {}
+}

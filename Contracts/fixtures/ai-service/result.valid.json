@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "request_id": "request-offline-001",
+  "display_text": "현실 시간 기준의 Mock 응답이야.",
+  "command_candidates": [],
+  "memory_candidates": [],
+  "metadata": {
+    "provider": "mock",
+    "model_version": "mock-v1",
+    "prompt_version": "mock-v1"
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/device-pairing.schema.json",
+  "title": "Device Pairing Contracts",
+  "$defs": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "baseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" }
+      }
+    },
+    "registerGameRequest": { "$ref": "#/$defs/baseRequest" },
+    "createPairingCodeRequest": { "$ref": "#/$defs/baseRequest" },
+    "pairDeviceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "pairing_code"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "pairing_code": { "type": "string", "pattern": "^[0-9]{8}$" }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device_id", "role", "created_at"],
+      "properties": {
+        "device_id": { "$ref": "#/$defs/requestId" },
+        "role": { "type": "string", "enum": ["GameClient", "WebClient"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "last_used_at": { "type": ["string", "null"], "format": "date-time" },
+        "revoked_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "deviceTokenResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "profile_id", "device", "device_token"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "profile_id": { "$ref": "#/$defs/requestId" },
+        "device": { "$ref": "#/$defs/device" },
+        "device_token": { "type": "string", "minLength": 32, "maxLength": 512 }
+      }
+    },
+    "pairingCodeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "pairing_code", "expires_at"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "pairing_code": { "type": "string", "pattern": "^[0-9]{8}$" },
+        "expires_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "deviceListResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "devices"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "devices": { "type": "array", "items": { "$ref": "#/$defs/device" } }
+      }
+    },
+    "deviceSelfResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "profile_id", "device_id", "role", "status"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "profile_id": { "$ref": "#/$defs/requestId" },
+        "device_id": { "$ref": "#/$defs/requestId" },
+        "role": { "type": "string", "const": "WebClient" },
+        "status": { "type": "string", "const": "Active" }
+      }
+    },
+    "deviceRevocationResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "device_id", "status"],
+      "properties": {
+        "schema_version": { "type": "integer", "const": 1 },
+        "request_id": { "$ref": "#/$defs/requestId" },
+        "device_id": { "$ref": "#/$defs/requestId" },
+        "status": { "type": "string", "const": "Revoked" }
+      }
+    }
+  }
+}

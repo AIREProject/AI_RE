@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "request_id": "request-offline-001",
+  "profile_id": "profile-local-001",
+  "save_slot_id": "save-01",
+  "companion_id": "companion-01",
+  "device_id": "device-phone-001",
+  "session_id": "session-offline-001",
+  "interaction_mode": "Offline",
+  "message_id": "message-user-001",
+  "user_message": "오늘 중요한 일정이 있어서 조금 긴장된다고 말했어.",
+  "time_context": {
+    "source": "RealWorld",
+    "observed_at": "2026-07-15T13:00:00+09:00",
+    "timezone": "Asia/Seoul"
+  },
+  "recent_event_ids": [],
+  "game_context": {},
+  "allowed_commands": []
+}

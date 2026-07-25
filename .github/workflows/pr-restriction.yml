@@ -1,0 +1,20 @@
+name: PR Restriction Check
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Source Branch is dev
+        run: |
+          if [ "${{ github.head_ref }}" != "dev" ]; then
+            echo "Error: Pull requests to 'main' must come from 'dev' branch."
+            echo "Current source branch is '${{ github.head_ref }}'."
+            exit 1
+          else
+            echo "Branch check passed! PR is from 'dev'."
+          fi

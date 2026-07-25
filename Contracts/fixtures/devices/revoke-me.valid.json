@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "request_id": "request-revoke-me-001",
+  "device_id": "device-web-001",
+  "status": "Revoked"
+}

@@ -1,0 +1,13 @@
+{
+  "type": "error",
+  "payload": {
+    "schema_version": 1,
+    "request_id": "request-ingame-001",
+    "error": {
+      "code": "AIServiceUnavailable",
+      "message": "AI service is currently unavailable.",
+      "retryable": true,
+      "details": {}
+    }
+  }
+}

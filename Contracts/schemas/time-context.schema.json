@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/time-context.schema.json",
+  "title": "Time Context",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "day", "hour", "period"],
+      "properties": {
+        "source": { "const": "GameWorld" },
+        "day": { "type": "integer", "minimum": 0 },
+        "hour": { "type": "number", "minimum": 0, "exclusiveMaximum": 24 },
+        "period": {
+          "type": "string",
+          "enum": ["Dawn", "Morning", "Afternoon", "Evening", "Night"]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "observed_at", "timezone"],
+      "properties": {
+        "source": { "const": "RealWorld" },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "timezone": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    }
+  ]
+}

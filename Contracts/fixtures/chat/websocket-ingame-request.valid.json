@@ -1,0 +1,30 @@
+{
+  "type": "chat",
+  "payload": {
+    "schema_version": 1,
+    "request_id": "request-ingame-001",
+    "profile_id": "profile-local-001",
+    "save_slot_id": "save-01",
+    "companion_id": "companion-01",
+    "device_id": "device-game-001",
+    "session_id": "session-ingame-001",
+    "interaction_mode": "InGame",
+    "message_id": "message-user-002",
+    "user_message": "지금은 여기서 잠깐 기다려 줘.",
+    "time_context": {
+      "source": "GameWorld",
+      "day": 18,
+      "hour": 14.5,
+      "period": "Afternoon"
+    },
+    "recent_event_ids": ["event-discovery-001"],
+    "game_context": {
+      "companion_state": "Following",
+      "nearby_target_ids": []
+    },
+    "allowed_commands": [
+      "Command.HoldPosition",
+      "Command.ReturnToPlayer"
+    ]
+  }
+}

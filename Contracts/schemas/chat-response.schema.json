@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/chat-response.schema.json",
+  "title": "Chat Response",
+  "allOf": [
+    { "$ref": "./common-envelope.schema.json" },
+    {
+      "type": "object",
+      "required": ["response_id", "display_text", "command_candidates", "memory_candidates"],
+      "properties": {
+        "response_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "display_text": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "command_candidates": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "./command.schema.json" }
+        },
+        "memory_candidates": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "./memory-candidate.schema.json" }
+        },
+        "ai_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string", "maxLength": 64 },
+            "model_version": { "type": "string", "maxLength": 128 },
+            "prompt_version": { "type": "string", "maxLength": 128 }
+          }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

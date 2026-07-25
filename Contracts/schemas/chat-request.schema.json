@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/chat-request.schema.json",
+  "title": "Chat Request",
+  "allOf": [
+    { "$ref": "./common-envelope.schema.json" },
+    {
+      "type": "object",
+      "required": ["message_id", "user_message", "time_context"],
+      "properties": {
+        "message_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "user_message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "time_context": { "$ref": "./time-context.schema.json" },
+        "recent_event_ids": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "game_context": {
+          "type": "object",
+          "maxProperties": 32,
+          "propertyNames": {
+            "not": {
+              "enum": [
+                "authorization",
+                "access_token",
+                "connection_string",
+                "database_url",
+                "device_id",
+                "device_token",
+                "pairing_code",
+                "password",
+                "profile_id",
+                "runtime_secret",
+                "secret",
+                "token"
+              ]
+            }
+          },
+          "description": "Purpose-limited InGame context. Offline requests must use an empty object."
+        },
+        "allowed_commands": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "Command.Follow",
+              "Command.HoldPosition",
+              "Command.ReturnToPlayer",
+              "Command.EngageTarget",
+              "Command.DistractTarget",
+              "Command.MoveToLocation",
+              "Command.CancelCurrent"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "interaction_mode": { "const": "InGame" } },
+        "required": ["interaction_mode"]
+      },
+      "then": {
+        "properties": {
+          "time_context": {
+            "properties": { "source": { "const": "GameWorld" } },
+            "required": ["source"]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "time_context": {
+            "properties": { "source": { "const": "RealWorld" } },
+            "required": ["source"]
+          },
+          "game_context": { "maxProperties": 0 },
+          "allowed_commands": { "maxItems": 0 }
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

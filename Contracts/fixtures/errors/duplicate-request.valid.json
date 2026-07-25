@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "request_id": "request-offline-001",
+  "error": {
+    "code": "DuplicateRequest",
+    "message": "The request ID was already used with different content.",
+    "retryable": false,
+    "details": {}
+  }
+}

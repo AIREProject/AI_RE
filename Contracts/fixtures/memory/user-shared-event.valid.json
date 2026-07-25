@@ -1,0 +1,9 @@
+{
+  "candidate_id": "memory-candidate-001",
+  "type": "UserSharedEvent",
+  "summary": "사용자가 중요한 일정을 앞두고 긴장된다고 직접 말했다.",
+  "source_ids": ["message-user-001"],
+  "source_mode": "Offline",
+  "occurred_at": "2026-07-15T13:00:00+09:00",
+  "confidence": 1.0
+}

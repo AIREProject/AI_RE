@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "request_id": "request-offline-memory-001",
+  "display_text": "현실 시간 기준의 Mock 응답이야.",
+  "command_candidates": [],
+  "memory_candidates": [
+    {
+      "candidate_id": "memory-candidate-001",
+      "type": "UserSharedEvent",
+      "summary": "사용자가 현재 대화에서 직접 공유한 내용을 기억 후보로 만들었어.",
+      "source_ids": ["message-user-memory-001"],
+      "source_mode": "Offline",
+      "occurred_at": "2026-07-15T13:00:00+09:00",
+      "confidence": 1.0
+    }
+  ],
+  "metadata": {
+    "provider": "mock",
+    "model_version": "mock-v1",
+    "prompt_version": "mock-v1"
+  }
+}

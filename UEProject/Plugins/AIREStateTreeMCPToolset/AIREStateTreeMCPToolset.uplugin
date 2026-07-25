@@ -1,0 +1,45 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "AIRE StateTree MCP Toolset",
+	"Description": "Project-scoped MCP tools for StateTree, Companion test fixtures, and UMG animation editing.",
+	"Category": "AI",
+	"CreatedBy": "AI_RE",
+	"EditorOnly": true,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"EnabledByDefault": false,
+	"Modules": [
+		{
+			"Name": "AIREStateTreeMCPToolset",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"TargetAllowList": [
+				"Editor"
+			]
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "ToolsetRegistry",
+			"Enabled": true
+		},
+		{
+			"Name": "EditorToolset",
+			"Enabled": true
+		},
+		{
+			"Name": "UMGToolSet",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelContextProtocol",
+			"Enabled": true
+		}
+	]
+}

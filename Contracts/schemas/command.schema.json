@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/command.schema.json",
+  "title": "Command Candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["command_id", "request_id", "type", "priority", "issued_at", "expires_at", "parameters"],
+  "properties": {
+    "command_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "Command.Follow",
+        "Command.HoldPosition",
+        "Command.ReturnToPlayer",
+        "Command.EngageTarget",
+        "Command.DistractTarget",
+        "Command.MoveToLocation",
+        "Command.CancelCurrent"
+      ]
+    },
+    "target_id": { "type": ["string", "null"], "maxLength": 128 },
+    "priority": { "type": "string", "enum": ["Low", "Normal", "High", "Critical"] },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "parameters": { "type": "object", "maxProperties": 16 }
+  }
+}

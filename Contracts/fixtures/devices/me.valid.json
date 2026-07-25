@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "request_id": "request-device-me-001",
+  "profile_id": "profile-001",
+  "device_id": "device-web-001",
+  "role": "WebClient",
+  "status": "Active"
+}

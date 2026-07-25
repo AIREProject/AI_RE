@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "request_id": "request-ingame-command-001",
+  "display_text": "게임 시간 기준의 Mock 응답이야.",
+  "command_candidates": [
+    {
+      "command_id": "command-mock-001",
+      "request_id": "request-ingame-command-001",
+      "type": "Command.HoldPosition",
+      "target_id": null,
+      "priority": "Normal",
+      "issued_at": "2026-07-15T05:30:00Z",
+      "expires_at": "2026-07-15T05:30:05Z",
+      "parameters": {}
+    }
+  ],
+  "memory_candidates": [],
+  "metadata": {
+    "provider": "mock",
+    "model_version": "mock-v1",
+    "prompt_version": "mock-v1"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aire.local/contracts/error-envelope.schema.json",
+  "title": "Error Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "error"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "InvalidRequest",
+            "UnsupportedSchemaVersion",
+            "UnauthorizedDevice",
+            "IdentityClaimMismatch",
+            "DuplicateRequest",
+            "RequestTooLarge",
+            "RequestTimeout",
+            "AuthenticationUnavailable",
+            "DeviceAlreadyRegistered",
+            "DeviceNotFound",
+            "InvalidPairingCode",
+            "ExpiredPairingCode",
+            "UsedPairingCode",
+            "AIServiceUnavailable",
+            "AIServiceTimeout",
+            "AIServiceInvalidOutput",
+            "InternalError"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "retryable": { "type": "boolean" },
+        "details": { "type": "object", "maxProperties": 16 }
+      }
+    }
+  }
+}
