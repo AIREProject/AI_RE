@@ -57,6 +57,9 @@ struct FAIRECompanionContextEvaluatorInstanceData
 	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm/s"))
 	float MovementSpeed = 0.0f;
 
+	UPROPERTY(VisibleAnywhere, Category = "Output")
+	bool bIsRunning = false;
+
 	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
 	float FollowStopDistance = 0.0f;
 

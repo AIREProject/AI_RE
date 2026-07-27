@@ -70,7 +70,8 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		|| !ActiveWeaponDefinition->IsMeleeWeapon()
 		|| !bHasValidRange
 		|| !IsTargetValidForAttack(GetEventTarget())
-		|| !IsTargetInRange(GetEventTarget()))
+		|| !IsTargetInRange(GetEventTarget())
+		|| !IsTargetWithinAttackAngle(GetEventTarget()))
 	{
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
@@ -108,15 +109,15 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		return;
 	}
 
-	UAnimMontage* AttackMontage = ActiveWeaponDefinition->AttackMontage.LoadSynchronous();
+	UAnimMontage* AttackMontage = ActiveWeaponDefinition->AttackMontage.Get();
 	if (!IsValid(AttackMontage))
 	{
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
 			Warning,
-			TEXT("Configured attack montage could not be loaded. Weapon=%s"),
+			TEXT("Configured attack montage is unavailable. Using the Basic Attack fallback. Weapon=%s"),
 			*GetNameSafe(ActiveWeaponDefinition));
-		FinishAbility(true);
+		StartFallbackAttack();
 		return;
 	}
 
@@ -233,6 +234,35 @@ bool UAIRECompanionMeleeAttackAbility::IsTargetInRange(
 			- AvatarActor->GetSimpleCollisionRadius()
 			- TargetActor->GetSimpleCollisionRadius());
 	return EffectiveDistance <= AttackRange;
+}
+
+bool UAIRECompanionMeleeAttackAbility::IsTargetWithinAttackAngle(
+	const AActor* TargetActor) const
+{
+	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!IsValid(AvatarActor)
+		|| !IsValid(TargetActor)
+		|| !IsValid(ActiveWeaponDefinition))
+	{
+		return false;
+	}
+
+	const FVector TargetDirection =
+		(TargetActor->GetActorLocation() - AvatarActor->GetActorLocation()).GetSafeNormal2D();
+	if (TargetDirection.IsNearlyZero())
+	{
+		return true;
+	}
+
+	const FVector ForwardDirection =
+		AvatarActor->GetActorForwardVector().GetSafeNormal2D();
+	const float MinimumFacingDot = FMath::Cos(FMath::DegreesToRadians(
+		ActiveWeaponDefinition->AttackHalfAngleDegrees));
+	const float FacingDot = FVector::DotProduct(
+		ForwardDirection,
+		TargetDirection);
+	return FacingDot >= MinimumFacingDot
+		|| FMath::IsNearlyEqual(FacingDot, MinimumFacingDot);
 }
 
 void UAIRECompanionMeleeAttackAbility::StartHitEventWait()
@@ -356,7 +386,9 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 	}
 
 	bHitConsumed = true;
-	if (!IsTargetValidForAttack(TargetActor) || !IsTargetInRange(TargetActor))
+	if (!IsTargetValidForAttack(TargetActor)
+		|| !IsTargetInRange(TargetActor)
+		|| !IsTargetWithinAttackAngle(TargetActor))
 	{
 		return;
 	}

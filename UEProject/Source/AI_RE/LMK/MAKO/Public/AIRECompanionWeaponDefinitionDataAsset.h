@@ -40,6 +40,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float StaminaCost = 20.0f;
 
+	/** Maximum angle from the attacker's forward direction to a valid target. */
+	UPROPERTY(
+		EditDefaultsOnly,
+		BlueprintReadOnly,
+		Category = "Attack",
+		meta = (ClampMin = "0.0", ClampMax = "180.0", UIMin = "0.0", UIMax = "180.0", Units = "deg"))
+	float AttackHalfAngleDegrees = 30.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float FallbackHitDelay = 0.25f;
 

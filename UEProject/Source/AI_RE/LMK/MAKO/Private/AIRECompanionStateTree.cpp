@@ -6,6 +6,7 @@
 #include "AIRECompanionEquipmentComponent.h"
 #include "AIRECompanionGameplayTags.h"
 #include "AIRECompanionThreatComponent.h"
+#include "AIRECompanionWeaponDefinitionDataAsset.h"
 #include "AIREThreatTargetInterface.h"
 #include "AbilitySystemComponent.h"
 #include "Engine/World.h"
@@ -18,6 +19,37 @@ DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionStateTree, Log, All);
 
 namespace
 {
+	constexpr float CombatApproachMargin = 50.0f;
+	constexpr float CombatApproachAcceptanceRadius = 25.0f;
+	constexpr float CombatRangeExitSlack = 25.0f;
+	constexpr float CombatFacingInterpSpeed = 12.0f;
+	constexpr float CombatFacingSnapToleranceDegrees = 0.5f;
+
+	FVector CalculateCombatApproachLocation(
+		const APawn& CompanionPawn,
+		const AActor& TargetActor,
+		const float CombatDistance)
+	{
+		FVector TargetToCompanion =
+			CompanionPawn.GetActorLocation() - TargetActor.GetActorLocation();
+		TargetToCompanion.Z = 0.0f;
+		if (!TargetToCompanion.Normalize())
+		{
+			TargetToCompanion = -TargetActor.GetActorForwardVector().GetSafeNormal2D();
+		}
+
+		const float DesiredSurfaceDistance = FMath::Max(
+			0.0f,
+			CombatDistance - CombatApproachMargin);
+		const float DesiredCenterDistance =
+			CompanionPawn.GetSimpleCollisionRadius()
+			+ TargetActor.GetSimpleCollisionRadius()
+			+ DesiredSurfaceDistance;
+
+		return TargetActor.GetActorLocation()
+			+ TargetToCompanion * DesiredCenterDistance;
+	}
+
 	enum class EAIRECompanionBehaviorInput : uint16
 	{
 		HasPlayer = 1 << 0,
@@ -65,6 +97,7 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.AbilitySystemComponent = nullptr;
 	InstanceData.DistanceToPlayer = 0.0f;
 	InstanceData.MovementSpeed = 0.0f;
+	InstanceData.bIsRunning = false;
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
@@ -142,7 +175,6 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		const UAIRECompanionConfigDataAsset* CompanionConfig = InstanceData.CompanionCharacter->GetCompanionConfig();
 		if (IsValid(CompanionConfig))
 		{
-			InstanceData.MovementSpeed = CompanionConfig->MovementSpeed;
 			InstanceData.FollowStopDistance = CompanionConfig->FollowStopDistance;
 			InstanceData.ReturnStartDistance = CompanionConfig->ReturnStartDistance;
 			InstanceData.CombatDistance = CompanionConfig->CombatDistance;
@@ -159,6 +191,34 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 				InstanceData.bHasPlayer = true;
 				InstanceData.bShouldFollow = InstanceData.DistanceToPlayer > InstanceData.FollowStopDistance;
 				InstanceData.bShouldReturn = InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+			}
+
+			if (InstanceData.bIsCombatRequested || InstanceData.bShouldReturn)
+			{
+				InstanceData.bIsRunning = true;
+			}
+			else if (InstanceData.bIsRunning)
+			{
+				InstanceData.bIsRunning =
+					InstanceData.DistanceToPlayer > CompanionConfig->WalkResumeDistance;
+			}
+			else
+			{
+				InstanceData.bIsRunning =
+					InstanceData.DistanceToPlayer >= CompanionConfig->RunStartDistance;
+			}
+
+			InstanceData.MovementSpeed = InstanceData.bIsRunning
+				? CompanionConfig->MovementSpeed
+				: CompanionConfig->WalkSpeed;
+			if (UCharacterMovementComponent* MovementComponent =
+					InstanceData.CompanionCharacter->GetCharacterMovement();
+				IsValid(MovementComponent)
+				&& !FMath::IsNearlyEqual(
+					MovementComponent->MaxWalkSpeed,
+					InstanceData.MovementSpeed))
+			{
+				MovementComponent->MaxWalkSpeed = InstanceData.MovementSpeed;
 			}
 		}
 	}
@@ -345,8 +405,30 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		return EStateTreeRunStatus::Running;
 	}
 
-	const bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+	InstanceData.CompanionController->SetFocus(
+		TargetActor,
+		EAIFocusPriority::Gameplay);
+
+	bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
 		AIRECompanionGameplayTags::StateActionAttacking);
+	const float AttackExitDistance =
+		InstanceData.CombatDistance + CombatRangeExitSlack;
+	if (bAttackActive
+		&& !IsTargetInRange(*CompanionPawn, *TargetActor, AttackExitDistance))
+	{
+		const FGameplayAbilitySpecHandle AttackAbilityHandle =
+			InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
+				AIRECompanionGameplayTags::AbilityCombatBasicAttack);
+		if (AttackAbilityHandle.IsValid())
+		{
+			InstanceData.AbilitySystemComponent->CancelAbilityHandle(
+				AttackAbilityHandle);
+		}
+		bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionAttacking);
+		InstanceData.RetryTimeRemaining = 0.0f;
+	}
+
 	InstanceData.RetryTimeRemaining = FMath::Max(
 		0.0f,
 		InstanceData.RetryTimeRemaining - DeltaTime);
@@ -363,14 +445,32 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 			&& !InstanceData.bMoveRequested
 			&& InstanceData.RetryTimeRemaining <= 0.0f)
 		{
+			const FVector ApproachLocation = CalculateCombatApproachLocation(
+				*CompanionPawn,
+				*TargetActor,
+				InstanceData.CombatDistance);
 			const EPathFollowingRequestResult::Type MoveResult =
-				InstanceData.CompanionController->MoveToActor(
-					TargetActor,
-					InstanceData.CombatDistance);
+				InstanceData.CompanionController->MoveToLocation(
+					ApproachLocation,
+					CombatApproachAcceptanceRadius,
+					false,
+					true,
+					true,
+					true,
+					nullptr,
+					true);
 			InstanceData.bMoveRequested =
 				MoveResult == EPathFollowingRequestResult::RequestSuccessful;
 			if (MoveResult == EPathFollowingRequestResult::Failed)
 			{
+				UE_LOG(
+					LogAIRECompanionStateTree,
+					Warning,
+					TEXT("Companion combat move failed. Companion=%s Target=%s ApproachLocation=%s AcceptanceRadius=%.2f"),
+					*GetNameSafe(CompanionPawn),
+					*GetNameSafe(TargetActor),
+					*ApproachLocation.ToCompactString(),
+					CombatApproachAcceptanceRadius);
 				InstanceData.RetryTimeRemaining = InstanceData.CombatCooldown;
 			}
 		}
@@ -393,6 +493,47 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		return EStateTreeRunStatus::Running;
 	}
 
+	FVector TargetDirection =
+		TargetActor->GetActorLocation() - CompanionPawn->GetActorLocation();
+	TargetDirection.Z = 0.0f;
+	if (!TargetDirection.IsNearlyZero())
+	{
+		const FRotator CurrentRotation = CompanionPawn->GetActorRotation();
+		const FRotator TargetRotation(0.0f, TargetDirection.Rotation().Yaw, 0.0f);
+		const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition =
+			InstanceData.EquipmentComponent->GetCurrentWeaponDefinition();
+		const float AttackHalfAngleDegrees = IsValid(WeaponDefinition)
+			? WeaponDefinition->AttackHalfAngleDegrees
+			: 30.0f;
+		const FVector ForwardDirection =
+			CompanionPawn->GetActorForwardVector().GetSafeNormal2D();
+		const FVector NormalizedTargetDirection = TargetDirection.GetSafeNormal();
+		const float FacingDot =
+			FVector::DotProduct(ForwardDirection, NormalizedTargetDirection);
+		const float MinimumFacingDot = FMath::Cos(FMath::DegreesToRadians(
+			AttackHalfAngleDegrees));
+		if (FacingDot < MinimumFacingDot)
+		{
+			const float RemainingYawDegrees = FMath::Abs(
+				FMath::FindDeltaAngleDegrees(
+					CurrentRotation.Yaw,
+					TargetRotation.Yaw));
+			if (RemainingYawDegrees <= CombatFacingSnapToleranceDegrees)
+			{
+				CompanionPawn->SetActorRotation(TargetRotation);
+			}
+			else
+			{
+				CompanionPawn->SetActorRotation(FMath::RInterpTo(
+					CurrentRotation,
+					TargetRotation,
+					DeltaTime,
+					CombatFacingInterpSpeed));
+				return EStateTreeRunStatus::Running;
+			}
+		}
+	}
+
 	FGameplayEventData AttackRequest;
 	AttackRequest.EventTag = AIRECompanionGameplayTags::EventAttackRequest;
 	AttackRequest.Instigator = CompanionPawn;
@@ -402,13 +543,26 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		InstanceData.AbilitySystemComponent->HandleGameplayEvent(
 		AIRECompanionGameplayTags::EventAttackRequest,
 		&AttackRequest);
-	UE_LOG(
-		LogAIRECompanionStateTree,
-		Verbose,
-		TEXT("Companion attack requested. Target=%s ActivatedAbilities=%d RetryDelay=%.2f"),
-		*GetNameSafe(TargetActor),
-		ActivatedAbilityCount,
-		InstanceData.CombatCooldown);
+	if (ActivatedAbilityCount > 0)
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Verbose,
+			TEXT("Companion attack requested. Target=%s ActivatedAbilities=%d RetryDelay=%.2f"),
+			*GetNameSafe(TargetActor),
+			ActivatedAbilityCount,
+			InstanceData.CombatCooldown);
+	}
+	else
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Log,
+			TEXT("Companion attack request activated no abilities. Companion=%s Target=%s RetryDelay=%.2f"),
+			*GetNameSafe(CompanionPawn),
+			*GetNameSafe(TargetActor),
+			InstanceData.CombatCooldown);
+	}
 	InstanceData.RetryTimeRemaining = InstanceData.CombatCooldown;
 	return EStateTreeRunStatus::Running;
 }
@@ -461,6 +615,8 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	if (IsValid(InstanceData.CompanionController))
 	{
 		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
 	}
 	InstanceData.bMoveRequested = false;
 

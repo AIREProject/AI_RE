@@ -41,6 +41,7 @@ private:
 		const FGameplayAbilityActorInfo* ActorInfo) const;
 	bool IsTargetValidForAttack(const AActor* TargetActor) const;
 	bool IsTargetInRange(const AActor* TargetActor) const;
+	bool IsTargetWithinAttackAngle(const AActor* TargetActor) const;
 	void StartHitEventWait();
 	void StartFallbackAttack();
 	void SendFallbackHitEvent();

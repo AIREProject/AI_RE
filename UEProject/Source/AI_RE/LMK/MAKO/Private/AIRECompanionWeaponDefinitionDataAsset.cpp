@@ -56,6 +56,17 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
+	if (!FMath::IsFinite(AttackHalfAngleDegrees)
+		|| AttackHalfAngleDegrees < 0.0f
+		|| AttackHalfAngleDegrees > 180.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidAttackHalfAngle",
+			"Attack Half Angle must be finite and between 0 and 180 degrees.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(FallbackHitDelay) || FallbackHitDelay < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT(
