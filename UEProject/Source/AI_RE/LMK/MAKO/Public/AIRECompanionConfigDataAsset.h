@@ -16,11 +16,23 @@ public:
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm/s"))
+	/** Run speed. The property name is retained for existing Data Asset compatibility. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (DisplayName = "Run Speed", ClampMin = "0.0", UIMin = "0.0", Units = "cm/s"))
 	float MovementSpeed = 450.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm/s"))
+	float WalkSpeed = 200.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm"))
 	float FollowStopDistance = 200.0f;
+
+	/** Switches from walking to running beyond this player distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float RunStartDistance = 500.0f;
+
+	/** Switches back to walking below this player distance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float WalkResumeDistance = 400.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm"))
 	float ReturnStartDistance = 600.0f;

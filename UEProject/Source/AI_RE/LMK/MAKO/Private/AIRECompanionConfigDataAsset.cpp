@@ -8,13 +8,31 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 
 	if (!FMath::IsFinite(MovementSpeed) || MovementSpeed <= 0.0f)
 	{
-		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidMovementSpeed", "Movement Speed must be finite and greater than zero.");
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidMovementSpeed", "Run Speed must be finite and greater than zero.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(WalkSpeed) || WalkSpeed <= 0.0f || WalkSpeed > MovementSpeed)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidWalkSpeed", "Walk Speed must be finite, greater than zero, and not exceed Run Speed.");
 		return false;
 	}
 
 	if (!FMath::IsFinite(FollowStopDistance) || FollowStopDistance < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowStopDistance", "Follow Stop Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(RunStartDistance) || RunStartDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidRunStartDistance", "Run Start Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(WalkResumeDistance) || WalkResumeDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidWalkResumeDistance", "Walk Resume Distance must be finite and non-negative.");
 		return false;
 	}
 
@@ -69,6 +87,16 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 	if (!FMath::IsFinite(InitialStamina) || InitialStamina < 0.0f || InitialStamina > MaxStamina)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidInitialStamina", "Initial Stamina must be finite and between zero and Max Stamina.");
+		return false;
+	}
+
+	if (FollowStopDistance >= WalkResumeDistance
+		|| WalkResumeDistance >= RunStartDistance)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidWalkRunThresholds",
+			"Movement distances must satisfy Follow Stop Distance < Walk Resume Distance < Run Start Distance.");
 		return false;
 	}
 

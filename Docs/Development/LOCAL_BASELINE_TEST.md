@@ -1,6 +1,16 @@
 # AI_RE Local Baseline Test Guide
 
-이 문서는 Backend와 WebApp 초기 기준선을 로컬 PC와 같은 LAN의 휴대폰에서 확인하는 공용 절차입니다.
+> **상태: 과거 기준선 / 현재 실행 불가**
+>
+> 2026-07-27 재시작 저장소에는 `Backend/`가 없으므로 이 문서의 Backend 설치,
+> 실행, 마이그레이션, 테스트 명령은 현재 트리에서 동작하지 않습니다. 아래 내용은
+> 재시작 전 기준선 기록으로만 보존하며, Backend가 복구되거나 새로 구현된 뒤 현재
+> 코드와 잠금 파일을 기준으로 다시 작성해야 합니다.
+> 현재 채택 서버와 연동 기준은
+> [`../Backend/EXTERNAL_SERVER_INTEGRATION.md`](../Backend/EXTERNAL_SERVER_INTEGRATION.md)를
+> 따릅니다.
+
+이 문서는 Backend와 WebApp 초기 기준선을 로컬 PC와 같은 LAN의 휴대폰에서 확인하던 공용 절차입니다.
 
 ## 1. 초기 기준선 정의
 
