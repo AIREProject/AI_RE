@@ -23,6 +23,10 @@
 
 - [Local Baseline Test Guide](Development/LOCAL_BASELINE_TEST.md) — 재시작 전 Backend·WebApp 기준선의 보존 기록. 현재 Backend 검증 절차로 사용하지 않음
 
+### Unreal Engine
+
+- [Companion GAS Combat Architecture and Verification](UE/COMPANION_GAS_COMBAT.md) — MAKO GAS 전투 책임, 무기별 Data Asset, 콤보·신규 무기 확장과 Editor/PIE 검증 절차
+
 ## 문서 원칙
 
 1. 공유 구현에 영향을 주는 계약은 코드 변경보다 먼저 갱신합니다.
