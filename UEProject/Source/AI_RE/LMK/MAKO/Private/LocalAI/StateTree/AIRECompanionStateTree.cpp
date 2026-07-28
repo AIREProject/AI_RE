@@ -22,8 +22,6 @@ namespace
 	constexpr float CombatApproachMargin = 50.0f;
 	constexpr float CombatApproachAcceptanceRadius = 25.0f;
 	constexpr float CombatRangeExitSlack = 25.0f;
-	constexpr float CombatFacingInterpSpeed = 12.0f;
-	constexpr float CombatFacingSnapToleranceDegrees = 0.5f;
 	constexpr float CombatMovementRetryInterval = 0.5f;
 	constexpr float CombatActivationRetryInterval = 0.1f;
 
@@ -364,6 +362,10 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::EnterState(
 	InstanceData.ActiveTarget = InstanceData.ThreatTarget;
 	InstanceData.RetryTimeRemaining = 0.0f;
 	InstanceData.bMoveRequested = false;
+	InstanceData.bSkillIntentBuffered = false;
+	InstanceData.bSkillIntentEvaluatedForStep = false;
+	InstanceData.bWasSkillCancelWindowOpen = false;
+	InstanceData.bWasBasicAttackActive = false;
 	UE_LOG(
 		LogAIRECompanionStateTree,
 		Log,
@@ -391,6 +393,10 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		CancelOwnedRequests(InstanceData);
 		InstanceData.ActiveTarget = InstanceData.ThreatTarget;
 		InstanceData.RetryTimeRemaining = 0.0f;
+		InstanceData.bSkillIntentBuffered = false;
+		InstanceData.bSkillIntentEvaluatedForStep = false;
+		InstanceData.bWasSkillCancelWindowOpen = false;
+		InstanceData.bWasBasicAttackActive = false;
 	}
 
 	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
@@ -416,22 +422,40 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 
 	bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
 		AIRECompanionGameplayTags::StateActionAttacking);
+	const bool bCombatSkillWasActive =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionAttackingSkill);
+	const float ActiveAttackRange = bCombatSkillWasActive
+		? WeaponDefinition->CombatSkill.AttackRange
+		: AttackRange;
 	const float AttackExitDistance =
-		AttackRange + CombatRangeExitSlack;
+		ActiveAttackRange + CombatRangeExitSlack;
 	if (bAttackActive
 		&& !IsTargetInRange(*CompanionPawn, *TargetActor, AttackExitDistance))
 	{
-		const FGameplayAbilitySpecHandle AttackAbilityHandle =
-			InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
-				AIRECompanionGameplayTags::AbilityCombatBasicAttack);
-		if (AttackAbilityHandle.IsValid())
+		const FGameplayTag CombatAbilityTags[] =
 		{
-			InstanceData.AbilitySystemComponent->CancelAbilityHandle(
-				AttackAbilityHandle);
+			AIRECompanionGameplayTags::AbilityCombatBasicAttack,
+			AIRECompanionGameplayTags::AbilityCombatSkill
+		};
+		for (const FGameplayTag CombatAbilityTag : CombatAbilityTags)
+		{
+			const FGameplayAbilitySpecHandle AbilityHandle =
+				InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
+					CombatAbilityTag);
+			if (AbilityHandle.IsValid())
+			{
+				InstanceData.AbilitySystemComponent->CancelAbilityHandle(
+					AbilityHandle);
+			}
 		}
 		bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
 			AIRECompanionGameplayTags::StateActionAttacking);
 		InstanceData.RetryTimeRemaining = 0.0f;
+		InstanceData.bSkillIntentBuffered = false;
+		InstanceData.bSkillIntentEvaluatedForStep = false;
+		InstanceData.bWasSkillCancelWindowOpen = false;
+		InstanceData.bWasBasicAttackActive = false;
 	}
 
 	InstanceData.RetryTimeRemaining = FMath::Max(
@@ -488,9 +512,93 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		InstanceData.bMoveRequested = false;
 	}
 
+	const bool bBasicAttackActive =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionAttackingBasic);
+	const bool bCombatSkillActive =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionAttackingSkill);
+	const bool bSkillCancelWindowOpen =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::
+				StateActionAttackingSkillCancelable);
+	const FGameplayAbilitySpecHandle CombatSkillHandle =
+		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
+			AIRECompanionGameplayTags::AbilityCombatSkill);
+	const bool bCanSelectCombatSkill =
+		WeaponDefinition->CombatSkill.bEnabled
+		&& CombatSkillHandle.IsValid();
+	const auto ShouldSelectCombatSkill =
+		[WeaponDefinition, bCanSelectCombatSkill]()
+		{
+			return bCanSelectCombatSkill
+				&& FMath::FRand()
+					< WeaponDefinition->CombatSkill.SelectionChance;
+		};
+	const auto RequestCombatSkill =
+		[&InstanceData, CompanionPawn, TargetActor]()
+		{
+			FGameplayEventData SkillRequest;
+			SkillRequest.EventTag =
+				AIRECompanionGameplayTags::EventCombatSkillRequest;
+			SkillRequest.Instigator = CompanionPawn;
+			SkillRequest.Target = TargetActor;
+			return InstanceData.AbilitySystemComponent->HandleGameplayEvent(
+				AIRECompanionGameplayTags::EventCombatSkillRequest,
+				&SkillRequest);
+		};
+
+	if (bCombatSkillActive)
+	{
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (bBasicAttackActive)
+	{
+		if (!bSkillCancelWindowOpen
+			&& InstanceData.bWasSkillCancelWindowOpen)
+		{
+			InstanceData.bSkillIntentBuffered = false;
+			InstanceData.bSkillIntentEvaluatedForStep = false;
+		}
+
+		if (!InstanceData.bSkillIntentEvaluatedForStep)
+		{
+			InstanceData.bSkillIntentEvaluatedForStep = true;
+			InstanceData.bSkillIntentBuffered =
+				ShouldSelectCombatSkill();
+		}
+
+		if (bSkillCancelWindowOpen
+			&& !InstanceData.bWasSkillCancelWindowOpen
+			&& InstanceData.bSkillIntentBuffered)
+		{
+			const int32 ActivatedAbilityCount = RequestCombatSkill();
+			UE_LOG(
+				LogAIRECompanionStateTree,
+				Verbose,
+				TEXT("Companion buffered combat skill requested during combo. Target=%s ActivatedAbilities=%d"),
+				*GetNameSafe(TargetActor),
+				ActivatedAbilityCount);
+			InstanceData.bSkillIntentBuffered = false;
+		}
+
+		InstanceData.bWasSkillCancelWindowOpen =
+			bSkillCancelWindowOpen;
+		InstanceData.bWasBasicAttackActive = true;
+		return EStateTreeRunStatus::Running;
+	}
+
 	if (bAttackActive)
 	{
 		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bWasBasicAttackActive)
+	{
+		InstanceData.bWasBasicAttackActive = false;
+		InstanceData.bSkillIntentEvaluatedForStep = false;
+		InstanceData.bWasSkillCancelWindowOpen = false;
 	}
 
 	if (InstanceData.RetryTimeRemaining > 0.0f)
@@ -503,36 +611,39 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	TargetDirection.Z = 0.0f;
 	if (!TargetDirection.IsNearlyZero())
 	{
-		const FRotator CurrentRotation = CompanionPawn->GetActorRotation();
-		const FRotator TargetRotation(0.0f, TargetDirection.Rotation().Yaw, 0.0f);
-		const float AttackHalfAngleDegrees =
-			WeaponDefinition->AttackHalfAngleDegrees;
-		const FVector ForwardDirection =
-			CompanionPawn->GetActorForwardVector().GetSafeNormal2D();
-		const FVector NormalizedTargetDirection = TargetDirection.GetSafeNormal();
-		const float FacingDot =
-			FVector::DotProduct(ForwardDirection, NormalizedTargetDirection);
-		const float MinimumFacingDot = FMath::Cos(FMath::DegreesToRadians(
-			AttackHalfAngleDegrees));
-		if (FacingDot < MinimumFacingDot)
+		CompanionPawn->SetActorRotation(
+			FRotator(
+				0.0f,
+				TargetDirection.Rotation().Yaw,
+				0.0f));
+	}
+
+	const bool bShouldTryCombatSkill =
+		InstanceData.bSkillIntentBuffered
+		|| ShouldSelectCombatSkill();
+	InstanceData.bSkillIntentBuffered = false;
+	if (bShouldTryCombatSkill)
+	{
+		const int32 ActivatedAbilityCount = RequestCombatSkill();
+		const bool bCombatSkillActiveAfterRequest =
+			InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+				AIRECompanionGameplayTags::
+					StateActionAttackingSkill);
+		const bool bCombatSkillCommitted =
+			ActivatedAbilityCount > 0
+			&& bCombatSkillActiveAfterRequest;
+		if (bCombatSkillCommitted)
 		{
-			const float RemainingYawDegrees = FMath::Abs(
-				FMath::FindDeltaAngleDegrees(
-					CurrentRotation.Yaw,
-					TargetRotation.Yaw));
-			if (RemainingYawDegrees <= CombatFacingSnapToleranceDegrees)
-			{
-				CompanionPawn->SetActorRotation(TargetRotation);
-			}
-			else
-			{
-				CompanionPawn->SetActorRotation(FMath::RInterpTo(
-					CurrentRotation,
-					TargetRotation,
-					DeltaTime,
-					CombatFacingInterpSpeed));
-				return EStateTreeRunStatus::Running;
-			}
+			UE_LOG(
+				LogAIRECompanionStateTree,
+				Verbose,
+				TEXT("Companion combat skill requested. Target=%s ActivatedAbilities=%d RetryDelay=%.2f"),
+				*GetNameSafe(TargetActor),
+				ActivatedAbilityCount,
+				CombatActivationRetryInterval);
+			InstanceData.RetryTimeRemaining =
+				CombatActivationRetryInterval;
+			return EStateTreeRunStatus::Running;
 		}
 	}
 
@@ -583,6 +694,10 @@ void FAIRECompanionEngageThreatTask::ExitState(
 			static_cast<int64>(Transition.CurrentRunStatus)));
 	InstanceData.ActiveTarget.Reset();
 	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.bSkillIntentBuffered = false;
+	InstanceData.bSkillIntentEvaluatedForStep = false;
+	InstanceData.bWasSkillCancelWindowOpen = false;
+	InstanceData.bWasBasicAttackActive = false;
 }
 
 bool FAIRECompanionEngageThreatTask::IsTargetUsable(const AActor* TargetActor)
@@ -635,4 +750,18 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
 			AttackAbilityHandle);
 	}
+
+	const FGameplayAbilitySpecHandle CombatSkillAbilityHandle =
+		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
+			AIRECompanionGameplayTags::AbilityCombatSkill);
+	if (CombatSkillAbilityHandle.IsValid())
+	{
+		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
+			CombatSkillAbilityHandle);
+	}
+
+	InstanceData.bSkillIntentBuffered = false;
+	InstanceData.bSkillIntentEvaluatedForStep = false;
+	InstanceData.bWasSkillCancelWindowOpen = false;
+	InstanceData.bWasBasicAttackActive = false;
 }

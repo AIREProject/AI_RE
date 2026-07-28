@@ -47,15 +47,6 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
-	if (!FMath::IsFinite(StaminaCost) || StaminaCost < 0.0f)
-	{
-		OutValidationError = NSLOCTEXT(
-			"AIRECompanionWeaponDefinition",
-			"InvalidStaminaCost",
-			"Stamina Cost must be finite and non-negative.");
-		return false;
-	}
-
 	TSet<FName> ComboMontageSections;
 	for (int32 StepIndex = 0; StepIndex < ComboSteps.Num(); ++StepIndex)
 	{
@@ -95,16 +86,6 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			return false;
 		}
 
-		if (!FMath::IsFinite(ComboStep.StaminaCost) || ComboStep.StaminaCost < 0.0f)
-		{
-			OutValidationError = FText::Format(
-				NSLOCTEXT(
-					"AIRECompanionWeaponDefinition",
-					"InvalidComboStaminaCost",
-					"Combo Step {0} Stamina Cost must be finite and non-negative."),
-				FText::AsNumber(StepIndex));
-			return false;
-		}
 	}
 
 	if (!FMath::IsFinite(AttackRange) || AttackRange < 0.0f)
@@ -125,17 +106,6 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
-	if (!FMath::IsFinite(AttackHalfAngleDegrees)
-		|| AttackHalfAngleDegrees < 0.0f
-		|| AttackHalfAngleDegrees > 180.0f)
-	{
-		OutValidationError = NSLOCTEXT(
-			"AIRECompanionWeaponDefinition",
-			"InvalidAttackHalfAngle",
-			"Attack Half Angle must be finite and between 0 and 180 degrees.");
-		return false;
-	}
-
 	if (!FMath::IsFinite(FallbackHitDelay) || FallbackHitDelay < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT(
@@ -152,6 +122,61 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			"InvalidFallbackRecovery",
 			"Fallback Recovery Duration must be finite and non-negative.");
 		return false;
+	}
+
+	if (CombatSkill.bEnabled)
+	{
+		if (!FMath::IsFinite(CombatSkill.Damage) || CombatSkill.Damage < 0.0f)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillDamage",
+				"Combat Skill Damage must be finite and non-negative.");
+			return false;
+		}
+
+		if (!FMath::IsFinite(CombatSkill.CooldownDuration)
+			|| CombatSkill.CooldownDuration < 0.0f)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillCooldown",
+				"Combat Skill Cooldown Duration must be finite and non-negative.");
+			return false;
+		}
+
+		if (!FMath::IsFinite(CombatSkill.AttackRange)
+			|| CombatSkill.AttackRange < 0.0f)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillRange",
+				"Combat Skill Attack Range must be finite and non-negative.");
+			return false;
+		}
+
+		if (!FMath::IsFinite(CombatSkill.SelectionChance)
+			|| CombatSkill.SelectionChance < 0.0f
+			|| CombatSkill.SelectionChance > 1.0f)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillSelectionChance",
+				"Combat Skill Selection Chance must be finite and between 0 and 1.");
+			return false;
+		}
+
+		if (!FMath::IsFinite(CombatSkill.FallbackHitDelay)
+			|| CombatSkill.FallbackHitDelay < 0.0f
+			|| !FMath::IsFinite(CombatSkill.FallbackRecoveryDuration)
+			|| CombatSkill.FallbackRecoveryDuration < 0.0f)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillFallback",
+				"Combat Skill fallback timings must be finite and non-negative.");
+			return false;
+		}
 	}
 
 	return true;

@@ -10,7 +10,7 @@
 
 namespace
 {
-	const FString AllowedAssetRoot = TEXT("/Game/Work/LMK/");
+	const FString AllowedAnimationAssetRoot = TEXT("/Game/Work/LMK/");
 
 	struct FAIREComboNotifyEntry
 	{
@@ -19,7 +19,8 @@ namespace
 		float Duration = 0.0f;
 	};
 
-	FAIREAnimationComboMontageResult MakeFailure(const FString& Message)
+	FAIREAnimationComboMontageResult MakeAnimationFailure(
+		const FString& Message)
 	{
 		FAIREAnimationComboMontageResult Result;
 		Result.Message = Message;
@@ -34,11 +35,12 @@ namespace
 			return false;
 		}
 
-		if (!Montage->GetPathName().StartsWith(AllowedAssetRoot))
+		if (!Montage->GetPathName().StartsWith(
+			AllowedAnimationAssetRoot))
 		{
 			OutError = FString::Printf(
 				TEXT("Only montages under %s may be edited by this tool."),
-				*AllowedAssetRoot);
+				*AllowedAnimationAssetRoot);
 			return false;
 		}
 
@@ -222,15 +224,17 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	FString Error;
 	if (!ValidateMontage(Montage, Error))
 	{
-		return MakeFailure(Error);
+		return MakeAnimationFailure(Error);
 	}
 	if (SectionNames.Num() < 2)
 	{
-		return MakeFailure(TEXT("At least two section names are required."));
+		return MakeAnimationFailure(
+			TEXT("At least two section names are required."));
 	}
 	if (!FMath::IsFinite(TransitionBias) || TransitionBias <= 0.0f || TransitionBias >= 1.0f)
 	{
-		return MakeFailure(TEXT("TransitionBias must be finite and between zero and one."));
+		return MakeAnimationFailure(
+			TEXT("TransitionBias must be finite and between zero and one."));
 	}
 
 	TSet<FName> UniqueSectionNames;
@@ -238,7 +242,8 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	{
 		if (SectionName.IsNone() || UniqueSectionNames.Contains(SectionName))
 		{
-			return MakeFailure(TEXT("Section names must be non-empty and unique."));
+			return MakeAnimationFailure(
+				TEXT("Section names must be non-empty and unique."));
 		}
 		UniqueSectionNames.Add(SectionName);
 	}
@@ -259,7 +264,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 
 	if (HitNotifyEvents.Num() != SectionNames.Num())
 	{
-		return MakeFailure(
+		return MakeAnimationFailure(
 			FString::Printf(
 				TEXT("Expected one hit notify per requested section (%d), but found %d."),
 				SectionNames.Num(),
@@ -287,7 +292,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 			: Montage->GetPlayLength();
 		if (HitTime < SectionStartTime || HitTime >= SectionEndTime)
 		{
-			return MakeFailure(
+			return MakeAnimationFailure(
 				FString::Printf(
 					TEXT("Chronological hit %d at %.3f is outside derived section %s (%.3f-%.3f)."),
 					StepIndex,
@@ -314,7 +319,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 		Montage->GetSectionName(0) == FName(TEXT("Default"));
 	if (!bSectionsAlreadyMatch && !bHasReplaceableDefaultSection)
 	{
-		return MakeFailure(
+		return MakeAnimationFailure(
 			TEXT("Existing montage sections are neither the requested layout nor a single Default section."));
 	}
 
@@ -331,7 +336,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 				SectionNames[SectionIndex],
 				SectionStartTimes[SectionIndex]) == INDEX_NONE)
 			{
-				return MakeFailure(
+				return MakeAnimationFailure(
 					FString::Printf(
 						TEXT("Failed to add montage section %s."),
 						*SectionNames[SectionIndex].ToString()));
@@ -376,7 +381,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::InspectBasicAttackCom
 	FString Error;
 	if (!ValidateMontage(Montage, Error))
 	{
-		return MakeFailure(Error);
+		return MakeAnimationFailure(Error);
 	}
 
 	FAIREAnimationComboMontageResult Result;
@@ -395,19 +400,22 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	FString Error;
 	if (!ValidateMontage(Montage, Error))
 	{
-		return MakeFailure(Error);
+		return MakeAnimationFailure(Error);
 	}
 	if (NotifyTrackName.IsNone())
 	{
-		return MakeFailure(TEXT("NotifyTrackName must not be None."));
+		return MakeAnimationFailure(
+			TEXT("NotifyTrackName must not be None."));
 	}
 	if (!FMath::IsFinite(WindowStartOffsetAfterHit) || WindowStartOffsetAfterHit < 0.0f)
 	{
-		return MakeFailure(TEXT("WindowStartOffsetAfterHit must be finite and non-negative."));
+		return MakeAnimationFailure(
+			TEXT("WindowStartOffsetAfterHit must be finite and non-negative."));
 	}
 	if (!FMath::IsFinite(SectionEndPadding) || SectionEndPadding <= 0.0f)
 	{
-		return MakeFailure(TEXT("SectionEndPadding must be finite and greater than zero."));
+		return MakeAnimationFailure(
+			TEXT("SectionEndPadding must be finite and greater than zero."));
 	}
 
 	TArray<FAIREComboNotifyEntry> HitNotifies;
@@ -415,7 +423,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	GatherComboNotifies(*Montage, HitNotifies, ComboWindows);
 	if (!ValidateComboLayout(*Montage, HitNotifies, ComboWindows, Error))
 	{
-		return MakeFailure(Error);
+		return MakeAnimationFailure(Error);
 	}
 
 	TSet<int32> ExistingWindowSteps;
@@ -454,7 +462,7 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 		const float WindowEndTime = SectionEndTime - SectionEndPadding;
 		if (WindowEndTime <= WindowStartTime + KINDA_SMALL_NUMBER)
 		{
-			return MakeFailure(
+			return MakeAnimationFailure(
 				FString::Printf(
 					TEXT("Section %s has no room for a combo window after hit %.3f with end padding %.3f."),
 					*Montage->GetSectionName(StepIndex).ToString(),

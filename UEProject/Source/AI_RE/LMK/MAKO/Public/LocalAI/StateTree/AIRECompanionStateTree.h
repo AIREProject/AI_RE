@@ -273,6 +273,18 @@ struct FAIRECompanionEngageThreatTaskInstanceData
 
 	UPROPERTY(Transient)
 	bool bMoveRequested = false;
+
+	UPROPERTY(Transient)
+	bool bSkillIntentBuffered = false;
+
+	UPROPERTY(Transient)
+	bool bSkillIntentEvaluatedForStep = false;
+
+	UPROPERTY(Transient)
+	bool bWasSkillCancelWindowOpen = false;
+
+	UPROPERTY(Transient)
+	bool bWasBasicAttackActive = false;
 };
 
 USTRUCT(meta = (DisplayName = "Engage Companion Threat", Category = "AIRE|Companion"))

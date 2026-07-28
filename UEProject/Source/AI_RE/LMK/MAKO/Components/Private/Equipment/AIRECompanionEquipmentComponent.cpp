@@ -171,6 +171,12 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 	{
 		AssetsToLoad.AddUnique(WeaponDefinition->AttackMontage.ToSoftObjectPath());
 	}
+	if (WeaponDefinition->CombatSkill.bEnabled
+		&& !WeaponDefinition->CombatSkill.SkillMontage.IsNull())
+	{
+		AssetsToLoad.AddUnique(
+			WeaponDefinition->CombatSkill.SkillMontage.ToSoftObjectPath());
+	}
 
 	const uint32 RequestId = ++EquipmentRequestId;
 	PendingEquipmentLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
@@ -250,12 +256,26 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 			Entry.AbilityLevel,
 			INDEX_NONE,
 			WeaponDefinition);
-		AbilitySpec.SetByCallerTagMagnitudes.Add(
-			AIRECompanionGameplayTags::DataAttackStaminaCost,
-			-WeaponDefinition->StaminaCost);
-		AbilitySpec.SetByCallerTagMagnitudes.Add(
-			AIRECompanionGameplayTags::DataAttackCooldownDuration,
-			WeaponDefinition->CooldownDuration);
+		const UGameplayAbility* AbilityDefaultObject =
+			Entry.AbilityClass->GetDefaultObject<UGameplayAbility>();
+		if (IsValid(AbilityDefaultObject)
+			&& AbilityDefaultObject->GetAssetTags().HasTagExact(
+				AIRECompanionGameplayTags::AbilityCombatBasicAttack))
+		{
+			AbilitySpec.SetByCallerTagMagnitudes.Add(
+				AIRECompanionGameplayTags::
+					DataAttackCooldownDuration,
+				WeaponDefinition->CooldownDuration);
+		}
+		else if (IsValid(AbilityDefaultObject)
+			&& AbilityDefaultObject->GetAssetTags().HasTagExact(
+				AIRECompanionGameplayTags::AbilityCombatSkill))
+		{
+			AbilitySpec.SetByCallerTagMagnitudes.Add(
+				AIRECompanionGameplayTags::
+					DataCombatSkillCooldownDuration,
+				WeaponDefinition->CombatSkill.CooldownDuration);
+		}
 
 		const FGameplayAbilitySpecHandle GrantedHandle =
 			AbilitySystem->GiveAbility(AbilitySpec);
@@ -287,6 +307,24 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 		return;
 	}
 
+	const bool bGrantedCombatSkill =
+		FindGrantedAbilityHandle(
+			AIRECompanionGameplayTags::AbilityCombatSkill).IsValid();
+	if (WeaponDefinition->CombatSkill.bEnabled != bGrantedCombatSkill)
+	{
+		UE_LOG(
+			LogAIRECompanionEquipment,
+			Warning,
+			TEXT("Weapon Definition %s Combat Skill data and Ability Set grant do not match. Enabled=%s Granted=%s"),
+			*GetNameSafe(WeaponDefinition),
+			WeaponDefinition->CombatSkill.bEnabled
+				? TEXT("true")
+				: TEXT("false"),
+			bGrantedCombatSkill ? TEXT("true") : TEXT("false"));
+		UnequipCurrentWeapon();
+		return;
+	}
+
 	LinkCurrentAnimLayer();
 
 	if (!WeaponDefinition->AttackMontage.IsNull()
@@ -296,6 +334,17 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 			LogAIRECompanionEquipment,
 			Warning,
 			TEXT("Weapon Definition %s could not load its Attack Montage. The Basic Attack fallback remains available."),
+			*GetNameSafe(WeaponDefinition));
+	}
+	if (WeaponDefinition->CombatSkill.bEnabled
+		&& !WeaponDefinition->CombatSkill.SkillMontage.IsNull()
+		&& !IsValid(
+			WeaponDefinition->CombatSkill.SkillMontage.Get()))
+	{
+		UE_LOG(
+			LogAIRECompanionEquipment,
+			Warning,
+			TEXT("Weapon Definition %s could not load its Combat Skill Montage. The Combat Skill fallback remains available."),
 			*GetNameSafe(WeaponDefinition));
 	}
 

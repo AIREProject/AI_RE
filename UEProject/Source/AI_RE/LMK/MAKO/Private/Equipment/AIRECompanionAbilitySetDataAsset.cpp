@@ -2,6 +2,7 @@
 
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayAbility.h"
+#include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Misc/DataValidation.h"
 
 bool UAIRECompanionAbilitySetDataAsset::IsAbilitySetValid(FText& OutValidationError) const
@@ -17,6 +18,8 @@ bool UAIRECompanionAbilitySetDataAsset::IsAbilitySetValid(FText& OutValidationEr
 	}
 
 	TSet<TSubclassOf<UGameplayAbility>> UniqueAbilityClasses;
+	int32 BasicAttackCount = 0;
+	int32 CombatSkillCount = 0;
 	for (const FAIRECompanionAbilitySetEntry& Entry : Abilities)
 	{
 		if (!Entry.AbilityClass)
@@ -57,6 +60,32 @@ bool UAIRECompanionAbilitySetDataAsset::IsAbilitySetValid(FText& OutValidationEr
 		}
 
 		UniqueAbilityClasses.Add(Entry.AbilityClass);
+
+		const UGameplayAbility* AbilityDefaultObject =
+			Entry.AbilityClass->GetDefaultObject<UGameplayAbility>();
+		if (IsValid(AbilityDefaultObject))
+		{
+			BasicAttackCount += AbilityDefaultObject->GetAssetTags()
+				.HasTagExact(
+					AIRECompanionGameplayTags::
+						AbilityCombatBasicAttack)
+				? 1
+				: 0;
+			CombatSkillCount += AbilityDefaultObject->GetAssetTags()
+				.HasTagExact(
+					AIRECompanionGameplayTags::AbilityCombatSkill)
+				? 1
+				: 0;
+		}
+	}
+
+	if (BasicAttackCount > 1 || CombatSkillCount > 1)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionAbilitySet",
+			"DuplicateCombatAbilityRole",
+			"An Ability Set must not grant more than one Basic Attack or Combat Skill role.");
+		return false;
 	}
 
 	return true;
