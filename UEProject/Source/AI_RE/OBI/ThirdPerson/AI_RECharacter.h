@@ -4,14 +4,17 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "AI_RECharacterBase.h"
 #include "Logging/LogMacros.h"
+#include "AI_REStatusComponent.h"
+#include "AI_RECraftingTypes.h"
+#include "AI_REPlayerCombatComponent.h"
 #include "AI_RECharacter.generated.h"
 
 class UAI_REMainUI;
 class UAI_REPlayerCombatComponent;
 class UAI_REPlayerInventoryComponent;
-class UAI_REStatusComponent;
-class UAI_RESkillComponent;
+class UAI_REPlayerCraftingComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
@@ -24,7 +27,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
  *  Implements a controllable orbiting camera
  */
 UCLASS(abstract)
-class AAI_RECharacter : public ACharacter
+class AAI_RECharacter : public AAI_RECharacterBase
 {
 	GENERATED_BODY()
 
@@ -142,28 +145,36 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input")
 	TObjectPtr<UInputAction> InventoryAction;
 	
-	
-	// 상태 컴포넌트 (체력, 스태미나, 배고픔 등 통합)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<class UAI_RECraftingUI> CraftingUIClass;
+
+	UPROPERTY()
+	TObjectPtr<class UAI_RECraftingUI> CraftingUIInstance;
+
+	// Component
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComponent;
+
+	// 크래프팅 매니저
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
-	TObjectPtr<UAI_REStatusComponent> StatusComponent;
-	
-	// 스킬 컴포넌트
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
-	TObjectPtr<UAI_RESkillComponent> SkillComponent;
-	// 인벤토리 컴포넌트
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
-	TObjectPtr<UAI_REPlayerInventoryComponent> InventoryComponent;
+	TObjectPtr<UAI_REPlayerCraftingComponent> CraftingComponent;
+
 	// 전투/액션 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components") 
 	TObjectPtr<UAI_REPlayerCombatComponent> CombatComponent;
 
-public:
-	
 	virtual void BeginPlay() override;
 	
+public:
+	// Crafting
+	UFUNCTION(BlueprintCallable, Category = "Crafting")
+	void OpenCraftingUI(EWorkbenchType WorkbenchType);
+
+	UFUNCTION(BlueprintCallable, Category = "Crafting")
+	void CloseCraftingUI();
+
+	
 	// FOCEINLINE -> Function Call 방식이 아니라 사용 위치에서 코드를 받아 붙여넣어(inline) 실행
-	FORCEINLINE TObjectPtr<UAI_REStatusComponent> GetStatusComponent() const { return StatusComponent; }
-	FORCEINLINE TObjectPtr<UAI_RESkillComponent> GetSkillComponent() const { return SkillComponent; }
 	FORCEINLINE TObjectPtr<UAI_REPlayerInventoryComponent> GetInventoryComponent() const { return InventoryComponent; }
 	FORCEINLINE TObjectPtr<UAI_REPlayerCombatComponent> GetCombatComponent() const { return CombatComponent; }
 	

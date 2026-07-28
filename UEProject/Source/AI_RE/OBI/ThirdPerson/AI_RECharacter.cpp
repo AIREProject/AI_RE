@@ -13,13 +13,14 @@
 #include "AI_RE.h"
 #include "AI_REMainUI.h"
 #include "AI_REInventoryUI.h"
+#include "AI_REStatusComponent.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
-#include "AI_REStatusComponent.h"
-#include "AI_RESkillComponent.h"
+#include "AI_REPlayerCraftingComponent.h"
 #include "Blueprint/UserWidget.h"
+#include "AI_RECraftingUI.h"
 #include "Engine/Engine.h"
-#include "../../Global/Interfaces/Public/AI_REInteractableInterface.h"
+#include "AI_REInteractableInterface.h"
 #include "Engine/OverlapResult.h"
 
 AAI_RECharacter::AAI_RECharacter()
@@ -57,10 +58,8 @@ AAI_RECharacter::AAI_RECharacter()
 	FollowCamera->bUsePawnControlRotation = false;
 
 	// Component Define
-	
-	StatusComponent = CreateDefaultSubobject<UAI_REStatusComponent>(TEXT("StatusComponent"));
-	SkillComponent = CreateDefaultSubobject<UAI_RESkillComponent>(TEXT("SkillComponent"));
-	InventoryComponent = CreateDefaultSubobject<UAI_REPlayerInventoryComponent>(TEXT("PlayerInventoryComponent"));
+	InventoryComponent = CreateDefaultSubobject<UAI_REPlayerInventoryComponent>(TEXT("InventoryComponent"));
+	CraftingComponent = CreateDefaultSubobject<UAI_REPlayerCraftingComponent>(TEXT("CraftingComponent"));
 	CombatComponent = CreateDefaultSubobject<UAI_REPlayerCombatComponent>(TEXT("CombatComponent"));
 	
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
@@ -168,17 +167,16 @@ void AAI_RECharacter::DoJumpEnd()
 
 void AAI_RECharacter::StartSprint()
 {
-	if (StatusComponent->CurrentSP > 10.f)
+	// 스태미나가 충분할 때만 달리기 허용
+	if (StatusComponent->CurrentSP >= 10.f)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("On Start Sprint"));
-		GetCharacterMovement() -> MaxWalkSpeed = 1000.f;
+		GetCharacterMovement()->MaxWalkSpeed = 1000.f;
 		bIsSprint = true;
 	}
 }
 
 void AAI_RECharacter::StopSprint()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Cyan, TEXT("On Stop Sprint"));
 	GetCharacterMovement() -> MaxWalkSpeed = 500.f;
 	bIsSprint = false;
 }
@@ -201,6 +199,7 @@ void AAI_RECharacter::ToggleInventory()
 		if (InventoryUIInstance->IsInViewport())
 		{
 			InventoryUIInstance->RemoveFromParent();
+
 			if (PC)
 			{
 				FInputModeGameOnly InputMode;
@@ -211,6 +210,7 @@ void AAI_RECharacter::ToggleInventory()
 		else
 		{
 			InventoryUIInstance->AddToViewport(10);
+
 			if (PC)
 			{
 				FInputModeGameAndUI InputMode;
@@ -222,9 +222,67 @@ void AAI_RECharacter::ToggleInventory()
 	}
 }
 
+void AAI_RECharacter::OpenCraftingUI(EWorkbenchType WorkbenchType)
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	
+	// 1. 크래프팅 위젯 생성
+	if (!CraftingUIInstance && CraftingUIClass)
+	{
+		CraftingUIInstance = CreateWidget<UAI_RECraftingUI>(GetWorld(), CraftingUIClass);
+	}
+
+	if (CraftingUIInstance)
+	{
+		if (!CraftingUIInstance->IsInViewport())
+		{
+			// 크래프팅 UI 띄우기
+			CraftingUIInstance->AddToViewport();
+			
+			CraftingUIInstance->InitializeCrafting(CraftingComponent, WorkbenchType);
+
+			if (PC)
+			{
+				FInputModeGameAndUI InputMode;
+				InputMode.SetWidgetToFocus(CraftingUIInstance->TakeWidget());
+				PC->SetInputMode(InputMode);
+				PC->SetShowMouseCursor(true);
+			}
+		}
+		else
+		{
+			CloseCraftingUI();
+		}
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("Crafting UI Class is missing! Set it in BP_ThirdPersonCharacter."));
+	}
+}
+
+void AAI_RECharacter::CloseCraftingUI()
+{
+	if (CraftingUIInstance && CraftingUIInstance->IsInViewport())
+	{
+		CraftingUIInstance->RemoveFromParent();
+		if (APlayerController* PC = Cast<APlayerController>(GetController()))
+		{
+			FInputModeGameOnly InputMode;
+			PC->SetInputMode(InputMode);
+			PC->SetShowMouseCursor(false);
+		}
+	}
+}
+
 void AAI_RECharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 가장 확실하게 인벤토리와 크래프팅 컴포넌트를 연결!
+	if (CraftingComponent && InventoryComponent)
+	{
+		CraftingComponent->SetInventoryComponent(InventoryComponent);
+	}
 	
 	if (MainUIClass != nullptr)
 	{
@@ -239,31 +297,45 @@ void AAI_RECharacter::BeginPlay()
 
 void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 {
-	FVector Start = GetActorLocation();
-	FVector End = Start + (GetActorForwardVector() * 200.0f); // 2미터 앞
+	if (CraftingUIInstance && CraftingUIInstance->IsInViewport())
+	{
+		CloseCraftingUI();
+		return;
+	}
 
-	// 단순 충돌 체크를 위한 오버랩 감지 (실제 게임에선 SphereTrace 등을 씁니다)
-	TArray<FOverlapResult> OverlapResults;
-	FCollisionShape Sphere = FCollisionShape::MakeSphere(200.0f);
+	// 캐릭터 가슴팍 높이에서 카메라가 바라보는 방향으로 2.5m(250) 길이의 두꺼운 레이저 쏘기
+	FVector Start = GetActorLocation() + FVector(0.f, 0.f, 30.f);
+	FVector End = Start + (GetControlRotation().Vector() * 250.0f);
+
+	FCollisionShape Sphere = FCollisionShape::MakeSphere(45.0f); // 반지름 45의 두꺼운 구체 트레이스
 	
-	bool bHit = GetWorld()->OverlapMultiByChannel(
-		OverlapResults, 
+	TArray<FHitResult> HitResults;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this); // 나 자신은 검사에서 제외
+
+	bool bHit = GetWorld()->SweepMultiByChannel(
+		HitResults, 
 		Start, 
+		End, 
 		FQuat::Identity, 
 		ECC_Visibility, 
-		Sphere
+		Sphere,
+		QueryParams
 	);
 
 	if (bHit)
 	{
-		for (const FOverlapResult& Result : OverlapResults)
+		for (const FHitResult& Hit : HitResults)
 		{
-			AActor* HitActor = Result.GetActor();
+			AActor* HitActor = Hit.GetActor();
 			if (HitActor && HitActor->Implements<UAI_REInteractableInterface>())
 			{
 				IAI_REInteractableInterface::Execute_Interact(HitActor, this);
-				break; // 한 번에 하나만 상호작용
+				return; // 상호작용 성공 시 여기서 함수 종료
 			}
 		}
 	}
+
+	// 3. 반경 내에 상호작용할 물건이 아무것도 없다면 맨손 제작(None) 메뉴를 엽니다!
+	OpenCraftingUI(EWorkbenchType::None);
 }

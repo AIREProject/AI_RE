@@ -1,8 +1,8 @@
 #include "AI_REHarvestableResourceActor.h"
 #include "Components/StaticMeshComponent.h"
 // Component 헤더 경로는 프로젝트 설정에 맞게 조정될 수 있습니다.
-#include "../../Components/Public/AI_REHarvestableResourceComponent.h" 
-#include "../../Global/Actors/Public/AI_REItemActor.h"
+#include "AI_REHarvestableResourceComponent.h" 
+#include "AI_REItemActor.h"
 #include "Engine/World.h"
 
 AAI_REHarvestableResourceActor::AAI_REHarvestableResourceActor()

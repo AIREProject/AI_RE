@@ -6,6 +6,9 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "AI_REItemDragDropOperation.h"
 #include "AI_REPlayerInventoryComponent.h"
+#include "AI_REItemSubsystem.h"
+#include "AI_REItemDataAsset.h"
+#include "Engine/GameInstance.h"
 
 void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 {
@@ -20,9 +23,33 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 	}
 	else
 	{
-		if (ItemNameText) ItemNameText->SetText(FText::FromName(InItemId));
+		// Subsystem을 통해 DataAsset 조회
+		UAI_REItemDataAsset* DataAsset = nullptr;
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UAI_REItemSubsystem* ItemSubsystem = GI->GetSubsystem<UAI_REItemSubsystem>())
+			{
+				DataAsset = ItemSubsystem->GetItemDataAsset(InItemId);
+			}
+		}
+
+		if (DataAsset)
+		{
+			if (ItemNameText) ItemNameText->SetText(DataAsset->DisplayName);
+			if (ItemIcon) 
+			{
+				ItemIcon->SetBrushFromTexture(DataAsset->ItemIcon);
+				ItemIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			}
+		}
+		else
+		{
+			// DataAsset을 못 찾은 경우 임시 폴백
+			if (ItemNameText) ItemNameText->SetText(FText::FromName(InItemId));
+			if (ItemIcon) ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+		}
+
 		if (ItemCountText) ItemCountText->SetText(FText::AsNumber(InCount));
-		if (ItemIcon) ItemIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	}
 }
 
