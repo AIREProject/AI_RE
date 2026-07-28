@@ -1,8 +1,8 @@
 #include "AI_REItemActor.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "../../ThirdPerson/AI_RECharacter.h"
-#include "../../Component/Public/AI_REPlayerInventoryComponent.h"
+#include "AI_RECharacter.h"
+#include "AI_REPlayerInventoryComponent.h"
 
 AAI_REItemActor::AAI_REItemActor()
 {

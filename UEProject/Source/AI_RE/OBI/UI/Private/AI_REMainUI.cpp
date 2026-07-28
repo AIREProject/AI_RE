@@ -2,15 +2,14 @@
 
 
 #include "AI_REMainUI.h"
-
+#include "AI_RECharacter.h"
 #include "AI_REStatePointBar.h"
 #include "AI_REStatusComponent.h"
-#include "../../Component/Public/AI_REPlayerInventoryComponent.h"
-#include "../Public/AI_REInventorySlotUI.h"
+#include "AI_REPlayerInventoryComponent.h"
+#include "AI_REInventorySlotUI.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "GameFramework/Actor.h"
-
 
 void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 {
@@ -29,8 +28,10 @@ void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 
 	if (QuickSlotGrid && SlotWidgetClass)
 	{
-		if (UAI_REPlayerInventoryComponent* InvComp = InStatus->GetOwner()->FindComponentByClass<UAI_REPlayerInventoryComponent>())
+		AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(InStatus->GetOwner());
+		if (PlayerChar && PlayerChar->GetInventoryComponent())
 		{
+			UAI_REPlayerInventoryComponent* InvComp = PlayerChar->GetInventoryComponent();
 			InventoryComp = InvComp;
 			InvComp->OnInventoryChanged.AddDynamic(this, &UAI_REMainUI::RefreshQuickSlots);
 			
