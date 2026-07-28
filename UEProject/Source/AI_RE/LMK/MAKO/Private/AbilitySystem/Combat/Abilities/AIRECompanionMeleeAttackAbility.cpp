@@ -5,8 +5,6 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/Combat/Effects/AIRECompanionAttackCooldownGameplayEffect.h"
-#include "AbilitySystem/Combat/Effects/AIRECompanionAttackCostGameplayEffect.h"
-#include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "AbilitySystem/Combat/Effects/AIRECompanionDamageGameplayEffect.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Animation/AnimMontage.h"
@@ -31,38 +29,11 @@ UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 	AttackTrigger.TriggerSource = EGameplayAbilityTriggerSource::GameplayEvent;
 
 	ActivationOwnedTags.AddTag(AIRECompanionGameplayTags::StateActionAttacking);
-	CostGameplayEffectClass = UAIRECompanionAttackCostGameplayEffect::StaticClass();
+	ActivationOwnedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionAttackingBasic);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionAttackingSkill);
 	CooldownGameplayEffectClass = UAIRECompanionAttackCooldownGameplayEffect::StaticClass();
-}
-
-bool UAIRECompanionMeleeAttackAbility::CheckCost(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	FGameplayTagContainer*) const
-{
-	if (!ActorInfo || !ActorInfo->AbilitySystemComponent.IsValid())
-	{
-		return false;
-	}
-
-	if (UAbilitySystemGlobals::Get().ShouldIgnoreCosts())
-	{
-		return true;
-	}
-
-	const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition =
-		GetWeaponDefinition(Handle, ActorInfo);
-	const UAIRECompanionAttributeSet* Attributes =
-		ActorInfo->AbilitySystemComponent->GetSet<UAIRECompanionAttributeSet>();
-	if (!IsValid(WeaponDefinition) || !IsValid(Attributes))
-	{
-		return false;
-	}
-
-	const float InitialStaminaCost = WeaponDefinition->ComboSteps.IsEmpty()
-		? WeaponDefinition->StaminaCost
-		: WeaponDefinition->ComboSteps[0].StaminaCost;
-	return Attributes->GetStamina() >= InitialStaminaCost;
 }
 
 void UAIRECompanionMeleeAttackAbility::ActivateAbility(
@@ -73,7 +44,10 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 {
 	bIsEnding = false;
 	bUsingFallback = false;
+	bSuspendedForCombatSkill = false;
+	bSkillCancelWindowTagApplied = false;
 	CurrentStepIndex = 0;
+	ResumeStepIndex = INDEX_NONE;
 	ResetCurrentStepState();
 	ActiveWeaponDefinition = GetWeaponDefinition(Handle, ActorInfo);
 	AttackRange = IsValid(ActiveWeaponDefinition)
@@ -87,8 +61,7 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		|| !IsAttackStepIndexValid(CurrentStepIndex)
 		|| !bHasValidRange
 		|| !IsTargetValidForAttack(GetEventTarget())
-		|| !IsTargetInRange(GetEventTarget())
-		|| !IsTargetWithinAttackAngle(GetEventTarget()))
+		|| !IsTargetInRange(GetEventTarget()))
 	{
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
@@ -102,13 +75,12 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		return;
 	}
 
-	if (!CommitAbilityCooldown(Handle, ActorInfo, ActivationInfo, false)
-		|| !ApplyAttackStepCost(CurrentStepIndex))
+	if (!CommitAbilityCooldown(Handle, ActorInfo, ActivationInfo, false))
 	{
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
 			Verbose,
-			TEXT("Companion melee attack could not commit cooldown or initial step cost. Source=%s Weapon=%s"),
+			TEXT("Companion melee attack could not commit cooldown. Source=%s Weapon=%s"),
 			*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr),
 			*GetNameSafe(ActiveWeaponDefinition));
 		FinishAbility(true);
@@ -130,58 +102,15 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		}
 	}
 
-	UAnimMontage* AttackMontage = ActiveWeaponDefinition->AttackMontage.Get();
-	if (!IsValid(AttackMontage) || !AreComboMontageSectionsValid(AttackMontage))
+	StartCombatSkillTransitionEventWait();
+	if (bIsEnding)
 	{
-		if (!ActiveWeaponDefinition->AttackMontage.IsNull())
-		{
-			UE_LOG(
-				LogAIRECompanionMeleeAttack,
-				Warning,
-				TEXT("Configured attack montage or combo sections are unavailable. Using the Basic Attack fallback. Weapon=%s"),
-				*GetNameSafe(ActiveWeaponDefinition));
-		}
-
-		bUsingFallback = true;
-		StartFallbackStep();
 		return;
 	}
 
-	MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this,
-		TEXT("CompanionBasicAttackMontage"),
-		AttackMontage,
-		1.0f,
-		GetAttackStepMontageSection(CurrentStepIndex),
-		true,
-		0.0f);
-	if (!IsValid(MontageTask))
-	{
-		FinishAbility(true);
-		return;
-	}
+	FaceTarget(GetEventTarget());
 
-	MontageTask->OnCompleted.AddDynamic(this, &UAIRECompanionMeleeAttackAbility::HandleMontageCompleted);
-	MontageTask->OnInterrupted.AddDynamic(this, &UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted);
-	MontageTask->OnCancelled.AddDynamic(this, &UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted);
-	MontageTask->ReadyForActivation();
-
-	if (!ActiveWeaponDefinition->ComboSteps.IsEmpty())
-	{
-		for (const FAIREWeaponComboStepDefinition& ComboStep : ActiveWeaponDefinition->ComboSteps)
-		{
-			MontageSetNextSectionName(ComboStep.MontageSection, NAME_None);
-		}
-
-		if (GetAttackStepCount() > 1)
-		{
-			// Prevent the active section from scheduling blend-out before its
-			// combo window closes. The ability still validates advancement at window end.
-			MontageSetNextSectionName(
-				GetAttackStepMontageSection(CurrentStepIndex),
-				GetAttackStepMontageSection(CurrentStepIndex + 1));
-		}
-	}
+	StartAttackMontage();
 }
 
 void UAIRECompanionMeleeAttackAbility::EndAbility(
@@ -192,6 +121,7 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 	const bool bWasCancelled)
 {
 	bIsEnding = true;
+	SetSkillCancelWindowTag(false);
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Log,
@@ -213,13 +143,16 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
 	ComboWindowEventTask = nullptr;
+	CombatSkillTransitionEventTask = nullptr;
 	ActiveWeaponDefinition = nullptr;
 	AttackRange = 0.0f;
 	CurrentStepIndex = INDEX_NONE;
+	ResumeStepIndex = INDEX_NONE;
 	bCurrentStepHitConsumed = false;
 	bComboWindowOpen = false;
 	bNextStepQueued = false;
 	bUsingFallback = false;
+	bSuspendedForCombatSkill = false;
 
 	Super::EndAbility(
 		Handle,
@@ -275,18 +208,6 @@ float UAIRECompanionMeleeAttackAbility::GetAttackStepDamage(const int32 StepInde
 		: ActiveWeaponDefinition->ComboSteps[StepIndex].Damage;
 }
 
-float UAIRECompanionMeleeAttackAbility::GetAttackStepStaminaCost(const int32 StepIndex) const
-{
-	if (!IsAttackStepIndexValid(StepIndex))
-	{
-		return 0.0f;
-	}
-
-	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
-		? ActiveWeaponDefinition->StaminaCost
-		: ActiveWeaponDefinition->ComboSteps[StepIndex].StaminaCost;
-}
-
 FName UAIRECompanionMeleeAttackAbility::GetAttackStepMontageSection(const int32 StepIndex) const
 {
 	if (!IsAttackStepIndexValid(StepIndex)
@@ -337,33 +258,29 @@ bool UAIRECompanionMeleeAttackAbility::IsTargetInRange(
 	return EffectiveDistance <= AttackRange;
 }
 
-bool UAIRECompanionMeleeAttackAbility::IsTargetWithinAttackAngle(
+void UAIRECompanionMeleeAttackAbility::FaceTarget(
 	const AActor* TargetActor) const
 {
-	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	if (!IsValid(AvatarActor)
-		|| !IsValid(TargetActor)
-		|| !IsValid(ActiveWeaponDefinition))
+		|| !IsValid(TargetActor))
 	{
-		return false;
+		return;
 	}
 
-	const FVector TargetDirection =
-		(TargetActor->GetActorLocation() - AvatarActor->GetActorLocation()).GetSafeNormal2D();
+	FVector TargetDirection =
+		TargetActor->GetActorLocation() - AvatarActor->GetActorLocation();
+	TargetDirection.Z = 0.0f;
 	if (TargetDirection.IsNearlyZero())
 	{
-		return true;
+		return;
 	}
 
-	const FVector ForwardDirection =
-		AvatarActor->GetActorForwardVector().GetSafeNormal2D();
-	const float MinimumFacingDot = FMath::Cos(FMath::DegreesToRadians(
-		ActiveWeaponDefinition->AttackHalfAngleDegrees));
-	const float FacingDot = FVector::DotProduct(
-		ForwardDirection,
-		TargetDirection);
-	return FacingDot >= MinimumFacingDot
-		|| FMath::IsNearlyEqual(FacingDot, MinimumFacingDot);
+	AvatarActor->SetActorRotation(
+		FRotator(
+			0.0f,
+			TargetDirection.Rotation().Yaw,
+			0.0f));
 }
 
 bool UAIRECompanionMeleeAttackAbility::IsActiveExecutionValid() const
@@ -401,63 +318,6 @@ bool UAIRECompanionMeleeAttackAbility::IsActiveExecutionValid() const
 		&& ThreatComponent->GetSelectedThreatTarget() == GetEventTarget();
 }
 
-bool UAIRECompanionMeleeAttackAbility::CanPayAttackStepCost(const int32 StepIndex) const
-{
-	if (!IsAttackStepIndexValid(StepIndex))
-	{
-		return false;
-	}
-
-	if (UAbilitySystemGlobals::Get().ShouldIgnoreCosts())
-	{
-		return true;
-	}
-
-	const UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo();
-	const UAIRECompanionAttributeSet* Attributes = IsValid(AbilitySystem)
-		? AbilitySystem->GetSet<UAIRECompanionAttributeSet>()
-		: nullptr;
-	return IsValid(Attributes)
-		&& Attributes->GetStamina() >= GetAttackStepStaminaCost(StepIndex);
-}
-
-bool UAIRECompanionMeleeAttackAbility::ApplyAttackStepCost(const int32 StepIndex)
-{
-	if (!CanPayAttackStepCost(StepIndex))
-	{
-		return false;
-	}
-
-	if (UAbilitySystemGlobals::Get().ShouldIgnoreCosts()
-		|| GetAttackStepStaminaCost(StepIndex) <= 0.0f)
-	{
-		return true;
-	}
-
-	UAbilitySystemComponent* AbilitySystem = GetAbilitySystemComponentFromActorInfo();
-	if (!IsValid(AbilitySystem))
-	{
-		return false;
-	}
-
-	FGameplayEffectContextHandle EffectContext = AbilitySystem->MakeEffectContext();
-	EffectContext.AddSourceObject(ActiveWeaponDefinition);
-	FGameplayEffectSpecHandle CostSpec = AbilitySystem->MakeOutgoingSpec(
-		UAIRECompanionAttackCostGameplayEffect::StaticClass(),
-		1.0f,
-		EffectContext);
-	if (!CostSpec.IsValid())
-	{
-		return false;
-	}
-
-	CostSpec.Data->SetSetByCallerMagnitude(
-		AIRECompanionGameplayTags::DataAttackStaminaCost,
-		-GetAttackStepStaminaCost(StepIndex));
-	return AbilitySystem->ApplyGameplayEffectSpecToSelf(
-		*CostSpec.Data.Get()).WasSuccessfullyApplied();
-}
-
 bool UAIRECompanionMeleeAttackAbility::AreComboMontageSectionsValid(
 	const UAnimMontage* AttackMontage) const
 {
@@ -484,16 +344,124 @@ bool UAIRECompanionMeleeAttackAbility::TryStartNextStep()
 	if (!IsActiveExecutionValid()
 		|| !IsAttackStepIndexValid(NextStepIndex)
 		|| !IsTargetValidForAttack(TargetActor)
-		|| !IsTargetInRange(TargetActor)
-		|| !IsTargetWithinAttackAngle(TargetActor)
-		|| !ApplyAttackStepCost(NextStepIndex))
+		|| !IsTargetInRange(TargetActor))
 	{
 		return false;
 	}
 
+	FaceTarget(TargetActor);
 	CurrentStepIndex = NextStepIndex;
 	ResetCurrentStepState();
 	return true;
+}
+
+bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
+{
+	if (!IsActiveExecutionValid() || bSuspendedForCombatSkill)
+	{
+		return false;
+	}
+
+	UAnimMontage* AttackMontage =
+		ActiveWeaponDefinition->AttackMontage.Get();
+	if (!IsValid(AttackMontage)
+		|| !AreComboMontageSectionsValid(AttackMontage))
+	{
+		if (!ActiveWeaponDefinition->AttackMontage.IsNull())
+		{
+			UE_LOG(
+				LogAIRECompanionMeleeAttack,
+				Warning,
+				TEXT("Configured attack montage or combo sections are unavailable. Using the Basic Attack fallback. Weapon=%s"),
+				*GetNameSafe(ActiveWeaponDefinition));
+		}
+
+		bUsingFallback = true;
+		StartFallbackStep();
+		return !bIsEnding;
+	}
+
+	MontageTask =
+		UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+			this,
+			TEXT("CompanionBasicAttackMontage"),
+			AttackMontage,
+			1.0f,
+			GetAttackStepMontageSection(CurrentStepIndex),
+			true,
+			0.0f);
+	if (!IsValid(MontageTask))
+	{
+		FinishAbility(true);
+		return false;
+	}
+
+	MontageTask->OnCompleted.AddDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleMontageCompleted);
+	MontageTask->OnInterrupted.AddDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted);
+	MontageTask->OnCancelled.AddDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted);
+	MontageTask->ReadyForActivation();
+
+	if (!ActiveWeaponDefinition->ComboSteps.IsEmpty())
+	{
+		for (const FAIREWeaponComboStepDefinition& ComboStep
+			: ActiveWeaponDefinition->ComboSteps)
+		{
+			MontageSetNextSectionName(
+				ComboStep.MontageSection,
+				NAME_None);
+		}
+
+		if (CurrentStepIndex + 1 < GetAttackStepCount())
+		{
+			MontageSetNextSectionName(
+				GetAttackStepMontageSection(CurrentStepIndex),
+				GetAttackStepMontageSection(CurrentStepIndex + 1));
+		}
+	}
+
+	return true;
+}
+
+bool UAIRECompanionMeleeAttackAbility::ResumeAfterCombatSkill()
+{
+	AActor* TargetActor = GetEventTarget();
+	if (!IsAttackStepIndexValid(ResumeStepIndex)
+		|| !IsActiveExecutionValid()
+		|| !IsTargetValidForAttack(TargetActor))
+	{
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Verbose,
+			TEXT("Companion combo resume rejected by execution or target validation. ResumeStep=%d Target=%s"),
+			ResumeStepIndex,
+			*GetNameSafe(TargetActor));
+		return false;
+	}
+
+	if (!IsTargetInRange(TargetActor))
+	{
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Log,
+			TEXT("Companion combo resume rejected by range. ResumeStep=%d Target=%s AttackRange=%.2f"),
+			ResumeStepIndex,
+			*GetNameSafe(TargetActor),
+			AttackRange);
+		return false;
+	}
+
+	FaceTarget(TargetActor);
+	CurrentStepIndex = ResumeStepIndex;
+	ResumeStepIndex = INDEX_NONE;
+	ResetCurrentStepState();
+	bUsingFallback = false;
+	return StartAttackMontage();
 }
 
 bool UAIRECompanionMeleeAttackAbility::TryGetEventStepIndex(
@@ -523,8 +491,7 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 	AActor* TargetActor = GetEventTarget();
 	if (!IsActiveExecutionValid()
 		|| !IsTargetValidForAttack(TargetActor)
-		|| !IsTargetInRange(TargetActor)
-		|| !IsTargetWithinAttackAngle(TargetActor))
+		|| !IsTargetInRange(TargetActor))
 	{
 		return false;
 	}
@@ -617,6 +584,58 @@ void UAIRECompanionMeleeAttackAbility::StartComboWindowEventWait()
 		this,
 		&UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent);
 	ComboWindowEventTask->ReadyForActivation();
+}
+
+void UAIRECompanionMeleeAttackAbility::StartCombatSkillTransitionEventWait()
+{
+	CombatSkillTransitionEventTask =
+		UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+			this,
+			AIRECompanionGameplayTags::EventCombatSkillTransition,
+			nullptr,
+			false,
+			false);
+	if (!IsValid(CombatSkillTransitionEventTask))
+	{
+		FinishAbility(true);
+		return;
+	}
+
+	CombatSkillTransitionEventTask->EventReceived.AddDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleCombatSkillTransitionEvent);
+	CombatSkillTransitionEventTask->ReadyForActivation();
+}
+
+void UAIRECompanionMeleeAttackAbility::SetSkillCancelWindowTag(
+	const bool bEnabled)
+{
+	if (bSkillCancelWindowTagApplied == bEnabled)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* AbilitySystem =
+		GetAbilitySystemComponentFromActorInfo();
+	if (!IsValid(AbilitySystem))
+	{
+		bSkillCancelWindowTagApplied = false;
+		return;
+	}
+
+	if (bEnabled)
+	{
+		AbilitySystem->AddLooseGameplayTag(
+			AIRECompanionGameplayTags::
+				StateActionAttackingSkillCancelable);
+	}
+	else
+	{
+		AbilitySystem->RemoveLooseGameplayTag(
+			AIRECompanionGameplayTags::
+				StateActionAttackingSkillCancelable);
+	}
+	bSkillCancelWindowTagApplied = bEnabled;
 }
 
 void UAIRECompanionMeleeAttackAbility::StartFallbackStep()
@@ -728,6 +747,7 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 {
 	int32 PayloadStepIndex = INDEX_NONE;
 	if (bIsEnding
+		|| bSuspendedForCombatSkill
 		|| bCurrentStepHitConsumed
 		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
@@ -765,6 +785,7 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 		{
 			bComboWindowOpen = true;
 			bNextStepQueued = CurrentStepIndex + 1 < GetAttackStepCount();
+			SetSkillCancelWindowTag(bNextStepQueued);
 			UE_LOG(
 				LogAIRECompanionMeleeAttack,
 				Verbose,
@@ -783,6 +804,7 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 	}
 
 	bComboWindowOpen = false;
+	SetSkillCancelWindowTag(false);
 	const bool bShouldAdvance = bNextStepQueued;
 	bNextStepQueued = false;
 	if (!bShouldAdvance)
@@ -811,8 +833,79 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 	}
 }
 
+void UAIRECompanionMeleeAttackAbility::HandleCombatSkillTransitionEvent(
+	const FGameplayEventData Payload)
+{
+	if (bIsEnding || bUsingFallback)
+	{
+		return;
+	}
+
+	AActor* TargetActor = GetEventTarget();
+	if (IsValid(Payload.Target.Get())
+		&& Payload.Target.Get() != TargetActor)
+	{
+		return;
+	}
+
+	if (Payload.EventTag.MatchesTagExact(
+		AIRECompanionGameplayTags::EventCombatSkillStarted))
+	{
+		if (bSuspendedForCombatSkill
+			|| !bSkillCancelWindowTagApplied
+			|| !IsActiveExecutionValid())
+		{
+			return;
+		}
+
+		ResumeStepIndex = CurrentStepIndex + 1;
+		bSuspendedForCombatSkill = true;
+		bComboWindowOpen = false;
+		bNextStepQueued = false;
+		SetSkillCancelWindowTag(false);
+		MontageStop(0.05f);
+		MontageTask = nullptr;
+
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Log,
+			TEXT("Companion basic combo suspended for combat skill. CurrentStep=%d ResumeStep=%d"),
+			CurrentStepIndex,
+			ResumeStepIndex);
+		return;
+	}
+
+	if (!Payload.EventTag.MatchesTagExact(
+			AIRECompanionGameplayTags::EventCombatSkillEnded)
+		|| !bSuspendedForCombatSkill)
+	{
+		return;
+	}
+
+	bSuspendedForCombatSkill = false;
+	const bool bSkillCompleted =
+		FMath::IsNearlyEqual(Payload.EventMagnitude, 1.0f);
+	if (!bSkillCompleted || !ResumeAfterCombatSkill())
+	{
+		FinishAbility(!bSkillCompleted);
+		return;
+	}
+
+	UE_LOG(
+		LogAIRECompanionMeleeAttack,
+		Log,
+		TEXT("Companion basic combo resumed after combat skill. Step=%d Section=%s"),
+		CurrentStepIndex,
+		*GetAttackStepMontageSection(CurrentStepIndex).ToString());
+}
+
 void UAIRECompanionMeleeAttackAbility::HandleMontageCompleted()
 {
+	if (bSuspendedForCombatSkill)
+	{
+		return;
+	}
+
 	if (!bCurrentStepHitConsumed)
 	{
 		UE_LOG(
@@ -827,6 +920,11 @@ void UAIRECompanionMeleeAttackAbility::HandleMontageCompleted()
 
 void UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted()
 {
+	if (bSuspendedForCombatSkill)
+	{
+		return;
+	}
+
 	FinishAbility(true);
 }
 

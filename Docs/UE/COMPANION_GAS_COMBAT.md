@@ -9,7 +9,8 @@ PIE 검증 절차를 정의합니다.
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, 후속 `M03-E03-T05`
 - 코드 기준일: 2026-07-28
-- 현재 검증 상태: T05A 정상 4단 콤보 PIE 1차 수용, 실패·취소·fallback 경계 검증 대기
+- 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬의 UBT·Editor·PIE
+  정상·실패·취소·fallback·반복 검증 완료
 
 ## 2. 현재 코드 구조
 
@@ -48,8 +49,8 @@ UEProject/Source/AI_RE/LMK/MAKO/
 | StateTree | 행동 우선순위, Target 접근, 공격 요청과 취소 |
 | Threat Component | 적대 Target 감지·선택·소실 정리 |
 | Equipment Component | 현재 무기, 비동기 자산, Ability Handle과 Anim Layer 수명 |
-| Gameplay Ability | 공격 검증, 비용·쿨다운 Commit, Montage·Hit·Damage 실행 |
-| Gameplay Effect | Stamina 비용, Cooldown, Health 피해 |
+| Gameplay Ability | 공격 검증, Cooldown Commit, Montage·Hit·Damage 실행 |
+| Gameplay Effect | 공격별 Cooldown, Health 피해 |
 | AttributeSet | Health·MaxHealth·Stamina·MaxStamina |
 | Weapon Definition | 무기별 전투 수치, AbilitySet과 공격 표현 |
 | AbilitySet | 무기가 부여할 Ability 클래스와 Level |
@@ -67,15 +68,14 @@ Companion Character BeginPlay
 → Equipment가 Weapon Definition의 Soft Reference 비동기 로드
 → AbilitySet의 각 Ability로 FGameplayAbilitySpec 생성
 → Weapon Definition을 AbilitySpec SourceObject로 연결
-→ StaminaCost·CooldownDuration을 SetByCaller 값으로 등록
+→ Ability 역할에 맞는 CooldownDuration을 SetByCaller 값으로 등록
 → GiveAbility
 → StateTree가 Event.Companion.Attack.Request 전송
 → Primary Attack Ability 활성화
-→ Target·거리·각도·Stamina·Cooldown 검증
+→ Target·거리·Cooldown 검증 후 Target 방향 정렬
 → 기본 공격 Cooldown GE를 실행당 한 번 적용
-→ 현재 Combo Step의 Stamina Cost GE 적용
 → Montage Hit·Combo Window Notify 또는 시간 기반 fallback으로 Step Event 전송
-→ 다음 Step 직전 Target·거리·각도·Stamina 재검증
+→ 다음 Step 직전 Target·거리 재검증 후 Target 방향 재정렬
 → Damage GE를 Target ASC에 적용
 → Health가 0이면 State.Companion.Disabled.Dead 적용
 → Threat 해제, Ability 취소, Return/Follow 복귀
@@ -117,15 +117,15 @@ deprecated 프로퍼티로 남아 있지만 런타임에서는 사용하지 않�
 | `WeaponTag` | 표시 이름과 무관한 안정적인 무기 정체성 |
 | `AbilitySet` | 장착 시 부여할 Ability 목록 |
 | `AttackMontage` | Primary Attack 표현 |
-| `ComboSteps` | 선택적 Montage Section·Damage·Stamina Cost 순서; 빈 배열은 기존 단발 계약 |
+| `ComboSteps` | 선택적 Montage Section·Damage 순서; 빈 배열은 기존 단발 계약 |
 | `LinkedAnimLayerClass` | 무기별 Linked Anim Layer |
 | `Damage` | 기본 공격 피해 |
-| `StaminaCost` | 기본 공격 비용 |
+| `StaminaCost` | 기존 `.uasset` 호환용 deprecated 필드; 런타임에서 사용하지 않음 |
 | `AttackRange` | 충돌 반경을 제외한 유효 표면 거리 |
 | `CooldownDuration` | GAS Cooldown 지속 시간 |
-| `AttackHalfAngleDegrees` | 전방 기준 유효 공격 반각 |
 | `FallbackHitDelay` | Montage가 없을 때 Hit 발생 지연 |
 | `FallbackRecoveryDuration` | fallback 공격 종료 지연 |
+| `CombatSkill` | 선택적 스킬 활성화·Montage·Damage·Cooldown·Range·선택 확률·fallback 시간 |
 
 무기마다 별도 C++ Data Asset 클래스를 만들지 않습니다. 동일한
 `UAIRECompanionWeaponDefinitionDataAsset` 클래스의 자산 인스턴스로 차이를 표현합니다.
@@ -148,9 +148,8 @@ AbilitySet 항목은 `AbilityClass`와 `AbilityLevel`을 가집니다.
 - `UAIRECompanionGameplayAbility` 비파생 클래스 금지
 - 동일 Ability 클래스 중복 금지
 
-동일한 `Event.Companion.Attack.Request`를 Trigger로 사용하는 Primary Attack Ability는
-한 Weapon AbilitySet에 하나만 둡니다. 기본 공격과 콤보 Ability를 동시에 넣으면 같은
-Event에 둘 다 활성화를 시도할 수 있습니다.
+한 Weapon AbilitySet에는 기본 공격 역할 Ability와 전투 스킬 역할 Ability를 각각
+최대 하나만 둡니다. 두 Ability는 독립 Request Tag를 사용합니다.
 
 ## 5. 현재 기본 근접 공격
 
@@ -159,8 +158,8 @@ Event에 둘 다 활성화를 시도할 수 있습니다.
 - Disabled 상태 차단
 - Weapon Definition과 근접 무기 검증
 - 적대·생존 Target 검증
-- 공격 거리와 공격 각도 검증
-- Stamina Cost와 Cooldown Commit
+- 공격 거리 검증과 Target 방향 정렬
+- 실행당 Cooldown Commit, 공격 Stamina 무비용
 - Montage 재생 또는 fallback
 - Hit Event 한 번 소비
 - Damage GE 적용
@@ -189,7 +188,6 @@ StateTree Attack.Request 1회
 ```text
 MontageSection
 Damage
-StaminaCost
 ```
 
 Combo Window는 초 단위 Data Asset 값보다 Montage의 Anim Notify State로 정의합니다.
@@ -207,14 +205,13 @@ Step의 실행 조건을 다시 검증한 뒤 Ability의 현재 Step을 전환�
 AI Companion은 다음 조건을 만족할 때 다음 Step으로 자동 진행할 수 있습니다.
 
 - Target이 생존하고 적대 상태를 유지함
-- Target이 현재 공격 거리와 각도 안에 있음
-- 다음 Step 비용을 낼 Stamina가 있음
+- Target이 현재 공격 거리 안에 있음
 - StateTree 전투 상태가 여전히 유효함
 - 무기 교체·사망·전투 취소가 발생하지 않음
 
-Stamina Cost는 각 Step 시작 직전에 기존 Cost GE로 적용하고, 기본 공격 Cooldown은
-Combo 실행 시작 시 한 번만 적용합니다. 다음 Step 조건이 실패하면 아직 실행하지 않은
-Step의 비용은 소비하지 않고 현재 Ability를 안전하게 종료합니다.
+기본 공격은 Stamina를 검사하거나 차감하지 않습니다. 기본 공격 Cooldown은 Combo 실행
+시작 시 한 번만 적용합니다. 다음 Step의 Target 조건이 실패하면 현재 Ability를
+안전하게 종료합니다.
 
 Montage가 없거나 로드되지 않으면 기존 `FallbackHitDelay`와
 `FallbackRecoveryDuration`을 Step마다 재사용해 제한된 자동 Combo 수명주기를
@@ -223,17 +220,49 @@ Montage가 없거나 로드되지 않으면 기존 `FallbackHitDelay`와
 ### 6.1 Hit 판정과 후속 Trace 경계
 
 Anim Notify는 실제 명중을 확정하지 않고 Hit 판정을 시도할 타이밍만 전달합니다.
-현재 T05A는 선택된 Threat Target의 생존·적대성·거리·각도를 Ability에서 검증한 뒤
+현재 T05A는 선택된 Threat Target의 생존·적대성·거리를 Ability에서 검증한 뒤
 Damage GE를 적용합니다.
 
 실제 Weapon Mesh와 Blade Socket 계약이 추가되면 같은 Ability 내부 Hit 판정 경계를
 Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep으로 교체합니다. 이때도
-StateTree, Combo Step, 단계별 Cost·Damage와 실행당 Cooldown 계약은 유지하며,
+StateTree, Combo Step, 단계별 Damage와 실행당 Cooldown 계약은 유지하며,
 기본 공격은 현재 선택 Target 하나만 단계당 한 번 피해를 받도록 제한합니다.
 
 같은 Combo 실행 규칙을 사용하는 무기는 Combo Ability를 재사용하고 Weapon Definition의
 Montage Section과 Step 수치만 다르게 구성합니다. 두 번째 이상의 시스템에서 Combo Step
 구성을 공유해야 할 때만 별도 AttackSet Data Asset 추출을 검토합니다.
+
+### 6.2 전투 스킬 삽입 계약
+
+`UAIRECompanionCombatSkillAbility`는 기본 공격과 독립된 Request·Hit·Started·Ended와
+Cooldown Tag를 사용합니다. Weapon Definition의 `CombatSkill`은 활성화 여부, 선택적
+Montage, Damage, Cooldown, Range, SelectionChance와 fallback 시간만 소유하며
+Stamina 비용은 소유하지 않습니다.
+
+StateTree는 기본 공격 전, 각 Combo Window와 콤보 종료 후에 `SelectionChance`를 한 번만
+평가해 스킬 의도를 보냅니다. 비취소 구간에 선택된 의도는 하나만 버퍼링하고 가장 가까운
+Window에서 처리합니다. 스킬 활성화가 Cooldown·Target·상태 검증으로 실패하면 콤보 중에는
+현재 기본 공격을 유지하고, 기본 공격 전에는 기본 공격 Request로 fallback합니다.
+
+```text
+기본1 → 기본2 → 스킬 → 기본3 → 기본4
+기본1 → 스킬 → 기본2 → 기본3 → 기본4
+스킬 → 기본1 → 기본2 → 기본3 → 기본4
+기본1 → 기본2 → 기본3 → 기본4 → 스킬
+```
+
+스킬이 Commit에 성공한 뒤에만 `Skill Started`를 보내며, 기본 공격 Ability는 종료하지
+않고 다음 Step을 보존합니다. 스킬이 정상 종료해 `Skill Ended`를 보내면 보존한 Step부터
+같은 기본 공격 실행을 재개하므로 기본 공격 Cooldown을 다시 적용하지 않습니다.
+
+스킬 Hit는 실행당 최대 한 번만 기존 Damage GE로 적용합니다. Montage가 없으면 스킬
+전용 fallback Hit·Recovery Timer를 사용합니다. 취소·Unequip·Disabled·사망·Target
+파괴 시 두 Ability의 Montage Task, Event Task, Timer, Window Tag, 버퍼와 transient
+참조를 정리하고 늦은 Event를 무시합니다.
+
+지상 기본 공격과 전투 스킬은 Stamina를 소비하지 않습니다. Stamina는 후속 Task에서
+회피와 전투 중 달리기에 사용하며, 궁극기·공명 회로와 함께 이 문서의 현재 구현 범위에서
+제외합니다.
 
 ## 7. 신규 무기 추가
 
@@ -283,8 +312,10 @@ Montage Section과 Step 수치만 다르게 구성합니다. 두 번째 이상�
 AttackRange = 150 cm
 CooldownDuration = 1.5 s
 Damage = 25
-StaminaCost = 20
-AttackHalfAngleDegrees = 30
+CombatSkill.bEnabled = true
+CombatSkill.Damage = 45
+CombatSkill.CooldownDuration = 4 s
+CombatSkill.SelectionChance = 0.45
 ```
 
 다음 참조도 유지해야 합니다.
@@ -298,7 +329,8 @@ AttackHalfAngleDegrees = 30
 #### `DA_AIRE_AbilitySet_BasicMelee`
 
 - `UAIRECompanionMeleeAttackAbility`가 존재하는지 확인합니다.
-- 같은 `Attack.Request`를 받는 Primary Attack Ability가 두 개 이상 없는지 확인합니다.
+- `UAIRECompanionCombatSkillAbility`가 존재하는지 확인합니다.
+- 기본 공격 역할과 전투 스킬 역할 Ability가 각각 하나 이하인지 확인합니다.
 - Ability Level이 1 이상인지 확인합니다.
 
 #### `BP_MAKO`
@@ -332,8 +364,7 @@ StateTree를 Compile한 뒤 Save합니다.
 ### 8.3 기본 공격 콤보 설정
 
 1. `AttackMontage` 하나에 실행 순서대로 Montage Section을 만듭니다.
-2. Weapon Definition의 `ComboSteps`에 같은 순서로 Section 이름, Damage와
-   Stamina Cost를 입력합니다.
+2. Weapon Definition의 `ComboSteps`에 같은 순서로 Section 이름과 Damage를 입력합니다.
 3. 각 Section의 판정 프레임에 `AIRE Companion Attack Hit` Notify를 배치하고
    `ComboStepIndex`를 배열의 0-based Index와 맞춥니다.
 4. 다음 단계로 전환할 Section에는 `AIRE Companion Combo Window` Notify State를
@@ -344,8 +375,20 @@ StateTree를 Compile한 뒤 Save합니다.
    Compile·Save합니다.
 
 T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
-거리·각도를 Ability가 다시 검증해 피해를 적용하며, 실제 Weapon Socket Trace는
+거리를 Ability가 다시 검증해 피해를 적용하며, 실제 Weapon Socket Trace는
 Weapon Mesh 계약이 추가된 뒤 연결합니다.
+
+### 8.4 전투 스킬 설정
+
+1. Weapon Definition의 `CombatSkill.bEnabled`를 켜고 Damage 45, Cooldown 4초,
+   Range와 SelectionChance를 설정합니다.
+2. `DA_AIRE_AbilitySet_BasicMelee`에 `UAIRECompanionCombatSkillAbility`를 추가합니다.
+3. 스킬 Montage가 있으면 판정 프레임에 `AIRE Companion Combat Skill Hit` Notify를
+   한 번 배치합니다. Montage가 없으면 fallback 시간이 사용됩니다.
+4. 선택 경로를 고정해 검증할 때 SelectionChance를 1.0 또는 0.0으로 설정하고, 검증 후
+   승인값 0.45로 복원합니다.
+5. Weapon Definition, Ability Set, Montage, 관련 Anim Blueprint와 StateTree를
+   Compile·Save합니다.
 
 ## 9. 검증 체크리스트
 
@@ -374,15 +417,17 @@ AttackRange: 150 → 300 → 150
 CooldownDuration: 1.5 → 3.0 → 1.5
 ```
 
-### 9.3 Cost·Cooldown
+### 9.3 Stamina·Cooldown
 
-- [ ] 공격 1회마다 Stamina가 Weapon Definition의 `StaminaCost`만큼 감소한다.
-- [ ] Stamina가 비용보다 적으면 공격 Ability가 시작되지 않는다.
-- [ ] Cooldown 중 추가 공격이 시작되지 않는다.
+- [ ] 단일 기본 공격과 4단 Combo 전체에서 Stamina가 변하지 않는다.
+- [ ] 스킬 정상·실패·fallback 실행에서 Stamina가 변하지 않는다.
+- [ ] Stamina가 0이어도 Target·Cooldown 조건이 유효하면 기본 공격과 스킬이 시작된다.
+- [ ] 기본 공격 Cooldown 중 추가 기본 공격이 시작되지 않는다.
+- [ ] 스킬 Cooldown 중 추가 스킬이 시작되지 않는다.
 - [ ] Cooldown 종료 후 같은 Target을 다시 공격한다.
-- [ ] Cost·Cooldown 실패가 StateTree나 게임 스레드를 멈추지 않는다.
+- [ ] Cooldown 실패가 StateTree나 게임 스레드를 멈추지 않는다.
 
-Target이 먼저 사망해 비용 검증이 끝나지 않으면 테스트 Target의 Health를 임시로 높이거나
+Target이 먼저 사망해 검증이 끝나지 않으면 테스트 Target의 Health를 임시로 높이거나
 Target을 Reset한 뒤 반복합니다.
 
 ### 9.4 Hit·Damage
@@ -393,11 +438,11 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] 취소 후 늦게 도착한 Hit Event가 피해를 적용하지 않는다.
 - [ ] Target 사망 후 추가 피해가 적용되지 않는다.
 
-### 9.5 접근·각도·취소
+### 9.5 접근·방향·취소
 
 - [ ] `AttackRange` 밖에서는 Target에게 접근한다.
 - [ ] 유효 거리 안에 들어온 뒤 이동을 멈추고 공격한다.
-- [ ] 공격 반각 밖이면 Target 방향으로 회전한 뒤 공격한다.
+- [ ] 기본 공격·각 Combo Step·스킬 시작 시 선택 Target 방향을 바라본다.
 - [ ] 공격 중 Target이 거리 밖으로 이동하면 Ability와 이동 요청이 정리된다.
 - [ ] Target 파괴·EndPlay 시 Ability, Focus와 이동 요청이 정리된다.
 - [ ] Threat가 해제되면 ReturnToPlayer 또는 FollowPlayer로 복귀한다.
@@ -431,22 +476,34 @@ Target을 Reset한 뒤 반복합니다.
 ### 9.9 기본 공격 콤보
 
 - [ ] 빈 `ComboSteps`에서 기존 단발 Montage와 fallback이 유지된다.
-- [ ] 설정한 Section 순서와 Step별 Damage·Stamina Cost가 정확히 적용된다.
+- [ ] 설정한 Section 순서와 Step별 Damage가 정확히 적용되고 Stamina가 변하지 않는다.
 - [ ] 기본 공격 Cooldown은 전체 Combo 실행당 한 번만 적용된다.
 - [ ] 중복 Hit Notify는 같은 Step에 추가 피해를 만들지 않는다.
 - [ ] 이전 Step Index의 늦은 Hit·Window Event는 무시된다.
-- [ ] 다음 Step 직전 Stamina 부족, Target 소실·교체, 거리·각도 이탈 시 안전하게 종료된다.
+- [ ] Stamina가 0이어도 진행하고 다음 Step 직전 Target 소실·교체·거리 이탈 시 안전하게 종료된다.
 - [ ] State Exit·Unequip·Disabled·사망·Destroy 후 늦은 Event와 Timer가 실행을 되살리지 않는다.
-- [ ] Montage가 없는 Combo fallback이 Step별 비용·피해 후 종료되고 취소 시 Timer를 남기지 않는다.
+- [ ] Montage가 없는 Combo fallback이 Step별 피해 후 종료되고 취소 시 Timer를 남기지 않는다.
 
-2026-07-28 PIE 1차 수용 증거:
+2026-07-28 사용자 검증 증거:
 
 - `AM_Combo01_Montage`의 `Attack_01`~`Attack_04`가 0-based Step 0~3 순서로
   연속 재생되고 각 단계 Hit가 소비되는 정상 경로를 확인했습니다.
 - Section 종료 전 다음 Section을 미리 연결하는 방식으로 1타 반복과 Blend Out 끊김을
   해결했습니다.
-- 위 체크리스트 항목은 Damage·Stamina·Cooldown과 실패·취소·fallback을 함께 요구하므로
-  부분 확인만으로 완료 표시하지 않습니다.
+- T05B 회귀 시험에서 Damage·Stamina 불변·Cooldown과 실패·취소·fallback·반복
+  수명주기를 함께 확인했습니다.
+
+### 9.10 전투 스킬 연계
+
+- [ ] SelectionChance 1.0에서 기본1·2, 기본2·3, 기본3·4 사이에 스킬이 삽입된다.
+- [ ] 스킬 종료 후 정확한 다음 Combo Step부터 재개된다.
+- [ ] 기본 공격 전과 마지막 Step 종료 후에도 스킬이 실행된다.
+- [ ] 비취소 구간 요청은 가장 가까운 Window에서 한 번만 실행된다.
+- [ ] 같은 Window의 반복 Tick과 중복 Request가 스킬을 중복 실행하지 않는다.
+- [ ] 스킬 Cooldown·Target 무효·거리 실패 시 현재 Combo 유지 또는 기본 공격 fallback이 동작한다.
+- [ ] 스킬 Hit는 실행당 최대 한 번만 피해를 적용한다.
+- [ ] State Exit·Target 파괴·Unequip·Disabled·사망 후 늦은 Hit·Ended가 피해나 재개를 만들지 않는다.
+- [ ] Equip·Unequip과 정상·실패·취소를 3회 이상 반복해 Handle·Timer·Delegate가 누적되지 않는다.
 
 ## 10. 통과 기준과 후속 정리
 
@@ -454,7 +511,7 @@ Target을 Reset한 뒤 반복합니다.
 
 1. UBT 빌드와 관련 Blueprint·StateTree Compile 성공
 2. Weapon Definition의 Range·Cooldown 변경이 런타임에 반영
-3. Stamina Cost·GAS Cooldown·Damage GE 회귀 통과
+3. 공격 Stamina 불변·GAS Cooldown·Damage GE 회귀 통과
 4. 취소·사망·무기 교체·Target 소실 수명주기 통과
 5. Idle·Follow·Combat·Return 로컬 루프 회귀 통과
 
