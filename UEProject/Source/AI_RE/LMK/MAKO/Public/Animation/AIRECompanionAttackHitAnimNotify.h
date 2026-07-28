@@ -14,4 +14,8 @@ public:
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,
 		const FAnimNotifyEventReference& EventReference) override;
+
+	/** Zero-based index matching the Weapon Definition Combo Steps array. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0", UIMin = "0"))
+	int32 ComboStepIndex = 0;
 };

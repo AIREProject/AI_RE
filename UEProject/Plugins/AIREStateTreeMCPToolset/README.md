@@ -1,6 +1,6 @@
 # AIRE StateTree MCP Toolset
 
-Editor-only UE 5.8 MCP tools for project-owned StateTree and UMG assets.
+Editor-only UE 5.8 MCP tools for project-owned StateTree, UMG, and animation assets.
 
 ## Safety boundary
 
@@ -14,6 +14,8 @@ Editor-only UE 5.8 MCP tools for project-owned StateTree and UMG assets.
 - `AIREUMGMCPToolset` adds project-scoped slide/fade animation creation,
   inspection, explicit compilation, and saving.
 - UMG mutations reject assets outside `/Game/Work/LMK/`.
+- Combo montage mutations validate one indexed hit notify per section, add only
+  missing combo window states, and reject assets outside `/Game/Work/LMK/`.
 
 ## Workflow
 
@@ -33,3 +35,15 @@ Named state and node creation is retry-safe: a matching sibling state or a match
 3. Use `AIREUMGMCPToolset.CreateOrReplaceSlideFadeAnimation` for horizontal
    translation and opacity tracks.
 4. Inspect, compile, and save through explicit lifecycle calls.
+
+## Combo montage workflow
+
+1. Place one `AIRECompanionAttackHitAnimNotify` in each montage section and set
+   its zero-based combo step index.
+2. Use `InspectBasicAttackComboMontage` to verify marker, section, and notify layout.
+3. For a combined animation sequence, use
+   `ConfigureBasicAttackComboSectionsFromHits` to place named section boundaries
+   between chronological hit notifies and reindex those notifies.
+4. Use `ConfigureBasicAttackComboWindows` to add missing window states from each
+   hit notify to the padded end of its section.
+5. Inspect the result and save the montage with `AssetTools.save_assets`.

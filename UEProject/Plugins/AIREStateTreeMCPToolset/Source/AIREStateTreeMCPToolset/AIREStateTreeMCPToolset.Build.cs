@@ -12,6 +12,7 @@ public class AIREStateTreeMCPToolset : ModuleRules
 				"Core",
 				"CoreUObject",
 				"Engine",
+				"AI_RE",
 				"StateTreeModule",
 				"ToolsetRegistry"
 			}
@@ -21,6 +22,7 @@ public class AIREStateTreeMCPToolset : ModuleRules
 			new string[]
 			{
 				"BlueprintGraph",
+				"AnimationBlueprintLibrary",
 				"InputCore",
 				"MovieScene",
 				"MovieSceneTracks",

@@ -56,6 +56,57 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
+	TSet<FName> ComboMontageSections;
+	for (int32 StepIndex = 0; StepIndex < ComboSteps.Num(); ++StepIndex)
+	{
+		const FAIREWeaponComboStepDefinition& ComboStep = ComboSteps[StepIndex];
+		if (ComboStep.MontageSection.IsNone())
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"MissingComboMontageSection",
+					"Combo Step {0} must specify a Montage Section."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+
+		if (ComboMontageSections.Contains(ComboStep.MontageSection))
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"DuplicateComboMontageSection",
+					"Combo Step {0} uses duplicate Montage Section '{1}'."),
+				FText::AsNumber(StepIndex),
+				FText::FromName(ComboStep.MontageSection));
+			return false;
+		}
+		ComboMontageSections.Add(ComboStep.MontageSection);
+
+		if (!FMath::IsFinite(ComboStep.Damage) || ComboStep.Damage < 0.0f)
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboDamage",
+					"Combo Step {0} Damage must be finite and non-negative."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+
+		if (!FMath::IsFinite(ComboStep.StaminaCost) || ComboStep.StaminaCost < 0.0f)
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboStaminaCost",
+					"Combo Step {0} Stamina Cost must be finite and non-negative."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+	}
+
 	if (!FMath::IsFinite(AttackRange) || AttackRange < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT(
