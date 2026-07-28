@@ -9,7 +9,7 @@ PIE 검증 절차를 정의합니다.
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, 후속 `M03-E03-T05`
 - 코드 기준일: 2026-07-28
-- 현재 검증 상태: Codex 정적 검증 완료, 사용자 UBT·Editor·PIE 회귀 검증 대기
+- 현재 검증 상태: T05A 정상 4단 콤보 PIE 1차 수용, 실패·취소·fallback 경계 검증 대기
 
 ## 2. 현재 코드 구조
 
@@ -72,9 +72,10 @@ Companion Character BeginPlay
 → StateTree가 Event.Companion.Attack.Request 전송
 → Primary Attack Ability 활성화
 → Target·거리·각도·Stamina·Cooldown 검증
-→ CommitAbility
-→ Attack Cost GE와 Cooldown GE 적용
-→ Montage Notify 또는 시간 기반 fallback으로 Hit Event 전송
+→ 기본 공격 Cooldown GE를 실행당 한 번 적용
+→ 현재 Combo Step의 Stamina Cost GE 적용
+→ Montage Hit·Combo Window Notify 또는 시간 기반 fallback으로 Step Event 전송
+→ 다음 Step 직전 Target·거리·각도·Stamina 재검증
 → Damage GE를 Target ASC에 적용
 → Health가 0이면 State.Companion.Disabled.Dead 적용
 → Threat 해제, Ability 취소, Return/Follow 복귀
@@ -116,6 +117,7 @@ deprecated 프로퍼티로 남아 있지만 런타임에서는 사용하지 않�
 | `WeaponTag` | 표시 이름과 무관한 안정적인 무기 정체성 |
 | `AbilitySet` | 장착 시 부여할 Ability 목록 |
 | `AttackMontage` | Primary Attack 표현 |
+| `ComboSteps` | 선택적 Montage Section·Damage·Stamina Cost 순서; 빈 배열은 기존 단발 계약 |
 | `LinkedAnimLayerClass` | 무기별 Linked Anim Layer |
 | `Damage` | 기본 공격 피해 |
 | `StaminaCost` | 기본 공격 비용 |
@@ -166,7 +168,7 @@ Event에 둘 다 활성화를 시도할 수 있습니다.
 
 Equipment가 무기 해제·교체·사망 시 부여된 Ability Handle을 취소하고 회수합니다.
 
-## 6. 쌍검 콤보 확장
+## 6. 기본 공격 콤보
 
 콤보 단계는 StateTree가 아니라 하나의 Combo Ability가 소유합니다.
 
@@ -181,10 +183,8 @@ StateTree Attack.Request 1회
 → Ability 종료
 ```
 
-첫 구현은 별도 AttackSet 자산을 추가하지 않고 Weapon Definition 내부의
+별도 AttackSet 자산을 추가하지 않고 Weapon Definition 내부의
 `FAIREWeaponComboStepDefinition` 배열을 사용합니다.
-
-후보 필드:
 
 ```text
 MontageSection
@@ -194,6 +194,15 @@ StaminaCost
 
 Combo Window는 초 단위 Data Asset 값보다 Montage의 Anim Notify State로 정의합니다.
 Ability는 현재 Step, Hit 소비 여부, Combo Window와 다음 Step 예약 상태를 소유합니다.
+Hit Notify와 Combo Window Notify State는 Weapon Definition 배열과 일치하는 0-based
+`ComboStepIndex`를 Gameplay Event의 `EventMagnitude`로 전달합니다. Ability는 현재
+실행과 Step이 일치하지 않는 늦은 Event를 무시합니다.
+
+Montage Section이 끝나 Blend Out을 예약하기 전에 Ability는 현재 Section의
+`NextSection`을 다음 Combo Section으로 미리 연결합니다. Combo Window End에서 다음
+Step의 실행 조건을 다시 검증한 뒤 Ability의 현재 Step을 전환하고, 이어지는 Section의
+다음 연결을 준비합니다. 이 계약은 Section 종료 뒤 `MontageJumpToSection`을 호출해
+1타가 반복되거나 전환 모션이 끊기는 경로를 사용하지 않습니다.
 
 AI Companion은 다음 조건을 만족할 때 다음 Step으로 자동 진행할 수 있습니다.
 
@@ -203,8 +212,24 @@ AI Companion은 다음 조건을 만족할 때 다음 Step으로 자동 진행�
 - StateTree 전투 상태가 여전히 유효함
 - 무기 교체·사망·전투 취소가 발생하지 않음
 
-단계별 Stamina Cost를 권장합니다. Ability 시작 시 전체 Combo 비용을 선불로 차감하면
-첫 단계에서 취소돼도 Finisher 비용까지 소비됩니다.
+Stamina Cost는 각 Step 시작 직전에 기존 Cost GE로 적용하고, 기본 공격 Cooldown은
+Combo 실행 시작 시 한 번만 적용합니다. 다음 Step 조건이 실패하면 아직 실행하지 않은
+Step의 비용은 소비하지 않고 현재 Ability를 안전하게 종료합니다.
+
+Montage가 없거나 로드되지 않으면 기존 `FallbackHitDelay`와
+`FallbackRecoveryDuration`을 Step마다 재사용해 제한된 자동 Combo 수명주기를
+실행합니다. `ComboSteps`가 비어 있으면 기존 단발 Montage와 fallback이 유지됩니다.
+
+### 6.1 Hit 판정과 후속 Trace 경계
+
+Anim Notify는 실제 명중을 확정하지 않고 Hit 판정을 시도할 타이밍만 전달합니다.
+현재 T05A는 선택된 Threat Target의 생존·적대성·거리·각도를 Ability에서 검증한 뒤
+Damage GE를 적용합니다.
+
+실제 Weapon Mesh와 Blade Socket 계약이 추가되면 같은 Ability 내부 Hit 판정 경계를
+Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep으로 교체합니다. 이때도
+StateTree, Combo Step, 단계별 Cost·Damage와 실행당 Cooldown 계약은 유지하며,
+기본 공격은 현재 선택 Target 하나만 단계당 한 번 피해를 받도록 제한합니다.
 
 같은 Combo 실행 규칙을 사용하는 무기는 Combo Ability를 재사용하고 Weapon Definition의
 Montage Section과 Step 수치만 다르게 구성합니다. 두 번째 이상의 시스템에서 Combo Step
@@ -304,6 +329,24 @@ StateTree를 Compile한 뒤 Save합니다.
 - Base Anim Blueprint와 Linked Anim Layer 연결 방식
 - Combat Target fixture의 ASC 설정
 
+### 8.3 기본 공격 콤보 설정
+
+1. `AttackMontage` 하나에 실행 순서대로 Montage Section을 만듭니다.
+2. Weapon Definition의 `ComboSteps`에 같은 순서로 Section 이름, Damage와
+   Stamina Cost를 입력합니다.
+3. 각 Section의 판정 프레임에 `AIRE Companion Attack Hit` Notify를 배치하고
+   `ComboStepIndex`를 배열의 0-based Index와 맞춥니다.
+4. 다음 단계로 전환할 Section에는 `AIRE Companion Combo Window` Notify State를
+   배치하고 같은 `ComboStepIndex`를 입력합니다. Notify State의 End 위치가 실제 다음
+   Section으로 전환할 지점입니다.
+5. 마지막 Step에는 다음 단계가 없으므로 Combo Window가 필요하지 않습니다.
+6. Data Validation 후 Weapon Definition, Montage와 관련 Anim Blueprint를
+   Compile·Save합니다.
+
+T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
+거리·각도를 Ability가 다시 검증해 피해를 적용하며, 실제 Weapon Socket Trace는
+Weapon Mesh 계약이 추가된 뒤 연결합니다.
+
 ## 9. 검증 체크리스트
 
 ### 9.1 빌드·자산 기준선
@@ -384,6 +427,26 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] Target 종료 후 로컬 추적 루프로 복귀한다.
 - [ ] Work 또는 낮은 우선순위 행동이 Combat 종료 후 유효하면 재선택된다.
 - [ ] 네트워크 기능 실패가 StateTree·GAS 전투를 중단하지 않는다.
+
+### 9.9 기본 공격 콤보
+
+- [ ] 빈 `ComboSteps`에서 기존 단발 Montage와 fallback이 유지된다.
+- [ ] 설정한 Section 순서와 Step별 Damage·Stamina Cost가 정확히 적용된다.
+- [ ] 기본 공격 Cooldown은 전체 Combo 실행당 한 번만 적용된다.
+- [ ] 중복 Hit Notify는 같은 Step에 추가 피해를 만들지 않는다.
+- [ ] 이전 Step Index의 늦은 Hit·Window Event는 무시된다.
+- [ ] 다음 Step 직전 Stamina 부족, Target 소실·교체, 거리·각도 이탈 시 안전하게 종료된다.
+- [ ] State Exit·Unequip·Disabled·사망·Destroy 후 늦은 Event와 Timer가 실행을 되살리지 않는다.
+- [ ] Montage가 없는 Combo fallback이 Step별 비용·피해 후 종료되고 취소 시 Timer를 남기지 않는다.
+
+2026-07-28 PIE 1차 수용 증거:
+
+- `AM_Combo01_Montage`의 `Attack_01`~`Attack_04`가 0-based Step 0~3 순서로
+  연속 재생되고 각 단계 Hit가 소비되는 정상 경로를 확인했습니다.
+- Section 종료 전 다음 Section을 미리 연결하는 방식으로 1타 반복과 Blend Out 끊김을
+  해결했습니다.
+- 위 체크리스트 항목은 Damage·Stamina·Cooldown과 실패·취소·fallback을 함께 요구하므로
+  부분 확인만으로 완료 표시하지 않습니다.
 
 ## 10. 통과 기준과 후속 정리
 

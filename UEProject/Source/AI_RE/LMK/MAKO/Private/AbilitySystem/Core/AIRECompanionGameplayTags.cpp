@@ -4,7 +4,10 @@ namespace AIRECompanionGameplayTags
 {
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(AbilityCombatBasicAttack, "Ability.Companion.Combat.BasicAttack", "Companion basic melee attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackRequest, "Event.Companion.Attack.Request", "Requests an attack against the target in the gameplay event payload.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackHit, "Event.Companion.Attack.Hit", "Signals the hit frame for the active companion attack.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackHit, "Event.Companion.Attack.Hit", "Requests hit resolution at the active companion attack frame.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackComboWindow, "Event.Companion.Attack.ComboWindow", "Root tag for companion combo window events.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackComboWindowBegin, "Event.Companion.Attack.ComboWindow.Begin", "Opens the transition window for the active companion combo step.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(EventAttackComboWindowEnd, "Event.Companion.Attack.ComboWindow.End", "Closes the transition window for the active companion combo step.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateAction, "State.Companion.Action", "Companion is executing a GAS-owned action.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionAttacking, "State.Companion.Action.Attacking", "Companion attack ability is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateDisabled, "State.Companion.Disabled", "Companion cannot select normal behavior.");

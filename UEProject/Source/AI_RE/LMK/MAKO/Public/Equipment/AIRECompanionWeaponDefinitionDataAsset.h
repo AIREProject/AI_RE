@@ -9,6 +9,21 @@ class UAIRECompanionAbilitySetDataAsset;
 class UAnimInstance;
 class UAnimMontage;
 
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREWeaponComboStepDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
+	FName MontageSection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float Damage = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float StaminaCost = 20.0f;
+};
+
 UCLASS(BlueprintType)
 class AI_RE_API UAIRECompanionWeaponDefinitionDataAsset : public UDataAsset
 {
@@ -30,6 +45,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	TSoftObjectPtr<UAnimMontage> AttackMontage;
+
+	/**
+	 * Optional ordered combo steps. An empty array preserves the legacy single-attack
+	 * Damage, StaminaCost, and default Montage section contract.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Combo")
+	TArray<FAIREWeaponComboStepDefinition> ComboSteps;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TSoftClassPtr<UAnimInstance> LinkedAnimLayerClass;

@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0",
 	"FriendlyName": "AIRE StateTree MCP Toolset",
-	"Description": "Project-scoped MCP tools for StateTree, Companion test fixtures, and UMG animation editing.",
+	"Description": "Project-scoped MCP tools for StateTree, Companion test fixtures, UMG, and animation asset editing.",
 	"Category": "AI",
 	"CreatedBy": "AI_RE",
 	"EditorOnly": true,

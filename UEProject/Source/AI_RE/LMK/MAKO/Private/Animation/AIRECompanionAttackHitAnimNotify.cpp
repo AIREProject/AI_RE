@@ -19,6 +19,7 @@ void UAIRECompanionAttackHitAnimNotify::Notify(
 	FGameplayEventData HitEvent;
 	HitEvent.EventTag = AIRECompanionGameplayTags::EventAttackHit;
 	HitEvent.Instigator = MeshComp->GetOwner();
+	HitEvent.EventMagnitude = static_cast<float>(ComboStepIndex);
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
 		MeshComp->GetOwner(),
 		AIRECompanionGameplayTags::EventAttackHit,
