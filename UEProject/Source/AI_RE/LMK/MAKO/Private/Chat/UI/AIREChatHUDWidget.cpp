@@ -2,10 +2,14 @@
 
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Core/AIRECompanionCharacter.h"
+#include "Chat/UI/AIREChatLogWidget.h"
+#include "Chat/UI/AIREChatPanelWidget.h"
 #include "Chat/UI/AIREResponseStackWidget.h"
 #include "Blueprint/WidgetTree.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
 void UAIREChatHUDWidget::NativeConstruct()
@@ -16,6 +20,19 @@ void UAIREChatHUDWidget::NativeConstruct()
 		? Cast<UAIREResponseStackWidget>(
 			WidgetTree->FindWidget(TEXT("ResponseStack")))
 		: nullptr;
+	RuntimeChatPanel = WidgetTree
+		? Cast<UAIREChatPanelWidget>(
+			WidgetTree->FindWidget(TEXT("ChatPanelView")))
+		: nullptr;
+
+	if (IsValid(RuntimeResponseStack))
+	{
+		RuntimeResponseStack->ResetResponses();
+	}
+	if (IsValid(RuntimeChatPanel))
+	{
+		RuntimeChatPanel->InitializeChatPanel(this);
+	}
 
 	if (IsValid(RuntimeChatComponent))
 	{
@@ -73,8 +90,22 @@ void UAIREChatHUDWidget::InitializeChatRuntime(
 
 bool UAIREChatHUDWidget::SubmitPlayerMessage(const FString& UserMessage)
 {
-	return IsValid(RuntimeChatComponent)
-		&& RuntimeChatComponent->SendPlayerMessage(UserMessage);
+	const FString TrimmedMessage = UserMessage.TrimStartAndEnd();
+	if (TrimmedMessage.IsEmpty()
+		|| !IsValid(RuntimeChatComponent)
+		|| !RuntimeChatComponent->SendPlayerMessage(TrimmedMessage))
+	{
+		return false;
+	}
+
+	if (UAIREChatHistorySubsystem* History = GetChatHistory())
+	{
+		History->AddEntry(
+			EAIREChatMessageAuthor::Player,
+			TrimmedMessage);
+		RefreshChatHistoryViews();
+	}
+	return true;
 }
 
 TArray<FString> UAIREChatHUDWidget::GetVisibleResponseTexts() const
@@ -82,19 +113,105 @@ TArray<FString> UAIREChatHUDWidget::GetVisibleResponseTexts() const
 	return VisibleResponseTexts;
 }
 
+void UAIREChatHUDWidget::InitializeChatLogWidget(
+	UAIREChatLogWidget* InChatLogWidget)
+{
+	RuntimeChatLog = InChatLogWidget;
+	if (IsValid(RuntimeChatLog))
+	{
+		RuntimeChatLog->InitializeChatLog(this);
+		RefreshChatHistoryViews();
+	}
+}
+
+void UAIREChatHUDWidget::HandleGlobalEnterInput()
+{
+	if (IsValid(RuntimeChatLog) && RuntimeChatLog->IsChatLogOpen())
+	{
+		return;
+	}
+	if (IsValid(RuntimeChatPanel)
+		&& !RuntimeChatPanel->IsChatInputOpen())
+	{
+		OpenChatInput();
+	}
+}
+
+void UAIREChatHUDWidget::HandleGlobalLogInput()
+{
+	if (IsValid(RuntimeChatLog) && RuntimeChatLog->IsChatLogOpen())
+	{
+		CloseChatLog();
+	}
+	else
+	{
+		OpenChatLog();
+	}
+}
+
+void UAIREChatHUDWidget::HandlePlayerMessageCommitted(
+	const FString& UserMessage)
+{
+	const FString TrimmedMessage = UserMessage.TrimStartAndEnd();
+	if (TrimmedMessage.IsEmpty())
+	{
+		CloseChatInput();
+		return;
+	}
+
+	if (SubmitPlayerMessage(TrimmedMessage))
+	{
+		if (IsValid(RuntimeChatPanel))
+		{
+			RuntimeChatPanel->ClearMessageInput();
+		}
+		CloseChatInput();
+	}
+}
+
+void UAIREChatHUDWidget::CloseChatLog()
+{
+	if (IsValid(RuntimeChatLog))
+	{
+		RuntimeChatLog->SetChatLogOpen(false);
+	}
+	RestoreGameInputMode();
+}
+
+void UAIREChatHUDWidget::CloseAllChatUI()
+{
+	if (IsValid(RuntimeChatPanel))
+	{
+		RuntimeChatPanel->SetChatInputOpen(false);
+	}
+	if (IsValid(RuntimeChatLog))
+	{
+		RuntimeChatLog->SetChatLogOpen(false);
+	}
+	RestoreGameInputMode();
+}
+
 void UAIREChatHUDWidget::NativeDestruct()
 {
+	CloseAllChatUI();
 	UnbindChatComponent();
 	ClearResponseTimers();
 	VisibleResponses.Reset();
 	VisibleResponseTexts.Reset();
+	if (IsValid(RuntimeResponseStack))
+	{
+		RuntimeResponseStack->ResetResponses();
+	}
+	RuntimeChatPanel = nullptr;
+	RuntimeChatLog = nullptr;
 	RuntimeResponseStack = nullptr;
 	Super::NativeDestruct();
 }
 
 void UAIREChatHUDWidget::HandleRuntimeChatResponse(const FAIREChatResult& Result)
 {
-	if (Result.DisplayText.IsEmpty())
+	const FString DisplayText = Result.DisplayText.TrimStartAndEnd();
+	if (DisplayText.IsEmpty())
 	{
 		return;
 	}
@@ -105,9 +222,25 @@ void UAIREChatHUDWidget::HandleRuntimeChatResponse(const FAIREChatResult& Result
 		RemoveOldestResponse();
 	}
 
+	FAIREChatLogEntry LogEntry;
+	if (UAIREChatHistorySubsystem* History = GetChatHistory())
+	{
+		LogEntry = History->AddEntry(
+			EAIREChatMessageAuthor::Companion,
+			DisplayText);
+		RefreshChatHistoryViews();
+	}
+	else
+	{
+		LogEntry.Sequence = FDateTime::UtcNow().GetTicks();
+		LogEntry.Author = EAIREChatMessageAuthor::Companion;
+		LogEntry.Text = DisplayText;
+		LogEntry.Timestamp = FDateTime::Now();
+	}
+
 	FVisibleResponse& Response = VisibleResponses.AddDefaulted_GetRef();
-	Response.Id = NextResponseId++;
-	Response.Text = Result.DisplayText;
+	Response.Id = LogEntry.Sequence;
+	Response.Entry = LogEntry;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -122,6 +255,10 @@ void UAIREChatHUDWidget::HandleRuntimeChatResponse(const FAIREChatResult& Result
 			false);
 	}
 
+	if (IsValid(RuntimeResponseStack))
+	{
+		RuntimeResponseStack->AddResponse(Response.Entry);
+	}
 	RefreshVisibleResponseTexts();
 }
 
@@ -148,6 +285,10 @@ void UAIREChatHUDWidget::RemoveResponse(const int64 ResponseId)
 			VisibleResponses[ResponseIndex].ExpirationHandle);
 	}
 	VisibleResponses.RemoveAt(ResponseIndex);
+	if (IsValid(RuntimeResponseStack))
+	{
+		RuntimeResponseStack->DismissResponse(ResponseId);
+	}
 	RefreshVisibleResponseTexts();
 }
 
@@ -163,7 +304,13 @@ void UAIREChatHUDWidget::RemoveOldestResponse()
 		World->GetTimerManager().ClearTimer(
 			VisibleResponses[0].ExpirationHandle);
 	}
+	if (IsValid(RuntimeResponseStack))
+	{
+		RuntimeResponseStack->DismissResponse(
+			VisibleResponses[0].Id);
+	}
 	VisibleResponses.RemoveAt(0);
+	RefreshVisibleResponseTexts();
 }
 
 void UAIREChatHUDWidget::RefreshVisibleResponseTexts()
@@ -171,12 +318,128 @@ void UAIREChatHUDWidget::RefreshVisibleResponseTexts()
 	VisibleResponseTexts.Reset(VisibleResponses.Num());
 	for (const FVisibleResponse& Response : VisibleResponses)
 	{
-		VisibleResponseTexts.Add(Response.Text);
+		VisibleResponseTexts.Add(Response.Entry.Text);
 	}
-	if (IsValid(RuntimeResponseStack))
+}
+
+void UAIREChatHUDWidget::RefreshChatHistoryViews()
+{
+	UAIREChatHistorySubsystem* History = GetChatHistory();
+	if (!IsValid(History))
 	{
-		RuntimeResponseStack->ApplyRuntimeResponses(VisibleResponseTexts);
+		return;
 	}
+
+	const TArray<FAIREChatLogEntry>& Entries = History->GetEntries();
+	if (IsValid(RuntimeChatPanel))
+	{
+		RuntimeChatPanel->RefreshPlayerHistory(Entries);
+	}
+	if (IsValid(RuntimeChatLog))
+	{
+		RuntimeChatLog->RefreshEntries(Entries);
+	}
+}
+
+void UAIREChatHUDWidget::OpenChatInput()
+{
+	if (!IsValid(RuntimeChatPanel))
+	{
+		return;
+	}
+
+	if (IsValid(RuntimeChatLog))
+	{
+		RuntimeChatLog->SetChatLogOpen(false);
+	}
+	RefreshChatHistoryViews();
+	RuntimeChatPanel->SetChatInputOpen(true);
+	ApplyUIInputMode(RuntimeChatPanel->GetInputFocusTarget(), false);
+}
+
+void UAIREChatHUDWidget::CloseChatInput()
+{
+	if (IsValid(RuntimeChatPanel))
+	{
+		RuntimeChatPanel->SetChatInputOpen(false);
+	}
+	RestoreGameInputMode();
+}
+
+void UAIREChatHUDWidget::OpenChatLog()
+{
+	if (!IsValid(RuntimeChatLog))
+	{
+		return;
+	}
+
+	if (IsValid(RuntimeChatPanel))
+	{
+		RuntimeChatPanel->SetChatInputOpen(false);
+	}
+	RefreshChatHistoryViews();
+	RuntimeChatLog->SetChatLogOpen(true);
+	ApplyUIInputMode(RuntimeChatLog->GetLogFocusTarget(), true);
+}
+
+void UAIREChatHUDWidget::ApplyUIInputMode(
+	UWidget* FocusTarget,
+	const bool bShowMouseCursor)
+{
+	APlayerController* PlayerController = GetOwningPlayer();
+	if (!IsValid(PlayerController))
+	{
+		return;
+	}
+
+	if (!bOwnsInputSuppression)
+	{
+		PlayerController->SetIgnoreMoveInput(true);
+		PlayerController->SetIgnoreLookInput(true);
+		bOwnsInputSuppression = true;
+	}
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(
+		EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(!bShowMouseCursor);
+	if (IsValid(FocusTarget))
+	{
+		InputMode.SetWidgetToFocus(FocusTarget->TakeWidget());
+	}
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(bShowMouseCursor);
+}
+
+void UAIREChatHUDWidget::RestoreGameInputMode()
+{
+	APlayerController* PlayerController = GetOwningPlayer();
+	if (!IsValid(PlayerController))
+	{
+		bOwnsInputSuppression = false;
+		return;
+	}
+
+	if (bOwnsInputSuppression)
+	{
+		PlayerController->SetIgnoreMoveInput(false);
+		PlayerController->SetIgnoreLookInput(false);
+		bOwnsInputSuppression = false;
+	}
+
+	FInputModeGameOnly InputMode;
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(false);
+}
+
+UAIREChatHistorySubsystem* UAIREChatHUDWidget::GetChatHistory() const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance =
+		IsValid(World) ? World->GetGameInstance() : nullptr;
+	return IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREChatHistorySubsystem>()
+		: nullptr;
 }
 
 void UAIREChatHUDWidget::UnbindChatComponent()
