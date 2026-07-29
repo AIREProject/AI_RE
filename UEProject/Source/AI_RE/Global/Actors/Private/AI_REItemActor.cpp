@@ -26,11 +26,8 @@ void AAI_REItemActor::BeginPlay()
 
 void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 {
-	GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, TEXT("ItemActor Interact Called!"));
-
 	if (ItemAsset == nullptr)
 	{
-		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("ItemAsset is NULL! Did you assign it in Blueprint?"));
 		return;
 	}
 
@@ -38,15 +35,9 @@ void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 	{
 		if (UAI_REPlayerInventoryComponent* InvComp = PlayerChar->GetInventoryComponent())
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("Trying to add item: %s"), *ItemAsset->ItemId.ToString()));
 			if (InvComp->AddItem(ItemAsset->ItemId, ItemCount))
 			{
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("Item Added to Inventory!"));
 				Destroy();
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("AddItem Failed! Is inventory full or ItemId None?"));
 			}
 		}
 	}
