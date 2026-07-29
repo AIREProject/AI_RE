@@ -1,6 +1,13 @@
 # AI_RE Contracts
 
-This directory is the executable source of truth for data exchanged between the Backend, WebApp, Unreal Engine, and AIService.
+> **Status: Legacy reference**
+>
+> As of 2026-07-27, Backend implementation is sourced from the separate
+> `ai_companion_server/` repository and deployed at `https://api.mtvs2026.work`.
+> These schemas and fixtures are not authoritative until reconciled with both
+> `ai_companion_server/docs/current/` and the deployed `/openapi.json`.
+
+This directory preserves the previous data contract exchanged between the Backend, WebApp, Unreal Engine, and AIService.
 
 ## Layout
 

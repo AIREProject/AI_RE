@@ -1,5 +1,5 @@
 #include "AI_REPlayerBuildingPlacementComponent.h"
-#include "../../Global/Actors/Public/AI_REBuildingPieceActor.h"
+#include "AI_REBuildingPieceActor.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 

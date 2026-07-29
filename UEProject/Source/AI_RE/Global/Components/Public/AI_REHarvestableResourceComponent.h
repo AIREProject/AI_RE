@@ -10,7 +10,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(
 	AActor*, InstigatorActor,
 	float, DamageAmount,
 	float, CurrentHealth,
-	FName, RewardName,
+	class UAI_REItemDataAsset*, RewardItemAsset,
 	int32, RewardAmount);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAI_REHarvestDepletedSignature, AActor*, InstigatorActor);
@@ -43,7 +43,7 @@ public:
 	FGameplayTag GetRequiredWorkTag() const { return RequiredWorkTag; }
 
 	UFUNCTION(BlueprintPure, Category = "AI_RE|Harvest")
-	FName GetRewardName() const { return RewardName; }
+	UAI_REItemDataAsset* GetRewardItemAsset() const { return RewardItemAsset; }
 
 	UFUNCTION(BlueprintPure, Category = "AI_RE|Harvest")
 	int32 GetRewardAmount() const { return RewardAmount; }
@@ -51,7 +51,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AI_RE|Harvest")
 	float GetRewardDamageInterval() const { return RewardDamageInterval; }
 
-	void SetResourceDefaults(FGameplayTag InRequiredWorkTag, FName InRewardName, int32 InRewardAmount, float InRewardDamageInterval = 25.f);
+	void SetResourceDefaults(FGameplayTag InRequiredWorkTag, UAI_REItemDataAsset* InRewardItemAsset, int32 InRewardAmount, float InRewardDamageInterval = 25.f);
 
 	UPROPERTY(BlueprintAssignable, Category = "AI_RE|Harvest")
 	FAI_REHarvestedSignature OnHarvested;
@@ -82,7 +82,7 @@ protected:
 	FGameplayTag RequiredWorkTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI_RE|Harvest")
-	FName RewardName = NAME_None;
+	TObjectPtr<class UAI_REItemDataAsset> RewardItemAsset;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AI_RE|Harvest", meta = (ClampMin = "0"))
 	int32 RewardAmount = 1;

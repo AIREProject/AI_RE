@@ -1,6 +1,7 @@
 #include "AI_REHarvestableResourceComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "AI_REItemDataAsset.h"
 
 UAI_REHarvestableResourceComponent::UAI_REHarvestableResourceComponent()
 {
@@ -32,7 +33,7 @@ bool UAI_REHarvestableResourceComponent::ApplyHarvestDamage(float DamageAmount, 
 	const int32 GrantedRewardAmount = RewardMultiplier * RewardAmount;
 
 	GrantReward(InstigatorActor, RewardMultiplier);
-	OnHarvested.Broadcast(InstigatorActor, AppliedDamage, CurrentHealth, RewardName, GrantedRewardAmount);
+	OnHarvested.Broadcast(InstigatorActor, AppliedDamage, CurrentHealth, RewardItemAsset, GrantedRewardAmount);
 
 	UE_LOG(
 		LogTemp,
@@ -41,7 +42,7 @@ bool UAI_REHarvestableResourceComponent::ApplyHarvestDamage(float DamageAmount, 
 		*Owner->GetName(),
 		AppliedDamage,
 		CurrentHealth,
-		*RewardName.ToString(),
+		RewardItemAsset ? *RewardItemAsset->ItemId.ToString() : TEXT("None"),
 		GrantedRewardAmount);
 
 	if (CurrentHealth <= 0.0f)
@@ -54,12 +55,12 @@ bool UAI_REHarvestableResourceComponent::ApplyHarvestDamage(float DamageAmount, 
 
 void UAI_REHarvestableResourceComponent::SetResourceDefaults(
 	FGameplayTag InRequiredWorkTag,
-	FName InRewardName,
+	UAI_REItemDataAsset* InRewardItemAsset,
 	int32 InRewardAmount,
 	float InRewardDamageInterval)
 {
 	RequiredWorkTag = InRequiredWorkTag;
-	RewardName = InRewardName;
+	RewardItemAsset = InRewardItemAsset;
 	RewardAmount = FMath::Max(0, InRewardAmount);
 	RewardDamageInterval = FMath::Max(0.f, InRewardDamageInterval);
 }
@@ -112,7 +113,7 @@ void UAI_REHarvestableResourceComponent::BroadcastDepletedState()
 
 int32 UAI_REHarvestableResourceComponent::ConsumeRewardIntervals(float AppliedDamage)
 {
-	if (AppliedDamage <= 0.f || RewardAmount <= 0 || RewardName.IsNone())
+	if (AppliedDamage <= 0.f || RewardAmount <= 0 || !RewardItemAsset)
 	{
 		return 0;
 	}
@@ -135,7 +136,7 @@ int32 UAI_REHarvestableResourceComponent::ConsumeRewardIntervals(float AppliedDa
 void UAI_REHarvestableResourceComponent::GrantReward(AActor* InstigatorActor, int32 RewardMultiplier)
 {
 	const int32 GrantedRewardAmount = RewardMultiplier * RewardAmount;
-	if (!InstigatorActor || GrantedRewardAmount <= 0 || RewardName.IsNone())
+	if (!InstigatorActor || GrantedRewardAmount <= 0 || !RewardItemAsset)
 	{
 		return;
 	}
@@ -144,5 +145,5 @@ void UAI_REHarvestableResourceComponent::GrantReward(AActor* InstigatorActor, in
 	// In singleplayer AI_RE project, we will later link this to the Grid Inventory System.
 	// For now, we simply log the reward grant.
 	UE_LOG(LogTemp, Warning, TEXT("GrantReward (Singleplayer Stub): %s x%d granted to %s. Implement Inventory Link!"), 
-		*RewardName.ToString(), GrantedRewardAmount, *InstigatorActor->GetName());
+		*RewardItemAsset->ItemId.ToString(), GrantedRewardAmount, *InstigatorActor->GetName());
 }

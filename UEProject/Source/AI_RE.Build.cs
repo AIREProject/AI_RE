@@ -50,6 +50,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/Global/Components/Public",
 			"AI_RE/Global/Actors/Public",
 			"AI_RE/Global/Interfaces/Public",
+			"AI_RE/Global/Characters/Public",
 			"AI_RE/Global/Data",
 			"AI_RE/LMK/MAKO/Public",
 			"AI_RE/LMK/MAKO/Components/Public"
