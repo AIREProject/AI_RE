@@ -2,11 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "Chat/Contracts/AIREChatTypes.h"
+#include "Chat/UI/AIREChatHistorySubsystem.h"
 #include "Blueprint/UserWidget.h"
 #include "AIREChatHUDWidget.generated.h"
 
 class UAIRECompanionChatComponent;
+class UAIREChatLogWidget;
+class UAIREChatPanelWidget;
 class UAIREResponseStackWidget;
+class UWidget;
 
 UCLASS(Abstract, Blueprintable)
 class AI_RE_API UAIREChatHUDWidget : public UUserWidget
@@ -23,6 +27,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
 	TArray<FString> GetVisibleResponseTexts() const;
 
+	void InitializeChatLogWidget(UAIREChatLogWidget* InChatLogWidget);
+	void HandleGlobalEnterInput();
+	void HandleGlobalLogInput();
+	void HandlePlayerMessageCommitted(const FString& UserMessage);
+	void CloseChatLog();
+	void CloseAllChatUI();
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -37,7 +48,7 @@ private:
 	struct FVisibleResponse
 	{
 		int64 Id = 0;
-		FString Text;
+		FAIREChatLogEntry Entry;
 		FTimerHandle ExpirationHandle;
 	};
 
@@ -50,6 +61,13 @@ private:
 	void RemoveResponse(int64 ResponseId);
 	void RemoveOldestResponse();
 	void RefreshVisibleResponseTexts();
+	void RefreshChatHistoryViews();
+	void OpenChatInput();
+	void CloseChatInput();
+	void OpenChatLog();
+	void ApplyUIInputMode(UWidget* FocusTarget, bool bShowMouseCursor);
+	void RestoreGameInputMode();
+	UAIREChatHistorySubsystem* GetChatHistory() const;
 	void UnbindChatComponent();
 	void ClearResponseTimers();
 
@@ -62,6 +80,12 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAIREResponseStackWidget> RuntimeResponseStack;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREChatPanelWidget> RuntimeChatPanel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREChatLogWidget> RuntimeChatLog;
+
 	TArray<FVisibleResponse> VisibleResponses;
-	int64 NextResponseId = 1;
+	bool bOwnsInputSuppression = false;
 };

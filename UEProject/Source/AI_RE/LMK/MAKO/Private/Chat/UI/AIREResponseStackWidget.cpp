@@ -12,8 +12,8 @@ namespace
 		TEXT("/Game/Work/LMK/UI/Chat/WBP_AIREResponseCard.WBP_AIREResponseCard_C"));
 }
 
-void UAIREResponseStackWidget::ApplyRuntimeResponses(
-	const TArray<FString>& ResponseTexts)
+void UAIREResponseStackWidget::AddResponse(
+	const FAIREChatLogEntry& Entry)
 {
 	UVerticalBox* ResponseList = WidgetTree
 		? Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("ResponseList")))
@@ -30,23 +30,75 @@ void UAIREResponseStackWidget::ApplyRuntimeResponses(
 		return;
 	}
 
-	ResponseList->ClearChildren();
-	for (const FString& ResponseText : ResponseTexts)
+	if (ResponseCards.Contains(Entry.Sequence))
 	{
-		UAIREResponseCardWidget* ResponseCard =
-			CreateWidget<UAIREResponseCardWidget>(
-				GetOwningPlayer(),
-				ResponseCardClass);
-		if (!IsValid(ResponseCard))
-		{
-			continue;
-		}
+		return;
+	}
 
-		ResponseCard->SetRuntimeResponseText(ResponseText);
-		UVerticalBoxSlot* CardSlot = ResponseList->AddChildToVerticalBox(ResponseCard);
-		if (IsValid(CardSlot))
+	UAIREResponseCardWidget* ResponseCard =
+		CreateWidget<UAIREResponseCardWidget>(
+			GetOwningPlayer(),
+			ResponseCardClass);
+	if (!IsValid(ResponseCard))
+	{
+		return;
+	}
+
+	ResponseCard->InitializeResponse(Entry, this);
+	UVerticalBoxSlot* CardSlot =
+		ResponseList->AddChildToVerticalBox(ResponseCard);
+	if (IsValid(CardSlot))
+	{
+		CardSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+	}
+	ResponseCards.Add(Entry.Sequence, ResponseCard);
+	RefreshStackVisibility();
+}
+
+void UAIREResponseStackWidget::DismissResponse(
+	const int64 ResponseId)
+{
+	TObjectPtr<UAIREResponseCardWidget>* ResponseCard =
+		ResponseCards.Find(ResponseId);
+	if (!ResponseCard || !IsValid(*ResponseCard))
+	{
+		HandleCardDismissed(ResponseId);
+		return;
+	}
+
+	(*ResponseCard)->Dismiss();
+}
+
+void UAIREResponseStackWidget::ResetResponses()
+{
+	for (const TPair<int64, TObjectPtr<UAIREResponseCardWidget>>& Pair
+		: ResponseCards)
+	{
+		if (IsValid(Pair.Value))
 		{
-			CardSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+			Pair.Value->RemoveFromParent();
 		}
 	}
+	ResponseCards.Reset();
+	RefreshStackVisibility();
+}
+
+void UAIREResponseStackWidget::HandleCardDismissed(
+	const int64 ResponseId)
+{
+	TObjectPtr<UAIREResponseCardWidget> ResponseCard;
+	if (ResponseCards.RemoveAndCopyValue(ResponseId, ResponseCard)
+		&& IsValid(ResponseCard))
+	{
+		ResponseCard->RemoveFromParent();
+	}
+	RefreshStackVisibility();
+}
+
+void UAIREResponseStackWidget::RefreshStackVisibility()
+{
+	SetVisibility(
+		ResponseCards.IsEmpty()
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::HitTestInvisible);
 }
