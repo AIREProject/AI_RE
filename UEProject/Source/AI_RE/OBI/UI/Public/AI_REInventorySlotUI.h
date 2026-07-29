@@ -49,5 +49,5 @@ protected:
 	TObjectPtr<UTextBlock> HotkeyText;
 
 	UPROPERTY(meta=(BindWidgetOptional))
-	TObjectPtr<UImage> ItemIcon;
+	TObjectPtr<UImage> BackgroundIMG;
 };

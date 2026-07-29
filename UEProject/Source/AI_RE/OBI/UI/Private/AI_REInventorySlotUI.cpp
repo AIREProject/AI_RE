@@ -19,7 +19,7 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 	{
 		if (ItemNameText) ItemNameText->SetText(FText::GetEmpty());
 		if (ItemCountText) ItemCountText->SetText(FText::GetEmpty());
-		if (ItemIcon) ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+		if (BackgroundIMG) BackgroundIMG->SetVisibility(ESlateVisibility::Hidden);
 	}
 	else
 	{
@@ -36,17 +36,17 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 		if (DataAsset)
 		{
 			if (ItemNameText) ItemNameText->SetText(DataAsset->DisplayName);
-			if (ItemIcon) 
+			if (BackgroundIMG) 
 			{
-				ItemIcon->SetBrushFromTexture(DataAsset->ItemIcon);
-				ItemIcon->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+				BackgroundIMG->SetBrushFromTexture(DataAsset->ItemIcon);
+				BackgroundIMG->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			}
 		}
 		else
 		{
 			// DataAsset을 못 찾은 경우 임시 폴백
 			if (ItemNameText) ItemNameText->SetText(FText::FromName(InItemId));
-			if (ItemIcon) ItemIcon->SetVisibility(ESlateVisibility::Hidden);
+			if (BackgroundIMG) BackgroundIMG->SetVisibility(ESlateVisibility::Hidden);
 		}
 
 		if (ItemCountText) ItemCountText->SetText(FText::AsNumber(InCount));

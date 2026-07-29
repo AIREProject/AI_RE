@@ -3,6 +3,7 @@
 // Component 헤더 경로는 프로젝트 설정에 맞게 조정될 수 있습니다.
 #include "AI_REHarvestableResourceComponent.h" 
 #include "AI_REItemActor.h"
+#include "AI_REItemDataAsset.h"
 #include "Engine/World.h"
 
 AAI_REHarvestableResourceActor::AAI_REHarvestableResourceActor()
@@ -44,9 +45,9 @@ void AAI_REHarvestableResourceActor::HandleDepletedStateChanged(bool bNewIsDeple
 	ApplyDepletedVisualState(bNewIsDepleted);
 }
 
-void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, FName RewardName, int32 GrantedRewardAmount)
+void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount)
 {
-	if (GrantedRewardAmount > 0 && ItemActorClass)
+	if (GrantedRewardAmount > 0 && ItemActorClass && RewardItemAsset)
 	{
 		// 플레이어 약간 앞이나 주변에 스폰
 		FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
@@ -56,7 +57,7 @@ void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, fl
 
 		if (AAI_REItemActor* SpawnedItem = GetWorld()->SpawnActor<AAI_REItemActor>(ItemActorClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams))
 		{
-			SpawnedItem->ItemId = RewardName;
+			SpawnedItem->ItemAsset = RewardItemAsset;
 			SpawnedItem->ItemCount = GrantedRewardAmount;
 		}
 	}

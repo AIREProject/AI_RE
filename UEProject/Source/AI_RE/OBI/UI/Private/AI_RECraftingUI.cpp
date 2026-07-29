@@ -9,6 +9,7 @@
 #include "Components/TextBlock.h"
 #include "AI_REItemSubsystem.h"
 #include "AI_REItemDataAsset.h"
+#include "AI_REPlayerCraftingComponent.h"
 #include "Engine/Engine.h"
 
 void UAI_RECraftingUI::NativeConstruct()
@@ -46,7 +47,7 @@ void UAI_RECraftingUI::InitializeCrafting(UAI_REPlayerCraftingComponent* InCraft
 
 void UAI_RECraftingUI::PopulateRecipeList()
 {
-	if (!RecipeScrollBox || !CraftingComp || !RecipeRowClass)
+	if (!RecipeScrollBox || !CraftingComp || !RecipeRowClass || !CraftingComp->CraftingRecipeTable)
 	{
 		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("PopulateRecipeList Failed! Check BindWidgets or RecipeRowClass in BP."));
 		return;
@@ -56,11 +57,25 @@ void UAI_RECraftingUI::PopulateRecipeList()
 
 	TArray<FName> AvailableRecipes = CraftingComp->GetRecipesByWorkbench(CurrentFilterType);
 	
+	UAI_REItemSubsystem* ItemSubsystem = nullptr;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		ItemSubsystem = GI->GetSubsystem<UAI_REItemSubsystem>();
+	}
+
 	for (const FName& RecipeName : AvailableRecipes)
 	{
 		if (UAI_RECraftingRecipeRowUI* RowUI = CreateWidget<UAI_RECraftingRecipeRowUI>(this, RecipeRowClass))
 		{
-			RowUI->InitializeRow(RecipeName, this);
+			UAI_REItemDataAsset* ResultDA = nullptr;
+			FAI_RECraftingRecipe* RecipeData = CraftingComp->CraftingRecipeTable->FindRow<FAI_RECraftingRecipe>(RecipeName, TEXT("CraftingUI"));
+			
+			if (RecipeData && ItemSubsystem)
+			{
+				ResultDA = ItemSubsystem->GetItemDataAsset(RecipeData->ResultItemId);
+			}
+
+			RowUI->InitializeRow(RecipeName, RecipeData, ResultDA, this);
 			RecipeScrollBox->AddChild(RowUI);
 		}
 	}
@@ -77,11 +92,21 @@ void UAI_RECraftingUI::OnRecipeSelected(FName SelectedRecipeName)
 		{
 			if (UAI_REItemSubsystem* ItemSubsystem = GI->GetSubsystem<UAI_REItemSubsystem>())
 			{
-				if (UAI_REItemDataAsset* DA = ItemSubsystem->GetItemDataAsset(SelectedRecipeName))
+				if (CraftingComp && CraftingComp->CraftingRecipeTable)
 				{
-					if (DA->ItemIcon)
+					if (FAI_RECraftingRecipe* RecipeData = CraftingComp->CraftingRecipeTable->FindRow<FAI_RECraftingRecipe>(SelectedRecipeName, TEXT("CraftingUI")))
 					{
-						RecipeIMG->SetBrushFromTexture(DA->ItemIcon);
+						if (UAI_REItemDataAsset* DA = ItemSubsystem->GetItemDataAsset(RecipeData->ResultItemId))
+						{
+							if (DA->CraftingImage)
+							{
+								RecipeIMG->SetBrushFromTexture(DA->CraftingImage);
+							}
+							else if (DA->ItemIcon)
+							{
+								RecipeIMG->SetBrushFromTexture(DA->ItemIcon);
+							}
+						}
 					}
 				}
 			}

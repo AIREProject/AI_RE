@@ -42,6 +42,6 @@ private:
 	void HandleDepletedStateChanged(bool bNewIsDepleted);
 
 	UFUNCTION()
-	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, FName RewardName, int32 GrantedRewardAmount);
+	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount);
 
 };

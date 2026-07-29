@@ -23,6 +23,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crafting")
 	void SetInventoryComponent(UAI_REPlayerInventoryComponent* InInventory) { CachedInventory = InInventory; }
 
+	UFUNCTION(BlueprintPure, Category = "Crafting")
+	UAI_REPlayerInventoryComponent* GetInventoryComponent() const { return CachedInventory; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Crafting|Events")
 	FCraftingCompletedSignature OnCraftingCompletedEvent;
 
