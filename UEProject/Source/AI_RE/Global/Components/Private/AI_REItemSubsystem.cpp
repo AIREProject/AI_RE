@@ -47,8 +47,6 @@ void UAI_REItemSubsystem::LoadAllItemDataAssets()
 			}
 		}
 	}
-	
-	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Green, FString::Printf(TEXT("ItemSubsystem: Successfully loaded %d DataAssets!"), ItemCache.Num()));
 }
 
 UAI_REItemDataAsset* UAI_REItemSubsystem::GetItemDataAsset(FName ItemId) const
@@ -61,6 +59,5 @@ UAI_REItemDataAsset* UAI_REItemSubsystem::GetItemDataAsset(FName ItemId) const
 		return *FoundAsset;
 	}
 
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("ItemSubsystem: Could NOT find DataAsset for ItemId [%s]! Cache size: %d"), *ItemId.ToString(), ItemCache.Num()));
 	return nullptr;
 }
