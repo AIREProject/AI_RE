@@ -22,13 +22,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item|Data")
 	UAI_REItemDataAsset* GetItemDataAsset(FName ItemId) const;
 
-	/** Sets the DataTable used for looking up item data. Usually called early on or set via BP. */
 	UFUNCTION(BlueprintCallable, Category = "Item|Data")
-	void SetItemDataTable(UDataTable* InTable);
+	void LoadAllItemDataAssets();
 
 protected:
-	UPROPERTY(BlueprintReadOnly, Category = "Item|Data")
-	TObjectPtr<UDataTable> ItemDataTable;
 
 	// Optional: Cache for fast lookups if the table is large
 	TMap<FName, UAI_REItemDataAsset*> ItemCache;

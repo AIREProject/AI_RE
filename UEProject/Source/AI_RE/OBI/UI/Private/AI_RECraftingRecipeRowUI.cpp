@@ -4,8 +4,9 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
-#include "../../Global/Components/Public/AI_REItemSubsystem.h"
-#include "../../OBI/Component/Public/AI_REItemDataAsset.h"
+#include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "AI_REItemDataAsset.h"
 #include "AI_RECraftingUI.h"
 
 void UAI_RECraftingRecipeRowUI::NativeConstruct()
@@ -18,30 +19,33 @@ void UAI_RECraftingRecipeRowUI::NativeConstruct()
 	}
 }
 
-void UAI_RECraftingRecipeRowUI::InitializeRow(FName InRecipeName, UAI_RECraftingUI* InMainUI)
+void UAI_RECraftingRecipeRowUI::InitializeRow(FName InRecipeName, FAI_RECraftingRecipe* RecipeData, UAI_REItemDataAsset* ResultItemDA, UAI_RECraftingUI* InMainUI)
 {
 	RecipeName = InRecipeName;
 	MainUI = InMainUI;
 
 	if (RecipeNameText)
 	{
-		RecipeNameText->SetText(FText::FromName(RecipeName));
+		// Use DisplayName from DA if available, otherwise fallback to RecipeName
+		if (ResultItemDA && !ResultItemDA->DisplayName.IsEmpty())
+		{
+			RecipeNameText->SetText(ResultItemDA->DisplayName);
+		}
+		else
+		{
+			RecipeNameText->SetText(FText::FromName(RecipeName));
+		}
 	}
 
-	if (RecipeIMG)
+	if (RecipeIMG && ResultItemDA)
 	{
-		if (UGameInstance* GI = GetGameInstance())
+		if (ResultItemDA->CraftingImage)
 		{
-			if (UAI_REItemSubsystem* ItemSubsystem = GI->GetSubsystem<UAI_REItemSubsystem>())
-			{
-				if (UAI_REItemDataAsset* DA = ItemSubsystem->GetItemDataAsset(RecipeName))
-				{
-					if (DA->ItemIcon)
-					{
-						RecipeIMG->SetBrushFromTexture(DA->ItemIcon);
-					}
-				}
-			}
+			RecipeIMG->SetBrushFromTexture(ResultItemDA->CraftingImage);
+		}
+		else if (ResultItemDA->ItemIcon)
+		{
+			RecipeIMG->SetBrushFromTexture(ResultItemDA->ItemIcon);
 		}
 	}
 }

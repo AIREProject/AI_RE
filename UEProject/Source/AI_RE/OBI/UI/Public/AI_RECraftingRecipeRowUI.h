@@ -21,7 +21,7 @@ class AI_RE_API UAI_RECraftingRecipeRowUI : public UUserWidget
 public:
 	virtual void NativeConstruct() override;
 
-	void InitializeRow(FName InRecipeName, UAI_RECraftingUI* InMainUI);
+	void InitializeRow(FName InRecipeName, struct FAI_RECraftingRecipe* RecipeData, class UAI_REItemDataAsset* ResultItemDA, UAI_RECraftingUI* InMainUI);
 
 protected:
 	UPROPERTY(meta = (BindWidget))

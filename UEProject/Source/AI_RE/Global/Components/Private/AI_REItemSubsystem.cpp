@@ -1,39 +1,54 @@
 // Copyright MixUpProject. All Rights Reserved.
 
 #include "AI_REItemSubsystem.h"
-#include "Engine/DataTable.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 void UAI_REItemSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 	
-	// Normally you'd load the DataTable reference from Project Settings or an Asset Manager here.
-	// For now, it will be set by the GameMode or UI during initialization.
+	LoadAllItemDataAssets();
 }
 
-void UAI_REItemSubsystem::SetItemDataTable(UDataTable* InTable)
+void UAI_REItemSubsystem::LoadAllItemDataAssets()
 {
-	if (InTable)
+	ItemCache.Empty();
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+
+	if (AssetRegistry.IsLoadingAssets())
 	{
-		ItemDataTable = InTable;
-		
-		// Clear old cache
-		ItemCache.Empty();
-		
-		// Pre-cache all items for fast lookup O(1)
-		TArray<FAI_REItemDataMapping*> AllRows;
-		ItemDataTable->GetAllRows<FAI_REItemDataMapping>(TEXT("ItemSubsystem"), AllRows);
-		
-		TArray<FName> RowNames = ItemDataTable->GetRowNames();
-		for (int32 i = 0; i < AllRows.Num(); ++i)
+		AssetRegistry.SearchAllAssets(true);
+	}
+
+	FARFilter Filter;
+#if ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 1
+	Filter.ClassPaths.Add(UAI_REItemDataAsset::StaticClass()->GetClassPathName());
+#else
+	Filter.ClassNames.Add(UAI_REItemDataAsset::StaticClass()->GetFName());
+#endif
+	Filter.bRecursiveClasses = true;
+	Filter.bRecursivePaths = true;
+
+	TArray<FAssetData> AssetList;
+	AssetRegistry.GetAssets(Filter, AssetList);
+
+	for (const FAssetData& AssetData : AssetList)
+	{
+		if (UObject* LoadedAsset = AssetData.GetAsset())
 		{
-			if (AllRows[i] && AllRows[i]->ItemAsset)
+			if (UAI_REItemDataAsset* ItemDA = Cast<UAI_REItemDataAsset>(LoadedAsset))
 			{
-				// Cache by RowName (which is the ItemId)
-				ItemCache.Add(RowNames[i], AllRows[i]->ItemAsset);
+				if (!ItemDA->ItemId.IsNone())
+				{
+					ItemCache.Add(ItemDA->ItemId, ItemDA);
+				}
 			}
 		}
 	}
+	
+	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Green, FString::Printf(TEXT("ItemSubsystem: Successfully loaded %d DataAssets!"), ItemCache.Num()));
 }
 
 UAI_REItemDataAsset* UAI_REItemSubsystem::GetItemDataAsset(FName ItemId) const
@@ -46,5 +61,6 @@ UAI_REItemDataAsset* UAI_REItemSubsystem::GetItemDataAsset(FName ItemId) const
 		return *FoundAsset;
 	}
 
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, FString::Printf(TEXT("ItemSubsystem: Could NOT find DataAsset for ItemId [%s]! Cache size: %d"), *ItemId.ToString(), ItemCache.Num()));
 	return nullptr;
 }

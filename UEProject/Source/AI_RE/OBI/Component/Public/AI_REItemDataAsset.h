@@ -41,9 +41,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Data", meta = (ClampMin = "1"))
 	int32 MaxStackSize = 99;
 
-	// 2D Icon used in UI (Inventory, Crafting Menu, etc.)
+	// 2D Icon used in UI (Inventory, etc.)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
 	TObjectPtr<UTexture2D> ItemIcon;
+
+	// Larger or specific 2D image used in Crafting UI
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
+	TObjectPtr<UTexture2D> CraftingImage;
 
 	// 3D Mesh used when the item is dropped in the world
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")

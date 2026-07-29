@@ -17,7 +17,7 @@ public:
 	AAI_REItemActor();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
-	FName ItemId;
+	TObjectPtr<class UAI_REItemDataAsset> ItemAsset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	int32 ItemCount = 1;

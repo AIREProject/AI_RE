@@ -313,7 +313,7 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this); // 나 자신은 검사에서 제외
 
-	bool bHit = GetWorld()->SweepMultiByChannel(
+	GetWorld()->SweepMultiByChannel(
 		HitResults, 
 		Start, 
 		End, 
@@ -323,13 +323,19 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 		QueryParams
 	);
 
-	if (bHit)
+	if (HitResults.Num() > 0)
 	{
 		for (const FHitResult& Hit : HitResults)
 		{
 			AActor* HitActor = Hit.GetActor();
+			if (HitActor)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, FString::Printf(TEXT("Sweep Hit: %s"), *HitActor->GetName()));
+			}
+			
 			if (HitActor && HitActor->Implements<UAI_REInteractableInterface>())
 			{
+				GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Green, TEXT("Interactable Interface Found! Calling Interact..."));
 				IAI_REInteractableInterface::Execute_Interact(HitActor, this);
 				return; // 상호작용 성공 시 여기서 함수 종료
 			}
