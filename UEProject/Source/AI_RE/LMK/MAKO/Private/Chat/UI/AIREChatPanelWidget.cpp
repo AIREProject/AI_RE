@@ -11,7 +11,7 @@
 
 namespace
 {
-	const FSoftClassPath ChatLogEntryClassPath(
+	const FSoftClassPath CompactChatLogEntryClassPath(
 		TEXT("/Game/Work/LMK/UI/Chat/WBP_AIREChatLogEntry.WBP_AIREChatLogEntry_C"));
 	constexpr int32 MaxCompactHistoryEntries = 20;
 }
@@ -70,7 +70,7 @@ void UAIREChatPanelWidget::RefreshPlayerHistory(
 	}
 
 	UClass* EntryClass =
-		ChatLogEntryClassPath.TryLoadClass<UAIREChatLogEntryWidget>();
+		CompactChatLogEntryClassPath.TryLoadClass<UAIREChatLogEntryWidget>();
 	if (!IsValid(EntryClass))
 	{
 		return;

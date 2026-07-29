@@ -130,11 +130,18 @@ void UAIREChatHUDWidget::HandleGlobalEnterInput()
 	{
 		return;
 	}
-	if (IsValid(RuntimeChatPanel)
-		&& !RuntimeChatPanel->IsChatInputOpen())
+	if (!IsValid(RuntimeChatPanel))
 	{
-		OpenChatInput();
+		return;
 	}
+
+	if (RuntimeChatPanel->IsChatInputOpen())
+	{
+		CloseChatInput();
+		return;
+	}
+
+	OpenChatInput();
 }
 
 void UAIREChatHUDWidget::HandleGlobalLogInput()
@@ -159,14 +166,15 @@ void UAIREChatHUDWidget::HandlePlayerMessageCommitted(
 		return;
 	}
 
-	if (SubmitPlayerMessage(TrimmedMessage))
+	const bool bMessageSubmitted = SubmitPlayerMessage(TrimmedMessage);
+	if (bMessageSubmitted)
 	{
 		if (IsValid(RuntimeChatPanel))
 		{
 			RuntimeChatPanel->ClearMessageInput();
 		}
-		CloseChatInput();
 	}
+	CloseChatInput();
 }
 
 void UAIREChatHUDWidget::CloseChatLog()
