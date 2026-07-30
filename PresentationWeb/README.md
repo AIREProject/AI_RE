@@ -1,6 +1,17 @@
 # TRAIP AI : RE HTML Presentation
 
-`index.html`을 브라우저로 열면 바로 실행되는 정적 발표 페이지입니다.
+이 디렉터리가 발표 페이지의 유일한 원본입니다.
+
+`WebApp/public/presentation/`은 Vite가 개발·배포 시 사용하는 복사본이며 직접 수정하지 않습니다.
+WebApp의 `dev` 또는 `build` 스크립트를 실행하면 원본의 `index.html`, `styles.css`,
+`presentation.js`, `assets/`가 자동으로 동기화됩니다.
+
+수동 동기화가 필요할 때는 다음 명령을 사용합니다.
+
+```powershell
+cd ..\WebApp
+npm.cmd run presentation:sync
+```
 
 ## 조작
 
