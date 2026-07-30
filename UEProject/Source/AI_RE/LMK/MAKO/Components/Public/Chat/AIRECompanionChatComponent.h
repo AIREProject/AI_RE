@@ -17,49 +17,49 @@ class AI_RE_API UAIRECompanionChatComponent : public UActorComponent
 public:
 	UAIRECompanionChatComponent();
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	bool ConfigureInGameContext(const FAIREInGameChatContext& InContext);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	bool SendPlayerMessage(const FString& UserMessage);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	bool RetryLastRequest();
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	void CancelActiveRequest();
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	void Disconnect();
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat|Testing")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat|Testing")
 	void SetFakeScenario(EAIREChatFakeScenario InScenario);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat|Credentials")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat|Credentials")
 	bool ClearStoredGameClientCredential();
 
-	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	EAIREChatConnectionState GetConnectionState() const;
 
-	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	EAIREChatRequestState GetRequestState() const;
 
-	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
+	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	bool HasInGameContext() const;
 
-	UPROPERTY(BlueprintAssignable, Category = "AIRE|Companion|Chat")
+	UPROPERTY(BlueprintAssignable, Category = "AIRE|Chat")
 	FAIREChatConnectionStateChanged OnConnectionStateChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "AIRE|Companion|Chat")
+	UPROPERTY(BlueprintAssignable, Category = "AIRE|Chat")
 	FAIREChatRequestStateChanged OnRequestStateChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "AIRE|Companion|Chat")
+	UPROPERTY(BlueprintAssignable, Category = "AIRE|Chat")
 	FAIREChatResponseReceived OnResponseReceived;
 
-	UPROPERTY(BlueprintAssignable, Category = "AIRE|Companion|Chat")
+	UPROPERTY(BlueprintAssignable, Category = "AIRE|Chat")
 	FAIREChatRequestFailed OnRequestFailed;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat|Credentials")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Chat|Credentials")
 	TScriptInterface<IAIREGameClientTokenProvider> TokenProvider;
 
 protected:

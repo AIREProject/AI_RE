@@ -7,10 +7,11 @@
 PIE 검증 절차를 정의합니다.
 
 - 관련 Milestone: `M03 Companion Local AI`
-- 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, 후속 `M03-E03-T05`
-- 코드 기준일: 2026-07-28
-- 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬의 UBT·Editor·PIE
-  정상·실패·취소·fallback·반복 검증 완료
+- 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`
+- 코드 기준일: 2026-07-30
+- 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬 검증 완료.
+  T05C 인벤토리·무기 장착·소모품 회복 구현과 현재 자산으로 가능한 UBT·Editor·PIE
+  검증 완료, 실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
 
 ## 2. 현재 코드 구조
 
@@ -20,13 +21,18 @@ UEProject/Source/AI_RE/LMK/MAKO/
 │  ├─ Core/
 │  ├─ LocalAI/
 │  │  ├─ StateTree/
+│  │  ├─ Support/
 │  │  └─ Threat/
 │  ├─ AbilitySystem/
 │  │  ├─ Core/
 │  │  │  └─ Attributes/
-│  │  └─ Combat/
+│  │  ├─ Combat/
+│  │  │  ├─ Abilities/
+│  │  │  └─ Effects/
+│  │  └─ Support/
 │  │     ├─ Abilities/
 │  │     └─ Effects/
+│  ├─ Inventory/
 │  ├─ Equipment/
 │  ├─ Animation/
 │  └─ Testing/
@@ -35,9 +41,13 @@ UEProject/Source/AI_RE/LMK/MAKO/
 └─ Components/
    ├─ Public/
    │  ├─ Equipment/
+   │  ├─ Inventory/
+   │  ├─ Support/
    │  └─ Threat/
    └─ Private/
       ├─ Equipment/
+      ├─ Inventory/
+      ├─ Support/
       └─ Threat/
 ```
 
@@ -48,10 +58,13 @@ UEProject/Source/AI_RE/LMK/MAKO/
 | Companion Character | ASC·AttributeSet·기능 컴포넌트 조립과 생명주기 |
 | StateTree | 행동 우선순위, Target 접근, 공격 요청과 취소 |
 | Threat Component | 적대 Target 감지·선택·소실 정리 |
+| Inventory Component | MAKO 소지품 스택, 장착 무기 ItemId와 원자적 추가·소비 |
 | Equipment Component | 현재 무기, 비동기 자산, Ability Handle과 Anim Layer 수명 |
-| Gameplay Ability | 공격 검증, Cooldown Commit, Montage·Hit·Damage 실행 |
-| Gameplay Effect | 공격별 Cooldown, Health 피해 |
+| Support Component | 명시적 지원 요청, 회복 Target과 지원 AbilitySet 수명 |
+| Gameplay Ability | 공격·회복 검증, Cooldown Commit, Montage·Timer와 GE 실행 |
+| Gameplay Effect | 공격별 Cooldown, Health 피해와 회복 |
 | AttributeSet | Health·MaxHealth·Stamina·MaxStamina |
+| Companion Item Definition | Consumable 회복 데이터 또는 Weapon Definition 참조 |
 | Weapon Definition | 무기별 전투 수치, AbilitySet과 공격 표현 |
 | AbilitySet | 무기가 부여할 Ability 클래스와 Level |
 
@@ -264,6 +277,39 @@ Window에서 처리합니다. 스킬 활성화가 Cooldown·Target·상태 검�
 회피와 전투 중 달리기에 사용하며, 궁극기·공명 회로와 함께 이 문서의 현재 구현 범위에서
 제외합니다.
 
+### 6.3 MAKO 인벤토리·지원 회복 계약
+
+MAKO 인벤토리는 플레이어 인벤토리와 독립적이며 이번 범위에서는 `Consumable`과
+`Weapon`만 소유합니다. 무기 장착은 Item을 제거하지 않고
+`EquippedWeaponItemId`만 변경합니다. 존재하지 않거나 Weapon이 아닌 Item, 공격 중
+교체 요청은 거부합니다. 새 무기 로드 또는 AbilitySet 부여가 실패하면 이전 무기와
+Ability Handle을 복구하고 장착 ItemId를 유지합니다.
+
+회복은 마법이 아니라 MAKO가 자기 인벤토리의 응급 회복 앰플을 아군에게 사용하는
+행동입니다.
+
+```text
+RequestSupport(Target)
+→ 회복 대상 계약·ASC·앰플 보유 검증
+→ StateTree가 Support 거리까지 접근
+→ 회복 Ability가 처치 Timer 시작
+→ Target·아이템 재검증
+→ Healing GE Spec 준비
+→ Cooldown Commit
+→ 앰플 1개 소비
+→ min(회복량, MaxHealth - Health)만 GE로 적용
+→ 요청 완료
+```
+
+State Exit, Combat 선점, Target 파괴 또는 MAKO 사망으로 처치가 취소되면 Cooldown,
+소비와 회복이 발생하지 않습니다. GE 적용이 예상 밖으로 실패하면 소비한 Item을
+복구하고 실패를 기록합니다. 자동 Health 임계치 감지와 자동 소비는 이 Task에 포함하지
+않으며 `RequestSupport(Target)` 호출만 지원합니다.
+
+기존 `DefaultWeaponDefinition`은 초기 인벤토리가 없는 기존 자산만을 위한 deprecated
+fallback입니다. 신규 Companion Config는 초기 무기 Item과
+`DefaultEquippedWeaponItemId`를 사용합니다.
+
 ## 7. 신규 무기 추가
 
 ### 7.1 동일한 단발 근접 무기
@@ -390,6 +436,41 @@ Weapon Mesh 계약이 추가된 뒤 연결합니다.
 5. Weapon Definition, Ability Set, Montage, 관련 Anim Blueprint와 StateTree를
    Compile·Save합니다.
 
+### 8.5 인벤토리·지원 회복 설정
+
+다음 자산을 생성하고 저장합니다.
+
+1. `DA_AIRE_Item_BasicDualSword`
+   - Item Type: `Weapon`
+   - Max Stack: `1`
+   - Weapon Definition: 승인된 기본 쌍검 Weapon Definition
+2. `DA_AIRE_Item_EmergencyHealingAmpoule`
+   - Item Type: `Consumable`
+   - Healing Amount: `25`
+   - Treatment Duration: `0.5`
+   - Support Range: `200`
+   - Cooldown Duration: `5`
+3. `DA_AIRE_AbilitySet_Support`
+   - `UAIRECompanionUseHealingItemAbility` 하나만 등록
+4. Companion Config
+   - 초기 인벤토리: 응급 회복 앰플 3개, 기본 쌍검 1개
+   - 기본 장착 무기 ItemId: 기본 쌍검 ItemId
+   - 기본 회복 소모품 ItemId: 응급 회복 앰플 ItemId
+   - Support Ability Set: `DA_AIRE_AbilitySet_Support`
+
+`ST_AIRECompanion_Local`에는 Combat 다음, DirectCommand 이전 우선순위로 Support
+상태를 추가합니다. Evaluator의 Inventory Component, Support Component,
+Support Target과 `bIsSupportRequested`를 `Engage Support` Task에 Binding하고
+StateTree를 Compile·Save합니다. 전체 우선순위는 다음과 같습니다.
+
+```text
+Disabled > Survival > Combat > Support > DirectCommand
+> Work > Return/Follow > Idle
+```
+
+회복용 ASC Target fixture는 `Health=50`, `MaxHealth=100`, `bIsHostile=false`로
+설정합니다.
+
 ## 9. 검증 체크리스트
 
 ### 9.1 빌드·자산 기준선
@@ -505,6 +586,25 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] State Exit·Target 파괴·Unequip·Disabled·사망 후 늦은 Hit·Ended가 피해나 재개를 만들지 않는다.
 - [ ] Equip·Unequip과 정상·실패·취소를 3회 이상 반복해 Handle·Timer·Delegate가 누적되지 않는다.
 
+### 9.11 인벤토리·무기 교체·지원 회복
+
+- [x] 앰플 3개에서 회복 성공 후 2개가 남고 Health가 50에서 75로 증가한다.
+- [ ] Health 90에서 회복해도 100을 넘지 않고 앰플은 정확히 하나만 소비된다.
+- [x] Item 없음, 적대·사망·MaxHealth·ASC 없는 Target 요청이 즉시 거부된다.
+- [x] 처치 중 Combat·Target 파괴·MAKO 사망 시 Item과 Health가 변하지 않는다.
+- [ ] 처치 중 State Exit 시 Item과 Health가 변하지 않는다.
+- [ ] 비전투 중 두 Weapon Item을 교체하면 이전 Ability가 회수되고 새 Ability가 한 번만 부여된다.
+- [ ] 무기 로드 실패·잘못된 Item 타입·미보유 무기·공격 중 교체가 안전하게 거부된다.
+- [ ] 무기 장착 실패 뒤 이전 무기와 Ability Handle, 장착 ItemId가 복구된다.
+- [x] 사망 시 무기·지원 Ability Handle이 회수되고 부활 시 각각 한 번만 재부여된다.
+- [ ] 포션 성공·취소, 무기 교체, 사망·부활, Spawn·Destroy를 각각 3회 이상 반복해
+      Handle·Timer·Delegate·Item 수량이 누적되지 않는다.
+- [x] Backend 없이 Idle·Follow·Combat·Support·Return이 동작하고 Combat이 Support를 선점한다.
+
+> 2026-07-30 사용자 PIE 검증 기준입니다. 다중 무기 자산이 아직 없어 비전투 교체,
+> 공격 중 교체 거부와 장착 실패 복구는 실제 두 번째 무기를 추가할 때 검증합니다.
+> 실제 플레이어 ASC·GAS Health 연동 전까지 지원 회복은 ASC 아군 fixture 기준입니다.
+
 ## 10. 통과 기준과 후속 정리
 
 이번 구조 변경은 다음 조건이 모두 만족되어야 검증 완료로 간주합니다.
@@ -514,8 +614,14 @@ Target을 Reset한 뒤 반복합니다.
 3. 공격 Stamina 불변·GAS Cooldown·Damage GE 회귀 통과
 4. 취소·사망·무기 교체·Target 소실 수명주기 통과
 5. Idle·Follow·Combat·Return 로컬 루프 회귀 통과
+6. 인벤토리 원자성, 지원 취소 무소비, 과회복 방지와 무기 실패 복구 통과
 
 검증 후 별도 정리 Task에서 deprecated `CombatDistance`·`CombatCooldown` 프로퍼티와
 기존 StateTree Binding 호환 필드를 제거할 수 있습니다. 실제 적 연동 전에는 현재
 Damage GE가 `UAIRECompanionAttributeSet::Health`에 결합된 점을 해결하고 공용 Combat
 Attribute 또는 Target 피해 계약을 확정해야 합니다.
+
+T05C는 실제 플레이어가 ASC·GAS Health·회복 대상 인터페이스를 제공하고 사용자
+UBT·Editor·PIE 검증이 끝날 때까지 `Review`로 유지합니다. 인벤토리 UI, 퀵슬롯,
+플레이어와 MAKO 간 전달, 월드 획득, Drop, Crafting, SaveGame과 Replication은 후속
+범위입니다.

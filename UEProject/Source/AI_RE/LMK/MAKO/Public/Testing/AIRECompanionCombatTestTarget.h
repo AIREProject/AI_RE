@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "LocalAI/Support/AIREHealingTargetInterface.h"
 #include "GameFramework/Actor.h"
 #include "AIRECompanionCombatTestTarget.generated.h"
 
@@ -17,6 +18,7 @@ class AI_RE_API AAIRECompanionCombatTestTarget
 	: public AActor
 	, public IAbilitySystemInterface
 	, public IAIREThreatTargetInterface
+	, public IAIREHealingTargetInterface
 {
 	GENERATED_BODY()
 
@@ -26,6 +28,9 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	virtual bool IsHostileThreatFor_Implementation(const AActor* Observer) const override;
 	virtual bool IsAliveThreatTarget_Implementation() const override;
+	virtual FGameplayAttribute GetHealingHealthAttribute() const override;
+	virtual FGameplayAttribute GetHealingMaxHealthAttribute() const override;
+	virtual bool CanReceiveHealingFrom(const AActor* Healer) const override;
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Testing")
 	const UAIRECompanionAttributeSet* GetTestAttributeSet() const;
@@ -52,6 +57,9 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Testing", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", UIMin = "1.0"))
 	float InitialHealth = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Testing", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", UIMin = "1.0"))
+	float MaxHealth = 100.0f;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 };

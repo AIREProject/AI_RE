@@ -22,11 +22,30 @@
   const webappAddress = document.getElementById("webappAddress");
   const webappExternalLink = document.getElementById("webappExternalLink");
   const webappReload = document.getElementById("webappReload");
+  const webappExpand = document.getElementById("webappExpand");
+  const phonePresentation = document.querySelector(".phone-presentation");
+  const phoneActions = document.querySelector(".phone-actions");
+  const phoneModal = document.getElementById("phoneModal");
+  const phoneModalStage = document.getElementById("phoneModalStage");
+  const phoneModalClose = document.getElementById("phoneModalClose");
+  const webappPhone = document.getElementById("webappPhone");
+  const webappPhoneScreen = document.querySelector("#webappPhone .phone-screen");
 
   let currentIndex = 0;
   let touchStartX = null;
 
   const formatNumber = (value) => String(value).padStart(2, "0");
+
+  const fitWebappPhone = () => {
+    const designWidth = 420;
+    const designHeight = 844;
+    const scale = Math.min(
+      webappPhoneScreen.clientWidth / designWidth,
+      webappPhoneScreen.clientHeight / designHeight,
+    );
+
+    webappFrame.style.transform = `scale(${scale})`;
+  };
 
   const configureWebappEmbed = () => {
     const requestedUrl = new URLSearchParams(window.location.search).get("webapp");
@@ -57,6 +76,21 @@
     window.setTimeout(() => {
       webappFrame.src = currentSource;
     }, 50);
+  };
+
+  const setPhoneModalOpen = (open) => {
+    if (open) {
+      phoneModalStage.appendChild(webappPhone);
+    } else {
+      phonePresentation.insertBefore(webappPhone, phoneActions);
+    }
+
+    phoneModal.classList.toggle("is-open", open);
+    phoneModal.setAttribute("aria-hidden", String(!open));
+    window.requestAnimationFrame(() => {
+      fitWebappPhone();
+      (open ? phoneModalClose : webappExpand).focus({ preventScroll: true });
+    });
   };
 
   const setMenuOpen = (open) => {
@@ -120,6 +154,15 @@
   menuClose.addEventListener("click", () => setMenuOpen(false));
   menuScrim.addEventListener("click", () => setMenuOpen(false));
   webappReload.addEventListener("click", reloadWebapp);
+  webappExpand.addEventListener("click", () => setPhoneModalOpen(true));
+  phoneModalClose.addEventListener("click", () => setPhoneModalOpen(false));
+  phoneModal.addEventListener("click", (event) => {
+    if (event.target === phoneModal) {
+      setPhoneModalOpen(false);
+    }
+  });
+  webappFrame.addEventListener("load", fitWebappPhone);
+  window.addEventListener("resize", fitWebappPhone);
 
   window.addEventListener("storage", (event) => {
     if (event.key === "aire.web_device_credentials.v1") {
@@ -127,8 +170,23 @@
     }
   });
 
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(fitWebappPhone).observe(webappPhoneScreen);
+  }
+
   document.addEventListener("keydown", (event) => {
     const isMenuOpen = menu.classList.contains("is-open");
+    const isPhoneModalOpen = phoneModal.classList.contains("is-open");
+
+    if (event.key === "Escape" && isPhoneModalOpen) {
+      event.preventDefault();
+      setPhoneModalOpen(false);
+      return;
+    }
+
+    if (isPhoneModalOpen) {
+      return;
+    }
 
     if (event.key === "Escape" && isMenuOpen) {
       event.preventDefault();
@@ -182,5 +240,6 @@
   }, { passive: true });
 
   configureWebappEmbed();
+  fitWebappPhone();
   updateSlides();
 })();

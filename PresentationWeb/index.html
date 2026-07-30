@@ -62,32 +62,29 @@
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide" data-title="팀원 파트" aria-label="3. 팀원 파트 설명">
+    <section class="slide team-slide" data-title="팀원 파트" aria-label="3. 팀원 파트 설명">
       <div class="slide-accent"></div>
       <div class="slide-inner">
         <header class="slide-header">
           <span class="kicker">TEAM TRAIP</span>
-          <h2>네 개의 파트가 하나의<br>AI 동료 경험을 만듭니다</h2>
+          <h2>각자의 전문성이 모여<br>하나의 동료 경험을 만듭니다</h2>
         </header>
         <div class="team-grid">
-          <article>
+          <article class="team-card team-card--companion">
             <span class="team-no">01</span>
-            <div><strong>최창욱</strong><em>UNREAL · AI 동료</em></div>
+            <div class="team-identity"><em>UNREAL · AI 동료</em><strong>최창욱</strong></div>
             <p>추적, 위협 인식, 전투와 스킬</p>
+            <span class="team-handoff">TA SUPPORT</span>
           </article>
-          <article>
+          <article class="team-card team-card--player">
             <span class="team-no">02</span>
-            <div><strong>오병일</strong><em>UNREAL · PLAYER</em></div>
+            <div class="team-identity"><em>UNREAL · PLAYER</em><strong>오병일</strong></div>
             <p>플레이어 캐릭터와 생존 시스템</p>
+            <span class="team-handoff">TA SUPPORT</span>
           </article>
-          <article>
+          <article class="team-card team-card--ai">
             <span class="team-no">03</span>
-            <div><strong>김정효</strong><em>TECHNICAL ART</em></div>
-            <p>캐릭터 모델과 배경 모델</p>
-          </article>
-          <article>
-            <span class="team-no">04</span>
-            <div><strong>이승형</strong><em>AI · BACKEND</em></div>
+            <div class="team-identity"><em>AI · BACKEND</em><strong>이승형</strong></div>
             <p>LLM 동료 AI와 통신 구조</p>
           </article>
         </div>
@@ -127,11 +124,11 @@
         <div class="character-grid">
           <figure>
             <img src="./assets/player-design.png" alt="플레이어 캐릭터 정면, 후면, 측면 디자인">
-            <figcaption><strong>PLAYER</strong><span>탐색과 전투의 중심</span></figcaption>
+            <figcaption><strong>PLAYER</strong><span>기능성과 생존성</span></figcaption>
           </figure>
           <figure>
             <img src="./assets/mako-design.png" alt="MAKO 캐릭터 정면, 후면, 측면 디자인">
-            <figcaption><strong>MAKO</strong><span>AI COMPANION</span></figcaption>
+            <figcaption><strong>MAKO</strong><span>신비감과 친근함</span></figcaption>
           </figure>
         </div>
         <div class="art-pipeline">
@@ -317,24 +314,30 @@
             </article>
           </div>
         </div>
-        <div class="webapp-embed">
-          <div class="webapp-toolbar">
-            <span class="webapp-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <code id="webappAddress">localhost:5173</code>
-            <div class="webapp-actions">
-              <button id="webappReload" type="button">새로고침</button>
-              <a id="webappExternalLink" href="http://localhost:5173/" target="_blank" rel="noreferrer">새 창 ↗</a>
+        <div class="phone-presentation">
+          <div class="phone-device" id="webappPhone">
+            <span class="phone-side phone-side--volume" aria-hidden="true"></span>
+            <span class="phone-side phone-side--power" aria-hidden="true"></span>
+            <div class="phone-screen">
+              <span class="phone-island" aria-hidden="true"></span>
+              <iframe
+                id="webappFrame"
+                src="http://localhost:5173/"
+                title="AI RE 모바일 프론트 웹 애플리케이션"
+                loading="eager"
+                scrolling="no"
+                allow="clipboard-write"
+                referrerpolicy="no-referrer"
+              ></iframe>
+              <span class="phone-home" aria-hidden="true"></span>
             </div>
           </div>
-          <iframe
-            id="webappFrame"
-            src="http://localhost:5173/"
-            title="AI RE 모바일 프론트 웹 애플리케이션"
-            loading="eager"
-            allow="clipboard-write"
-            referrerpolicy="no-referrer"
-          ></iframe>
-          <span class="webapp-live">INTERACTIVE WEBAPP</span>
+          <div class="phone-actions">
+            <span id="webappAddress">localhost:5173</span>
+            <button id="webappExpand" type="button" aria-haspopup="dialog">크게 보기 ⤢</button>
+            <button id="webappReload" type="button">새로고침</button>
+            <a id="webappExternalLink" href="http://localhost:5173/" target="_blank" rel="noreferrer">새 창 ↗</a>
+          </div>
         </div>
       </div>
       <div class="slide-rule"></div>
@@ -389,6 +392,11 @@
     </div>
   </div>
   <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
+
+  <div class="phone-modal" id="phoneModal" role="dialog" aria-modal="true" aria-label="모바일 화면 크게 보기" aria-hidden="true">
+    <button class="phone-modal__close" id="phoneModalClose" type="button" aria-label="모바일 화면 닫기">닫기 ×</button>
+    <div class="phone-modal__stage" id="phoneModalStage"></div>
+  </div>
 
   <script src="./presentation.js"></script>
 </body>

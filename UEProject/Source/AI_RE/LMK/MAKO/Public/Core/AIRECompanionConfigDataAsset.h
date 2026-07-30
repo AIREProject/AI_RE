@@ -4,6 +4,21 @@
 #include "Engine/DataAsset.h"
 #include "AIRECompanionConfigDataAsset.generated.h"
 
+class UAIRECompanionAbilitySetDataAsset;
+class UAIRECompanionItemDefinitionDataAsset;
+
+USTRUCT(BlueprintType)
+struct FAIRECompanionInitialInventoryEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory")
+	TObjectPtr<UAIRECompanionItemDefinitionDataAsset> ItemDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1", UIMin = "1"))
+	int32 Count = 1;
+};
+
 UCLASS(BlueprintType)
 class AI_RE_API UAIRECompanionConfigDataAsset : public UDataAsset
 {
@@ -70,4 +85,19 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Attributes", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float MaxStamina = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory", meta = (ClampMin = "1", UIMin = "1"))
+	int32 MaxInventorySlots = 12;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory")
+	TArray<FAIRECompanionInitialInventoryEntry> InitialInventory;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory")
+	FName DefaultEquippedWeaponItemId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
+	FName DefaultHealingItemId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
+	TObjectPtr<UAIRECompanionAbilitySetDataAsset> SupportAbilitySet;
 };

@@ -20,6 +20,7 @@ bool UAIRECompanionAbilitySetDataAsset::IsAbilitySetValid(FText& OutValidationEr
 	TSet<TSubclassOf<UGameplayAbility>> UniqueAbilityClasses;
 	int32 BasicAttackCount = 0;
 	int32 CombatSkillCount = 0;
+	int32 SupportHealingCount = 0;
 	for (const FAIRECompanionAbilitySetEntry& Entry : Abilities)
 	{
 		if (!Entry.AbilityClass)
@@ -76,15 +77,22 @@ bool UAIRECompanionAbilitySetDataAsset::IsAbilitySetValid(FText& OutValidationEr
 					AIRECompanionGameplayTags::AbilityCombatSkill)
 				? 1
 				: 0;
+			SupportHealingCount += AbilityDefaultObject->GetAssetTags()
+				.HasTagExact(
+					AIRECompanionGameplayTags::AbilitySupportHealingItem)
+				? 1
+				: 0;
 		}
 	}
 
-	if (BasicAttackCount > 1 || CombatSkillCount > 1)
+	if (BasicAttackCount > 1
+		|| CombatSkillCount > 1
+		|| SupportHealingCount > 1)
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionAbilitySet",
 			"DuplicateCombatAbilityRole",
-			"An Ability Set must not grant more than one Basic Attack or Combat Skill role.");
+			"An Ability Set must not grant more than one Basic Attack, Combat Skill, or Support Healing role.");
 		return false;
 	}
 
