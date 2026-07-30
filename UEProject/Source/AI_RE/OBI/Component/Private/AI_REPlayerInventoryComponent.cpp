@@ -2,6 +2,12 @@
 
 #include "AI_REPlayerInventoryComponent.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "AI_REItemSubsystem.h"
+#include "../../OBI/Component/Public/AI_REItemDataAsset.h"
+#include "AI_REItemEffect.h"
+#include "../../Global/Characters/Public/AI_RECharacterBase.h"
+#include "Engine/Engine.h"
 
 UAI_REPlayerInventoryComponent::UAI_REPlayerInventoryComponent()
 {
@@ -86,55 +92,109 @@ bool UAI_REPlayerInventoryComponent::ConsumeItem(FName ItemId, int32 Count)
 	return true;
 }
 
+bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
+{
+	int32 Idx = FindStackIndexBySlot(SlotIndex);
+	if (Idx == INDEX_NONE || Items[Idx].Count <= 0 || Items[Idx].ItemId.IsNone())
+	{
+		return false;
+	}
+
+	bool bConsumed = false;
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			if (UAI_REItemSubsystem* Subsystem = GI->GetSubsystem<UAI_REItemSubsystem>())
+			{
+				if (UAI_REItemDataAsset* DA = Subsystem->GetItemDataAsset(Items[Idx].ItemId))
+				{
+					if (DA->ItemEffect)
+					{
+						AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+						if (OwnerChar && DA->ItemEffect->ApplyEffect(OwnerChar))
+						{
+							bConsumed = true;
+							GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Green, FString::Printf(TEXT("[Item Usage] %s 효과 적용 성공!"), *DA->DisplayName.ToString()));
+						}
+					}
+					else if (DA->ItemType == EAI_REItemType::Consumable)
+					{
+						// Default consumable behavior if no effect defined
+						bConsumed = true; 
+						GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("[Item Usage] %s 기본 소비 동작 (이펙트 없음)"), *DA->DisplayName.ToString()));
+					}
+					else
+					{
+						GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Item Usage] %s 은(는) 사용할 수 없는 아이템입니다."), *DA->DisplayName.ToString()));
+					}
+				}
+			}
+		}
+	}
+
+	if (bConsumed)
+	{
+		Items[Idx].Count--;
+		if (Items[Idx].Count <= 0)
+		{
+			Items.RemoveAtSwap(Idx);
+		}
+		OnInventoryChanged.Broadcast();
+		return true;
+	}
+
+	return false;
+}
 bool UAI_REPlayerInventoryComponent::MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex)
 {
 	if (FromSlotIndex == ToSlotIndex || !IsSlotIndexValid(FromSlotIndex) || !IsSlotIndexValid(ToSlotIndex))
 		return false;
 
-	FInventoryItemStack* FromStack = FindStackBySlot(FromSlotIndex);
-	if (!FromStack) return false;
+	int32 FromIdx = FindStackIndexBySlot(FromSlotIndex);
+	if (FromIdx == INDEX_NONE) return false;
 
-	FInventoryItemStack* ToStack = FindStackBySlot(ToSlotIndex);
-	if (!ToStack)
+	int32 ToIdx = FindStackIndexBySlot(ToSlotIndex);
+	if (ToIdx == INDEX_NONE)
 	{
-		FromStack->SlotIndex = ToSlotIndex;
+		Items[FromIdx].SlotIndex = ToSlotIndex;
 		OnInventoryChanged.Broadcast();
 		return true;
 	}
 
-	if (FromStack->ItemId == ToStack->ItemId)
+	if (Items[FromIdx].ItemId == Items[ToIdx].ItemId)
 	{
-		const int32 MaxStack = GetMaxStackForItem(FromStack->ItemId);
-		const int32 MoveCount = FMath::Min(FromStack->Count, MaxStack - ToStack->Count);
+		const int32 MaxStack = GetMaxStackForItem(Items[FromIdx].ItemId);
+		const int32 MoveCount = FMath::Min(Items[FromIdx].Count, MaxStack - Items[ToIdx].Count);
 		if (MoveCount > 0)
 		{
-			ToStack->Count += MoveCount;
-			FromStack->Count -= MoveCount;
-			if (FromStack->Count <= 0)
+			Items[ToIdx].Count += MoveCount;
+			Items[FromIdx].Count -= MoveCount;
+			if (Items[FromIdx].Count <= 0)
 			{
-				Items.RemoveAll([FromSlotIndex](const FInventoryItemStack& Stack) { return Stack.SlotIndex == FromSlotIndex; });
+				Items.RemoveAtSwap(FromIdx);
 			}
 			OnInventoryChanged.Broadcast();
 			return true;
 		}
 	}
 
-	Swap(FromStack->SlotIndex, ToStack->SlotIndex);
+	Swap(Items[FromIdx].SlotIndex, Items[ToIdx].SlotIndex);
 	OnInventoryChanged.Broadcast();
 	return true;
 }
 
 bool UAI_REPlayerInventoryComponent::DropItemFromSlot(int32 SlotIndex, int32 Count)
 {
-	FInventoryItemStack* Stack = FindStackBySlot(SlotIndex);
-	if (!Stack || Stack->ItemId.IsNone() || Stack->Count <= 0) return false;
+	int32 Idx = FindStackIndexBySlot(SlotIndex);
+	if (Idx == INDEX_NONE || Items[Idx].ItemId.IsNone() || Items[Idx].Count <= 0) return false;
 
-	const int32 RemoveCount = Count <= 0 ? Stack->Count : FMath::Min(Count, Stack->Count);
-	Stack->Count -= RemoveCount;
+	const int32 RemoveCount = Count <= 0 ? Items[Idx].Count : FMath::Min(Count, Items[Idx].Count);
+	Items[Idx].Count -= RemoveCount;
 	
-	if (Stack->Count <= 0)
+	if (Items[Idx].Count <= 0)
 	{
-		Items.RemoveAll([SlotIndex](const FInventoryItemStack& Candidate) { return Candidate.SlotIndex == SlotIndex; });
+		Items.RemoveAtSwap(Idx);
 	}
 
 	// TODO: Spawn physical item in the world.
@@ -172,22 +232,34 @@ bool UAI_REPlayerInventoryComponent::IsSlotIndexValid(int32 SlotIndex) const
 	return (SlotIndex >= 0 && SlotIndex < MaxSlots) || (SlotIndex >= 100 && SlotIndex < 110);
 }
 
-FInventoryItemStack* UAI_REPlayerInventoryComponent::FindStackBySlot(int32 SlotIndex)
+int32 UAI_REPlayerInventoryComponent::FindStackIndexBySlot(int32 SlotIndex) const
 {
-	return Items.FindByPredicate([SlotIndex](const FInventoryItemStack& Stack) { return Stack.SlotIndex == SlotIndex; });
+	return Items.IndexOfByPredicate([SlotIndex](const FInventoryItemStack& Stack) { return Stack.SlotIndex == SlotIndex; });
 }
 
 int32 UAI_REPlayerInventoryComponent::FindFirstEmptySlotIndex() const
 {
 	for (int32 i = 0; i < MaxSlots; ++i)
 	{
-		if (!const_cast<UAI_REPlayerInventoryComponent*>(this)->FindStackBySlot(i)) return i;
+		if (FindStackIndexBySlot(i) == INDEX_NONE) return i;
 	}
 	return INDEX_NONE;
 }
 
 int32 UAI_REPlayerInventoryComponent::GetMaxStackForItem(FName ItemId) const
 {
-	// Default max stack fallback. Hook up to DataAsset later.
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GI = World->GetGameInstance())
+		{
+			if (UAI_REItemSubsystem* Subsystem = GI->GetSubsystem<UAI_REItemSubsystem>())
+			{
+				if (UAI_REItemDataAsset* DA = Subsystem->GetItemDataAsset(ItemId))
+				{
+					return FMath::Max(1, DA->MaxStackSize);
+				}
+			}
+		}
+	}
 	return 99;
 }

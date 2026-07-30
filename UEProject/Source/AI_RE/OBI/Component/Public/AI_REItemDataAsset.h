@@ -10,6 +10,7 @@
 
 class UTexture2D;
 class UStaticMesh;
+class UAI_REItemEffect;
 
 /**
  * Base PrimaryDataAsset for all items in the game.
@@ -52,6 +53,10 @@ public:
 	// 3D Mesh used when the item is dropped in the world
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
 	TObjectPtr<UStaticMesh> WorldMesh;
+	
+	// The custom effect to apply when the item is used (e.g. Health Potion)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Instanced, Category = "Effects")
+	TObjectPtr<UAI_REItemEffect> ItemEffect;
 	
 	// Utility function to get the primary asset id for async loading if needed
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override

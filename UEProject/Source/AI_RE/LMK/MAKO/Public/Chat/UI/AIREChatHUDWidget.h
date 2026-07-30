@@ -26,6 +26,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
 	TArray<FString> GetVisibleResponseTexts() const;
+	void HandlePlayerMessageCommitted(const FString& String);
+	void CloseChatLog();
 
 	void InitializeChatLogWidget(UAIREChatLogWidget* InChatLogWidget);
 	void HandleGlobalEnterInput();

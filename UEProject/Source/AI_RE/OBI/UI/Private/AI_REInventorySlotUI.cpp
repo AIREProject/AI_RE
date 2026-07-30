@@ -19,7 +19,13 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 	{
 		if (ItemNameText) ItemNameText->SetText(FText::GetEmpty());
 		if (ItemCountText) ItemCountText->SetText(FText::GetEmpty());
-		if (BackgroundIMG) BackgroundIMG->SetVisibility(ESlateVisibility::Hidden);
+		if (BackgroundIMG) 
+		{
+			// 빈 슬롯일 때는 숨기지 않고, 텍스처를 비운 뒤 반투명한 어두운 색으로 배경 유지
+			BackgroundIMG->SetBrushFromTexture(nullptr);
+			BackgroundIMG->SetColorAndOpacity(FLinearColor(0.1f, 0.1f, 0.1f, 0.6f));
+			BackgroundIMG->SetVisibility(ESlateVisibility::Visible);
+		}
 	}
 	else
 	{
@@ -39,6 +45,7 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 			if (BackgroundIMG) 
 			{
 				BackgroundIMG->SetBrushFromTexture(DataAsset->ItemIcon);
+				BackgroundIMG->SetColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, 1.0f)); // 원래 색상 복구
 				BackgroundIMG->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			}
 		}
@@ -46,7 +53,12 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 		{
 			// DataAsset을 못 찾은 경우 임시 폴백
 			if (ItemNameText) ItemNameText->SetText(FText::FromName(InItemId));
-			if (BackgroundIMG) BackgroundIMG->SetVisibility(ESlateVisibility::Hidden);
+			if (BackgroundIMG) 
+			{
+				BackgroundIMG->SetBrushFromTexture(nullptr);
+				BackgroundIMG->SetColorAndOpacity(FLinearColor(1.0f, 0.0f, 0.0f, 0.5f)); // 에러: 빨간색
+				BackgroundIMG->SetVisibility(ESlateVisibility::Visible);
+			}
 		}
 
 		if (ItemCountText) ItemCountText->SetText(FText::AsNumber(InCount));
@@ -58,6 +70,15 @@ FReply UAI_REInventorySlotUI::NativeOnMouseButtonDown(const FGeometry& InGeometr
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
 	{
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+	}
+	
+	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
+	{
+		if (InventoryComp)
+		{
+			InventoryComp->UseItem(SlotIndex);
+			return FReply::Handled();
+		}
 	}
 	
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);

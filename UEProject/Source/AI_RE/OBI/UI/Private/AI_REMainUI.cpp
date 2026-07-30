@@ -15,16 +15,13 @@ void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 {
 	if (InStatus == nullptr) return; 
 	
-	InStatus -> OnHPChanged.AddDynamic(this, &UAI_REMainUI::UpdateHPBar);
-	InStatus -> OnSPChanged.AddDynamic(this, &UAI_REMainUI::UpdateSPBar);
-	InStatus -> OnHungerChanged.AddDynamic(this, &UAI_REMainUI::UpdateHungerBar);
-	InStatus -> OnThirstyChanged.AddDynamic(this, &UAI_REMainUI::UpdateThirstyBar);
+	InStatus -> OnHPChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateHPBar);
+	InStatus -> OnSPChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateSPBar);
+	InStatus -> OnHungerChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateHungerBar);
+	InStatus -> OnThirstyChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateThirstyBar);
 	
-	// 초기화 시점에는 애니메이션 없이 즉시 값을 세팅 (InitializeHUD 방식)
-	if (HPBar && InStatus->MaxHP > 0.f) HPBar->SetPercentInstantly(InStatus->CurrentHP / InStatus->MaxHP);
-	if (SPBar && InStatus->MaxSP > 0.f) SPBar->SetPercentInstantly(InStatus->CurrentSP / InStatus->MaxSP);
-	if (HungerBar && InStatus->MaxHunger > 0.f) HungerBar->SetPercentInstantly(InStatus->CurrentHunger / InStatus->MaxHunger);
-	if (ThirstyBar && InStatus->MaxThirsty > 0.f) ThirstyBar->SetPercentInstantly(InStatus->CurrentThirsty / InStatus->MaxThirsty);
+	// 모든 델리게이트 바인딩이 끝난 후 한 번에 스탯을 뿌려 UI를 초기화합니다.
+	InStatus->BroadcastCurrentStats();
 
 	if (QuickSlotGrid && SlotWidgetClass)
 	{
@@ -33,7 +30,7 @@ void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 		{
 			UAI_REPlayerInventoryComponent* InvComp = PlayerChar->GetInventoryComponent();
 			InventoryComp = InvComp;
-			InvComp->OnInventoryChanged.AddDynamic(this, &UAI_REMainUI::RefreshQuickSlots);
+			InvComp->OnInventoryChanged.AddUniqueDynamic(this, &UAI_REMainUI::RefreshQuickSlots);
 			
 			QuickSlotGrid->ClearChildren();
 			QuickSlotWidgets.Empty();

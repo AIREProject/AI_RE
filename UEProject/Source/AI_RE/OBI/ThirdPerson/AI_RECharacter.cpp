@@ -96,6 +96,15 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		{
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoInteract);
 		}
+
+		// QuickSlots (1~0 키 바인딩)
+		for (int32 i = 0; i < QuickSlotActions.Num(); ++i)
+		{
+			if (QuickSlotActions[i])
+			{
+				EnhancedInputComponent->BindAction(QuickSlotActions[i], ETriggerEvent::Started, this, &AAI_RECharacter::UseQuickSlot, i);
+			}
+		}
 	}
 	else
 	{
@@ -179,6 +188,23 @@ void AAI_RECharacter::StopSprint()
 {
 	GetCharacterMovement() -> MaxWalkSpeed = 500.f;
 	bIsSprint = false;
+}
+
+void AAI_RECharacter::UseQuickSlot(int32 SlotIndex)
+{
+	if (InventoryComponent)
+	{
+		// Quick slots are typically indexed starting from 100 in our component
+		// Assuming SlotIndex passed from BP is 0, 1, 2, 3...
+		// We map them to 100, 101, 102, 103...
+		int32 MappedSlotIndex = SlotIndex >= 100 ? SlotIndex : 100 + SlotIndex;
+		bool bSuccess = InventoryComponent->UseItem(MappedSlotIndex);
+		
+		if (!bSuccess)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Yellow, FString::Printf(TEXT("Quick Slot %d is empty or cannot be used!"), MappedSlotIndex));
+		}
+	}
 }
 
 void AAI_RECharacter::ToggleInventory()

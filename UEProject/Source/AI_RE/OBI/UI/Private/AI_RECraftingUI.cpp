@@ -12,13 +12,13 @@
 #include "AI_REPlayerCraftingComponent.h"
 #include "Engine/Engine.h"
 
-void UAI_RECraftingUI::NativeConstruct()
+void UAI_RECraftingUI::NativeOnInitialized()
 {
-	Super::NativeConstruct();
+	Super::NativeOnInitialized();
 
 	if (Btn_Craft)
 	{
-		Btn_Craft->OnClicked.AddDynamic(this, &UAI_RECraftingUI::OnCraftButtonClicked);
+		Btn_Craft->OnClicked.AddUniqueDynamic(this, &UAI_RECraftingUI::OnCraftButtonClicked);
 	}
 }
 

@@ -47,6 +47,9 @@ public:
 	bool ConsumeItem(FName ItemId, int32 Count);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool UseItem(int32 SlotIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
@@ -70,7 +73,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
-	FInventoryItemStack* FindStackBySlot(int32 SlotIndex);
+	int32 FindStackIndexBySlot(int32 SlotIndex) const;
 	int32 FindFirstEmptySlotIndex() const;
 	int32 GetMaxStackForItem(FName ItemId) const;
 };

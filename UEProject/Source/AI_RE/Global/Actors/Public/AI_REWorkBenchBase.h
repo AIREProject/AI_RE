@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "../../Global/Interfaces/Public/AI_REInteractableInterface.h"
 #include "../../OBI/Component/Public/AI_RECraftingTypes.h"
+#include "GameplayTagContainer.h"
 #include "AI_REWorkBenchBase.generated.h"
 
 class UStaticMeshComponent;
@@ -27,6 +28,10 @@ public:
 	// The type of workbench this represents (used for filtering recipes)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Workbench")
 	EWorkbenchType WorkbenchType;
+
+	// Tags to identify this workbench for AI or other systems
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tags")
+	FGameplayTagContainer WorkbenchTags;
 
 	// IAI_REInteractableInterface Implementation
 	virtual void Interact_Implementation(AActor* Interactor) override;
