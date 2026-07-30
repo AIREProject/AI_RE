@@ -9,9 +9,9 @@ AAI_RECharacterBase::AAI_RECharacterBase()
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	// 컴포넌트 초기화
-	StatusComponent = CreateDefaultSubobject<UAI_REStatusComponent>(TEXT("StatusComponent"));
-	SkillComponent = CreateDefaultSubobject<UAI_RESkillComponent>(TEXT("SkillComponent"));
+	// 컴포넌트 초기화 (블루프린트 CDO 꼬임 방지를 위해 이름 변경)
+	StatusComponent = CreateDefaultSubobject<UAI_REStatusComponent>(TEXT("BaseStatusComponent"));
+	SkillComponent = CreateDefaultSubobject<UAI_RESkillComponent>(TEXT("BaseSkillComponent"));
 }
 
 void AAI_RECharacterBase::BeginPlay()

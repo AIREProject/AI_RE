@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "../../Global/Components/Public/AI_REStatusComponent.h"
+#include "../../OBI/Component/Public/AI_REItemDataAsset.h"
 #include "AI_REPlayerCombatComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPrimaryActionHitSignature, AActor*, HitActor);
@@ -22,6 +24,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TryStopPrimaryAction();
 
+	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
+	void EquipWeapon(UAI_REItemDataAsset* WeaponData);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
+	void UnequipWeapon();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Equipment")
+	TObjectPtr<UAI_REItemDataAsset> EquippedWeapon;
+
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
 	FOnPrimaryActionHitSignature OnPrimaryActionHit;
 
@@ -30,6 +41,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Combat")
 	float BaseDamage = 10.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat")
+	float AttackStaminaCost = 15.f;
+
+	// Montage to play on primary action
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat|Animation")
+	TObjectPtr<class UAnimMontage> PrimaryAttackMontage;
 
 protected:
 	virtual void BeginPlay() override;

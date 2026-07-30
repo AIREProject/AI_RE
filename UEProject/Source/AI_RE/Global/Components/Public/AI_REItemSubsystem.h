@@ -28,5 +28,6 @@ public:
 protected:
 
 	// Optional: Cache for fast lookups if the table is large
+	UPROPERTY()
 	TMap<FName, UAI_REItemDataAsset*> ItemCache;
 };

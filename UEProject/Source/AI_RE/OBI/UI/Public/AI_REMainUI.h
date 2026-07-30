@@ -18,7 +18,7 @@ class AI_RE_API UAI_REMainUI : public UUserWidget
 {
 	GENERATED_BODY()
 	
-private:
+protected:
 	UFUNCTION(BlueprintCallable)
 	void UpdateHPBar(float Current, float Max);
 	
@@ -34,6 +34,7 @@ private:
 	UFUNCTION()
 	void RefreshQuickSlots();
 	
+private:
 	// 타이머를 켜고 끌 때 필요한 리모콘(핸들)
 	FTimerHandle HPSmoothTimerHandle;
 

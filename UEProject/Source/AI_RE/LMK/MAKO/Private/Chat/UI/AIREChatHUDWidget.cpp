@@ -206,3 +206,13 @@ void UAIREChatHUDWidget::ClearResponseTimers()
 		}
 	}
 }
+
+void UAIREChatHUDWidget::HandlePlayerMessageCommitted(const FString& String)
+{
+	SubmitPlayerMessage(String);
+}
+
+void UAIREChatHUDWidget::CloseChatLog()
+{
+	// TODO: Implement chat log closing logic (e.g. firing blueprint event or hiding widgets)
+}

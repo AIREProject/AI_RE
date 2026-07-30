@@ -7,6 +7,19 @@
 // UI 업데이트를 위한 다이내믹 델리게이트 선언
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStatChangedSignature, float, CurrentValue, float, MaxValue);
 
+USTRUCT(BlueprintType)
+struct FGradualRecovery
+{
+	GENERATED_BODY()
+
+	float HPPerTick = 0.f;
+	float SPPerTick = 0.f;
+	float HungerPerTick = 0.f;
+	float ThirstyPerTick = 0.f;
+	
+	int32 TicksRemaining = 0;
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class AI_RE_API UAI_REStatusComponent : public UActorComponent
 {
@@ -97,7 +110,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Status|Functions")
     void ApplyDamage(float Amount);
 
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverHP(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverSP(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverHunger(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverThirsty(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+	void AddGradualRecovery(float HP, float SP, float Hunger, float Thirsty, float Duration);
+
+	UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+	void BroadcastCurrentStats();
+
 private:
 	void HandleSurvivalStats();
 	bool IsOwnerRunning() const;
+
+	// Gradual Recovery (HoT)
+	UPROPERTY()
+	TArray<FGradualRecovery> ActiveRecoveries;
+
+	FTimerHandle RecoveryTimerHandle;
+	
+	void ProcessGradualRecovery();
 };

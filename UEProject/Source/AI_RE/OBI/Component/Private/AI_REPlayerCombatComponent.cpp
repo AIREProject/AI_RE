@@ -9,6 +9,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "AI_REHarvestDamageTarget.h"
+#include "../../Global/Characters/Public/AI_RECharacterBase.h"
 
 UAI_REPlayerCombatComponent::UAI_REPlayerCombatComponent()
 {
@@ -24,7 +25,27 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 {
 	if (bIsActionActive) return;
 
+	AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+	if (OwnerChar && OwnerChar->GetStatusComponent())
+	{
+		UAI_REStatusComponent* StatusComp = OwnerChar->GetStatusComponent();
+		if (StatusComp->CurrentSP < AttackStaminaCost)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Not enough SP to attack!"));
+			return;
+		}
+		
+		// Consume SP
+		StatusComp->ConsumeSP(AttackStaminaCost);
+	}
+
 	bIsActionActive = true;
+
+	// If we have an animation montage, we would play it here via Character->PlayAnimMontage
+	if (PrimaryAttackMontage && OwnerChar)
+	{
+		OwnerChar->PlayAnimMontage(PrimaryAttackMontage);
+	}
 
 	// In single player, instantly perform the hit for maximum responsiveness.
 	// We can hook up AnimNotifies to trigger PerformTraceHit() later for animation sync.
@@ -45,6 +66,23 @@ void UAI_REPlayerCombatComponent::TryStopPrimaryAction()
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
 	}
+}
+
+void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)
+{
+	if (WeaponData)
+	{
+		EquippedWeapon = WeaponData;
+		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Equipped Weapon: %s"), *WeaponData->DisplayName.ToString()));
+		// TODO: Attach Weapon Mesh to Character Hand Socket
+	}
+}
+
+void UAI_REPlayerCombatComponent::UnequipWeapon()
+{
+	EquippedWeapon = nullptr;
+	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Unequipped Weapon"));
+	// TODO: Destroy/Hide Weapon Mesh
 }
 
 void UAI_REPlayerCombatComponent::PerformTraceHit()

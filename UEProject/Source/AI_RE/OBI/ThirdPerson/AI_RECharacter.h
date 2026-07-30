@@ -43,23 +43,23 @@ protected:
 
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* JumpAction;
+	TObjectPtr<UInputAction> JumpAction;
 
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* MoveAction;
+	TObjectPtr<UInputAction> MoveAction;
 
 	/** Look Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* LookAction;
+	TObjectPtr<UInputAction> LookAction;
 
 	/** Mouse Look Input Action */
 	UPROPERTY(EditAnywhere, Category="Input")
-	UInputAction* MouseLookAction;
+	TObjectPtr<UInputAction> MouseLookAction;
 
 	/** Interact Input Action */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputAction* InteractAction;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UInputAction> InteractAction;
 
 public:
 
@@ -110,7 +110,7 @@ public:
 	
 // ------------------------- 아래에서 작업 진행 ----------------------------
 	
-private:
+protected:
 	
 	bool bIsSprint;
 	
@@ -120,8 +120,12 @@ private:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void StopSprint();
 	
+public:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void ToggleInventory();
+
+	UFUNCTION(BlueprintCallable, Category="Input|QuickMenu")
+	void UseQuickSlot(int32 SlotIndex);
 	
 protected:
 	// UI
@@ -144,6 +148,10 @@ protected:
 	// 인벤토리 (토글) IA
 	UPROPERTY(EditAnywhere, Category="Input")
 	TObjectPtr<UInputAction> InventoryAction;
+	
+	// 퀵슬롯용 IA 배열 (에디터에서 IA_QuickSlot1 ~ 0 까지 순서대로 넣습니다)
+	UPROPERTY(EditAnywhere, Category="Input|QuickMenu")
+	TArray<TObjectPtr<UInputAction>> QuickSlotActions;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	TSubclassOf<class UAI_RECraftingUI> CraftingUIClass;
