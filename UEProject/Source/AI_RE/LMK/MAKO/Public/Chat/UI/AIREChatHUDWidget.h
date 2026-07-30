@@ -32,8 +32,6 @@ public:
 	void InitializeChatLogWidget(UAIREChatLogWidget* InChatLogWidget);
 	void HandleGlobalEnterInput();
 	void HandleGlobalLogInput();
-	void HandlePlayerMessageCommitted(const FString& UserMessage);
-	void CloseChatLog();
 	void CloseAllChatUI();
 
 protected:
