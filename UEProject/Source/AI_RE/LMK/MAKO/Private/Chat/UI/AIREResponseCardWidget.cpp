@@ -1,12 +1,19 @@
 #include "Chat/UI/AIREResponseCardWidget.h"
 
+#include "Chat/UI/AIREResponseStackWidget.h"
 #include "Animation/WidgetAnimation.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/TextBlock.h"
 
-void UAIREResponseCardWidget::SetRuntimeResponseText(const FString& DisplayText)
+void UAIREResponseCardWidget::InitializeResponse(
+	const FAIREChatLogEntry& Entry,
+	UAIREResponseStackWidget* InOwnerStack)
 {
+	ResponseId = Entry.Sequence;
+	OwnerStack = InOwnerStack;
+	bIsDismissing = false;
+
 	UTextBlock* ResponseText = WidgetTree
 		? Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("ResponseText")))
 		: nullptr;
@@ -15,24 +22,82 @@ void UAIREResponseCardWidget::SetRuntimeResponseText(const FString& DisplayText)
 		: nullptr;
 	if (IsValid(ResponseText))
 	{
-		ResponseText->SetText(FText::FromString(DisplayText));
+		ResponseText->SetText(FText::FromString(Entry.Text));
 	}
 	if (IsValid(TimestampText))
 	{
 		TimestampText->SetText(
-			FText::FromString(FDateTime::Now().ToString(TEXT("%H:%M:%S"))));
+			FText::FromString(
+				Entry.Timestamp.ToString(TEXT("%H:%M:%S"))));
 	}
-	if (const UWidgetBlueprintGeneratedClass* WidgetClass =
-		Cast<UWidgetBlueprintGeneratedClass>(GetClass()))
+
+	if (UWidgetAnimation* ResponseIn =
+		FindAnimationByPrefix(TEXT("ResponseIn")))
 	{
-		for (UWidgetAnimation* Animation : WidgetClass->Animations)
+		PlayAnimation(ResponseIn);
+	}
+}
+
+void UAIREResponseCardWidget::Dismiss()
+{
+	if (bIsDismissing)
+	{
+		return;
+	}
+	bIsDismissing = true;
+
+	UWidgetAnimation* ResponseOut =
+		FindAnimationByPrefix(TEXT("ResponseOut"));
+	if (!IsValid(ResponseOut))
+	{
+		HandleDismissAnimationFinished();
+		return;
+	}
+
+	FWidgetAnimationDynamicEvent FinishedEvent;
+	FinishedEvent.BindDynamic(
+		this,
+		&UAIREResponseCardWidget::HandleDismissAnimationFinished);
+	BindToAnimationFinished(ResponseOut, FinishedEvent);
+	PlayAnimation(ResponseOut);
+}
+
+int64 UAIREResponseCardWidget::GetResponseId() const
+{
+	return ResponseId;
+}
+
+void UAIREResponseCardWidget::HandleDismissAnimationFinished()
+{
+	if (IsValid(OwnerStack))
+	{
+		OwnerStack->HandleCardDismissed(ResponseId);
+	}
+	else
+	{
+		RemoveFromParent();
+	}
+	OwnerStack = nullptr;
+}
+
+UWidgetAnimation* UAIREResponseCardWidget::FindAnimationByPrefix(
+	const FString& Prefix) const
+{
+	const UWidgetBlueprintGeneratedClass* WidgetClass =
+		Cast<UWidgetBlueprintGeneratedClass>(GetClass());
+	if (!IsValid(WidgetClass))
+	{
+		return nullptr;
+	}
+
+	for (UWidgetAnimation* Animation : WidgetClass->Animations)
+	{
+		if (IsValid(Animation)
+			&& Animation->GetName().StartsWith(Prefix))
 		{
-			if (IsValid(Animation)
-				&& Animation->GetName().StartsWith(TEXT("ResponseIn")))
-			{
-				PlayAnimation(Animation);
-				break;
-			}
+			return Animation;
 		}
 	}
+
+	return nullptr;
 }

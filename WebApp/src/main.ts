@@ -154,8 +154,8 @@ app.innerHTML = `
       <section class="composer-area">
         <p class="time-context"><span aria-hidden="true">◷</span>현실 시간 기준으로 대화해요</p>
         <div class="suggestion-list" aria-label="추천 대화">
-          <button type="button" class="suggestion-chip">오늘 있었던 일 이야기하기</button>
-          <button type="button" class="suggestion-chip">다음 모험 얘기하기</button>
+          <button type="button" class="suggestion-chip">철 도끼 제작 방법</button>
+          <button type="button" class="suggestion-chip">나무 100개만 캐줘</button>
         </div>
         <form id="chat-form" class="chat-composer">
           <label class="sr-only" for="chat-input">AIRE에게 메시지 보내기</label>
@@ -493,6 +493,13 @@ chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 120)}px`;
   composerNotice.hidden = true;
+});
+
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    chatForm.requestSubmit();
+  }
 });
 
 chatForm.addEventListener("submit", (event) => {

@@ -11,6 +11,11 @@ class UAbilitySystemComponent;
 class UAnimInstance;
 struct FStreamableHandle;
 
+DECLARE_MULTICAST_DELEGATE_TwoParams(
+	FAIRECompanionWeaponEquipCompleted,
+	UAIRECompanionWeaponDefinitionDataAsset*,
+	bool);
+
 UCLASS(ClassGroup = AIRE, meta = (BlueprintSpawnableComponent))
 class AI_RE_API UAIRECompanionEquipmentComponent : public UActorComponent
 {
@@ -19,20 +24,23 @@ class AI_RE_API UAIRECompanionEquipmentComponent : public UActorComponent
 public:
 	UAIRECompanionEquipmentComponent();
 
-	bool InitializeEquipment(UAbilitySystemComponent* InAbilitySystem);
+	bool InitializeEquipment(
+		UAbilitySystemComponent* InAbilitySystem,
+		bool bEquipLegacyDefault = true);
 	void ShutdownEquipment();
+	FAIRECompanionWeaponEquipCompleted& OnWeaponEquipCompleted();
 
 	/** Returns true when the asynchronous equip request is accepted. */
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Equipment")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Equipment")
 	bool EquipWeapon(UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Equipment")
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Equipment")
 	void UnequipCurrentWeapon();
 
-	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Equipment")
+	UFUNCTION(BlueprintPure, Category = "AIRE|Equipment")
 	const UAIRECompanionWeaponDefinitionDataAsset* GetCurrentWeaponDefinition() const;
 
-	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Equipment")
+	UFUNCTION(BlueprintPure, Category = "AIRE|Equipment")
 	FGameplayTag GetCurrentWeaponTag() const;
 
 	bool IsCurrentWeaponInCategory(FGameplayTag WeaponCategory) const;
@@ -50,7 +58,10 @@ private:
 	void UnlinkCurrentAnimLayer();
 	UAnimInstance* GetOwnerAnimInstance() const;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Equipment", meta = (AllowPrivateAccess = "true"))
+	// Legacy fallback for Companion assets without an inventory loadout.
+	// Do not add DeprecatedProperty metadata: UE 5.8 PropertyEditor recursively
+	// expands this native default subobject and overflows the editor stack.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Equipment", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionWeaponDefinitionDataAsset> DefaultWeaponDefinition;
 
 	UPROPERTY(Transient)
@@ -71,4 +82,5 @@ private:
 	TSharedPtr<FStreamableHandle> ActiveEquipmentLoadHandle;
 	uint32 EquipmentRequestId = 0;
 	FDelegateHandle DeadStateChangedDelegateHandle;
+	FAIRECompanionWeaponEquipCompleted WeaponEquipCompleted;
 };

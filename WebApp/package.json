@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "presentation:sync": "node scripts/sync-presentation.mjs",
+    "predev": "npm run presentation:sync",
     "dev": "vite --host 0.0.0.0",
+    "prebuild": "npm run presentation:sync",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
