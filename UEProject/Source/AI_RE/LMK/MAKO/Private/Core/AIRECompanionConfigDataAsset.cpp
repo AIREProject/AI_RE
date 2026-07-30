@@ -1,5 +1,9 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 
+#include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
 
 bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationError) const
@@ -92,6 +96,143 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Follow Stop Distance must be less than Return Start Distance.");
 		return false;
+	}
+
+	if (MaxInventorySlots < 1)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidInventorySlots",
+			"Max Inventory Slots must be at least one.");
+		return false;
+	}
+
+	int32 RequiredSlots = 0;
+	TSet<FName> InitialItemIds;
+	for (const FAIRECompanionInitialInventoryEntry& Entry : InitialInventory)
+	{
+		if (!IsValid(Entry.ItemDefinition) || Entry.Count < 1)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidInitialInventoryEntry",
+				"Every initial inventory entry must specify a valid Companion Item Definition and positive Count.");
+			return false;
+		}
+
+		FText ItemValidationError;
+		if (!Entry.ItemDefinition->IsCompanionItemDefinitionValid(
+				ItemValidationError))
+		{
+			OutValidationError = ItemValidationError;
+			return false;
+		}
+
+		if (InitialItemIds.Contains(Entry.ItemDefinition->ItemId))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"DuplicateInitialItem",
+				"Initial inventory must not list the same Item ID more than once.");
+			return false;
+		}
+
+		InitialItemIds.Add(Entry.ItemDefinition->ItemId);
+		RequiredSlots += FMath::DivideAndRoundUp(
+			Entry.Count,
+			Entry.ItemDefinition->MaxStackSize);
+	}
+
+	if (RequiredSlots > MaxInventorySlots)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InitialInventoryTooLarge",
+			"Initial inventory requires more slots than Max Inventory Slots.");
+		return false;
+	}
+
+	if (!InitialInventory.IsEmpty())
+	{
+		if (DefaultEquippedWeaponItemId.IsNone()
+			|| !InitialItemIds.Contains(DefaultEquippedWeaponItemId)
+			|| DefaultHealingItemId.IsNone()
+			|| !InitialItemIds.Contains(DefaultHealingItemId)
+			|| !IsValid(SupportAbilitySet))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidCompanionLoadout",
+				"A configured Companion inventory must contain the default weapon and healing item and reference a Support Ability Set.");
+			return false;
+		}
+
+		const UAIRECompanionItemDefinitionDataAsset*
+			DefaultWeaponItem = nullptr;
+		const UAIRECompanionItemDefinitionDataAsset*
+			DefaultHealingItem = nullptr;
+		for (const FAIRECompanionInitialInventoryEntry& Entry
+			: InitialInventory)
+		{
+			if (Entry.ItemDefinition->ItemId
+				== DefaultEquippedWeaponItemId)
+			{
+				DefaultWeaponItem = Entry.ItemDefinition;
+			}
+			if (Entry.ItemDefinition->ItemId
+				== DefaultHealingItemId)
+			{
+				DefaultHealingItem = Entry.ItemDefinition;
+			}
+		}
+		if (!IsValid(DefaultWeaponItem)
+			|| DefaultWeaponItem->ItemType
+				!= EAI_REItemType::Weapon
+			|| !IsValid(DefaultHealingItem)
+			|| DefaultHealingItem->ItemType
+				!= EAI_REItemType::Consumable)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidDefaultItemRoles",
+				"Default Equipped Weapon must reference a Weapon item and Default Healing Item must reference a Consumable item.");
+			return false;
+		}
+
+		FText AbilitySetValidationError;
+		if (!SupportAbilitySet->IsAbilitySetValid(AbilitySetValidationError))
+		{
+			OutValidationError = AbilitySetValidationError;
+			return false;
+		}
+
+		int32 SupportHealingAbilityCount = 0;
+		for (const FAIRECompanionAbilitySetEntry& Entry
+			: SupportAbilitySet->Abilities)
+		{
+			const UGameplayAbility* AbilityDefaultObject =
+				Entry.AbilityClass
+					? Entry.AbilityClass
+						->GetDefaultObject<UGameplayAbility>()
+					: nullptr;
+			SupportHealingAbilityCount +=
+				IsValid(AbilityDefaultObject)
+				&& AbilityDefaultObject->GetAssetTags()
+					.HasTagExact(
+						AIRECompanionGameplayTags::
+							AbilitySupportHealingItem)
+					? 1
+					: 0;
+		}
+		if (SupportAbilitySet->Abilities.Num() != 1
+			|| SupportHealingAbilityCount != 1)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidSupportAbilitySetRole",
+				"Support Ability Set must contain exactly one Support Healing ability.");
+			return false;
+		}
 	}
 
 	return true;

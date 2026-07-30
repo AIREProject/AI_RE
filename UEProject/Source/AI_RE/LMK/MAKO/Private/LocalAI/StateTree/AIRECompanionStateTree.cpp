@@ -4,6 +4,8 @@
 #include "Core/AIRECompanionCharacter.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
+#include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Support/AIRECompanionSupportComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
@@ -24,6 +26,10 @@ namespace
 	constexpr float CombatRangeExitSlack = 25.0f;
 	constexpr float CombatMovementRetryInterval = 0.5f;
 	constexpr float CombatActivationRetryInterval = 0.1f;
+	constexpr float SupportApproachMargin = 50.0f;
+	constexpr float SupportApproachAcceptanceRadius = 25.0f;
+	constexpr float SupportMovementRetryInterval = 0.5f;
+	constexpr float SupportActivationRetryInterval = 0.1f;
 
 	FVector CalculateCombatApproachLocation(
 		const APawn& CompanionPawn,
@@ -50,6 +56,32 @@ namespace
 			+ TargetToCompanion * DesiredCenterDistance;
 	}
 
+	FVector CalculateSupportApproachLocation(
+		const APawn& CompanionPawn,
+		const AActor& TargetActor,
+		const float SupportRange)
+	{
+		FVector TargetToCompanion =
+			CompanionPawn.GetActorLocation()
+			- TargetActor.GetActorLocation();
+		TargetToCompanion.Z = 0.0f;
+		if (!TargetToCompanion.Normalize())
+		{
+			TargetToCompanion =
+				-TargetActor.GetActorForwardVector().GetSafeNormal2D();
+		}
+
+		const float DesiredSurfaceDistance = FMath::Max(
+			0.0f,
+			SupportRange - SupportApproachMargin);
+		const float DesiredCenterDistance =
+			CompanionPawn.GetSimpleCollisionRadius()
+			+ TargetActor.GetSimpleCollisionRadius()
+			+ DesiredSurfaceDistance;
+		return TargetActor.GetActorLocation()
+			+ TargetToCompanion * DesiredCenterDistance;
+	}
+
 	enum class EAIRECompanionBehaviorInput : uint16
 	{
 		HasPlayer = 1 << 0,
@@ -59,7 +91,8 @@ namespace
 		Survival = 1 << 4,
 		Combat = 1 << 5,
 		DirectCommand = 1 << 6,
-		Work = 1 << 7
+		Work = 1 << 7,
+		Support = 1 << 8
 	};
 	ENUM_CLASS_FLAGS(EAIRECompanionBehaviorInput);
 
@@ -93,7 +126,10 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.PlayerPawn = nullptr;
 	InstanceData.ThreatTarget = nullptr;
+	InstanceData.SupportTarget = nullptr;
 	InstanceData.EquipmentComponent = nullptr;
+	InstanceData.InventoryComponent = nullptr;
+	InstanceData.SupportComponent = nullptr;
 	InstanceData.AbilitySystemComponent = nullptr;
 	InstanceData.DistanceToPlayer = 0.0f;
 	InstanceData.MovementSpeed = 0.0f;
@@ -108,6 +144,7 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.bIsDisabledRequested = false;
 	InstanceData.bIsSurvivalRequested = false;
 	InstanceData.bIsCombatRequested = false;
+	InstanceData.bIsSupportRequested = false;
 	InstanceData.bIsDirectCommandRequested = false;
 	InstanceData.bIsWorkRequested = false;
 	InstanceData.bBehaviorSelectionChanged = false;
@@ -115,6 +152,7 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.bHasPreviousBehaviorInput = false;
 	InstanceData.PreviousPlayerPawn.Reset();
 	InstanceData.PreviousThreatTarget.Reset();
+	InstanceData.PreviousSupportTarget.Reset();
 }
 
 void FAIRECompanionContextEvaluator::Tick(FStateTreeExecutionContext& Context, const float) const
@@ -127,7 +165,10 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.PlayerPawn = nullptr;
 	InstanceData.ThreatTarget = nullptr;
+	InstanceData.SupportTarget = nullptr;
 	InstanceData.EquipmentComponent = nullptr;
+	InstanceData.InventoryComponent = nullptr;
+	InstanceData.SupportComponent = nullptr;
 	InstanceData.AbilitySystemComponent = nullptr;
 	InstanceData.DistanceToPlayer = 0.0f;
 	InstanceData.MovementSpeed = 0.0f;
@@ -141,6 +182,7 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	InstanceData.bIsDisabledRequested = false;
 	InstanceData.bIsSurvivalRequested = false;
 	InstanceData.bIsCombatRequested = false;
+	InstanceData.bIsSupportRequested = false;
 	InstanceData.bIsDirectCommandRequested = false;
 	InstanceData.bIsWorkRequested = false;
 
@@ -167,8 +209,19 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	{
 		InstanceData.EquipmentComponent =
 			InstanceData.CompanionCharacter->GetEquipmentComponent();
+		InstanceData.InventoryComponent =
+			InstanceData.CompanionCharacter->GetInventoryComponent();
+		InstanceData.SupportComponent =
+			InstanceData.CompanionCharacter->GetSupportComponent();
 		InstanceData.AbilitySystemComponent =
 			InstanceData.CompanionCharacter->GetAbilitySystemComponent();
+		if (IsValid(InstanceData.SupportComponent))
+		{
+			InstanceData.SupportTarget =
+				InstanceData.SupportComponent->GetSupportTarget();
+			InstanceData.bIsSupportRequested =
+				InstanceData.SupportComponent->IsSupportRequested();
+		}
 		InstanceData.bIsDisabledRequested = InstanceData.bIsDisabledRequested
 			|| InstanceData.CompanionCharacter->IsAbilitySystemDisabled();
 
@@ -228,20 +281,26 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Disabled, InstanceData.bIsDisabledRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Survival, InstanceData.bIsSurvivalRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Combat, InstanceData.bIsCombatRequested);
+	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Support, InstanceData.bIsSupportRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::DirectCommand, InstanceData.bIsDirectCommandRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Work, InstanceData.bIsWorkRequested);
 
 	const uint16 CurrentBehaviorInputMask = static_cast<uint16>(BehaviorInputMask);
 	const bool bPlayerPawnChanged = InstanceData.PreviousPlayerPawn.Get() != InstanceData.PlayerPawn.Get();
 	const bool bThreatTargetChanged = InstanceData.PreviousThreatTarget.Get() != InstanceData.ThreatTarget.Get();
+	const bool bSupportTargetChanged =
+		InstanceData.PreviousSupportTarget.Get()
+		!= InstanceData.SupportTarget.Get();
 	InstanceData.bBehaviorSelectionChanged = !InstanceData.bHasPreviousBehaviorInput
 		|| InstanceData.PreviousBehaviorInputMask != CurrentBehaviorInputMask
 		|| bPlayerPawnChanged
-		|| bThreatTargetChanged;
+		|| bThreatTargetChanged
+		|| bSupportTargetChanged;
 	InstanceData.PreviousBehaviorInputMask = CurrentBehaviorInputMask;
 	InstanceData.bHasPreviousBehaviorInput = true;
 	InstanceData.PreviousPlayerPawn = InstanceData.PlayerPawn;
 	InstanceData.PreviousThreatTarget = InstanceData.ThreatTarget;
+	InstanceData.PreviousSupportTarget = InstanceData.SupportTarget;
 }
 
 FAIREApplyCompanionMovementSettingsTask::FAIREApplyCompanionMovementSettingsTask()
@@ -764,4 +823,195 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	InstanceData.bSkillIntentEvaluatedForStep = false;
 	InstanceData.bWasSkillCancelWindowOpen = false;
 	InstanceData.bWasBasicAttackActive = false;
+}
+
+FAIRECompanionEngageSupportTask::FAIRECompanionEngageSupportTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FAIRECompanionEngageSupportTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.SupportComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent)
+		|| !InstanceData.SupportComponent->IsSupportRequested()
+		|| InstanceData.SupportComponent->GetSupportTarget()
+			!= InstanceData.SupportTarget)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.ActiveTarget = InstanceData.SupportTarget;
+	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.bMoveRequested = false;
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionEngageSupportTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.SupportComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent))
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	AActor* TargetActor = InstanceData.ActiveTarget.Get();
+	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+	if (!IsValid(TargetActor)
+		|| !IsValid(CompanionPawn)
+		|| InstanceData.SupportComponent->GetSupportTarget()
+			!= TargetActor
+		|| !InstanceData.SupportComponent->IsSupportRequested())
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	const float SupportRange =
+		InstanceData.SupportComponent->GetSupportRange();
+	if (!FMath::IsFinite(SupportRange) || SupportRange < 0.0f)
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.RetryTimeRemaining = FMath::Max(
+		0.0f,
+		InstanceData.RetryTimeRemaining - DeltaTime);
+	if (InstanceData.bMoveRequested
+		&& InstanceData.CompanionController->GetMoveStatus()
+			!= EPathFollowingStatus::Moving)
+	{
+		InstanceData.bMoveRequested = false;
+	}
+
+	const bool bSupportAbilityActive =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionSupporting);
+	if (!IsTargetInRange(
+			*CompanionPawn,
+			*TargetActor,
+			SupportRange))
+	{
+		if (bSupportAbilityActive)
+		{
+			const FGameplayAbilitySpecHandle AbilityHandle =
+				InstanceData.SupportComponent
+					->FindSupportAbilityHandle();
+			if (AbilityHandle.IsValid())
+			{
+				InstanceData.AbilitySystemComponent
+					->CancelAbilityHandle(AbilityHandle);
+			}
+		}
+
+		if (!InstanceData.bMoveRequested
+			&& InstanceData.RetryTimeRemaining <= 0.0f)
+		{
+			const FVector ApproachLocation =
+				CalculateSupportApproachLocation(
+					*CompanionPawn,
+					*TargetActor,
+					SupportRange);
+			const EPathFollowingRequestResult::Type MoveResult =
+				InstanceData.CompanionController->MoveToLocation(
+					ApproachLocation,
+					SupportApproachAcceptanceRadius,
+					false,
+					true,
+					true,
+					true,
+					nullptr,
+					true);
+			InstanceData.bMoveRequested =
+				MoveResult
+				== EPathFollowingRequestResult::RequestSuccessful;
+			if (MoveResult == EPathFollowingRequestResult::Failed)
+			{
+				InstanceData.RetryTimeRemaining =
+					SupportMovementRetryInterval;
+			}
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bMoveRequested)
+	{
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.bMoveRequested = false;
+	}
+
+	InstanceData.CompanionController->SetFocus(
+		TargetActor,
+		EAIFocusPriority::Gameplay);
+	if (bSupportAbilityActive
+		|| InstanceData.RetryTimeRemaining > 0.0f)
+	{
+		return EStateTreeRunStatus::Running;
+	}
+
+	FGameplayEventData HealRequest;
+	HealRequest.EventTag =
+		AIRECompanionGameplayTags::EventSupportHealRequest;
+	HealRequest.Instigator = CompanionPawn;
+	HealRequest.Target = TargetActor;
+	InstanceData.AbilitySystemComponent->HandleGameplayEvent(
+		AIRECompanionGameplayTags::EventSupportHealRequest,
+		&HealRequest);
+	InstanceData.RetryTimeRemaining =
+		SupportActivationRetryInterval;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionEngageSupportTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedRequests(InstanceData);
+	InstanceData.ActiveTarget.Reset();
+	InstanceData.RetryTimeRemaining = 0.0f;
+}
+
+bool FAIRECompanionEngageSupportTask::IsTargetInRange(
+	const APawn& CompanionPawn,
+	const AActor& TargetActor,
+	const float SupportRange)
+{
+	const float HorizontalDistance = FVector::Dist2D(
+		CompanionPawn.GetActorLocation(),
+		TargetActor.GetActorLocation());
+	const float EffectiveDistance = FMath::Max(
+		0.0f,
+		HorizontalDistance
+			- CompanionPawn.GetSimpleCollisionRadius()
+			- TargetActor.GetSimpleCollisionRadius());
+	return EffectiveDistance <= SupportRange;
+}
+
+void FAIRECompanionEngageSupportTask::CancelOwnedRequests(
+	FInstanceDataType& InstanceData)
+{
+	if (IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
+	}
+	InstanceData.bMoveRequested = false;
+
+	if (IsValid(InstanceData.SupportComponent))
+	{
+		InstanceData.SupportComponent->CancelSupportRequest();
+	}
 }

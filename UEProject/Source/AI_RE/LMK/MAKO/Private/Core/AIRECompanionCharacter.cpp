@@ -6,6 +6,8 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
+#include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Support/AIRECompanionSupportComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -39,6 +41,12 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 	EquipmentComponent = CreateDefaultSubobject<UAIRECompanionEquipmentComponent>(TEXT("Equipment"));
 	check(EquipmentComponent);
 
+	InventoryComponent = CreateDefaultSubobject<UAIRECompanionInventoryComponent>(TEXT("Inventory"));
+	check(InventoryComponent);
+
+	SupportComponent = CreateDefaultSubobject<UAIRECompanionSupportComponent>(TEXT("Support"));
+	check(SupportComponent);
+
 	ChatComponent = CreateDefaultSubobject<UAIRECompanionChatComponent>(TEXT("Chat"));
 	check(ChatComponent);
 }
@@ -62,6 +70,18 @@ bool AAIRECompanionCharacter::IsAbilitySystemDisabled() const
 UAIRECompanionEquipmentComponent* AAIRECompanionCharacter::GetEquipmentComponent() const
 {
 	return EquipmentComponent;
+}
+
+UAIRECompanionInventoryComponent*
+AAIRECompanionCharacter::GetInventoryComponent() const
+{
+	return InventoryComponent;
+}
+
+UAIRECompanionSupportComponent*
+AAIRECompanionCharacter::GetSupportComponent() const
+{
+	return SupportComponent;
 }
 
 UAIRECompanionChatComponent* AAIRECompanionCharacter::GetChatComponent() const
@@ -96,9 +116,45 @@ void AAIRECompanionCharacter::BeginPlay()
 	check(CompanionAttributeSet);
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	ResetAttributesToConfiguredDefaults();
+	const UAIRECompanionConfigDataAsset* CompanionConfigData =
+		GetCompanionConfig();
+	const bool bUseInventoryLoadout =
+		IsValid(CompanionConfigData)
+		&& !CompanionConfigData->InitialInventory.IsEmpty();
 	if (IsValid(EquipmentComponent))
 	{
-		EquipmentComponent->InitializeEquipment(AbilitySystemComponent);
+		EquipmentComponent->InitializeEquipment(
+			AbilitySystemComponent,
+			!bUseInventoryLoadout);
+	}
+	const bool bInventoryInitialized =
+		IsValid(InventoryComponent)
+		&& InventoryComponent->InitializeInventory(
+			CompanionConfigData,
+			EquipmentComponent,
+			AbilitySystemComponent);
+	if (bUseInventoryLoadout && !bInventoryInitialized)
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Error,
+			TEXT("Companion inventory loadout initialization failed. Companion=%s"),
+			*GetNameSafe(this));
+	}
+	if (bInventoryInitialized
+		&& IsValid(SupportComponent)
+		&& IsValid(CompanionConfigData)
+		&& !CompanionConfigData->InitialInventory.IsEmpty()
+		&& !SupportComponent->InitializeSupport(
+			CompanionConfigData,
+			InventoryComponent,
+			AbilitySystemComponent))
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Error,
+			TEXT("Companion support initialization failed. Companion=%s"),
+			*GetNameSafe(this));
 	}
 	HealthChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UAIRECompanionAttributeSet::GetHealthAttribute())
@@ -125,6 +181,16 @@ void AAIRECompanionCharacter::BeginPlay()
 
 void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(SupportComponent))
+	{
+		SupportComponent->ShutdownSupport();
+	}
+
+	if (IsValid(InventoryComponent))
+	{
+		InventoryComponent->ShutdownInventory();
+	}
+
 	if (IsValid(EquipmentComponent))
 	{
 		EquipmentComponent->ShutdownEquipment();

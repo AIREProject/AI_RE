@@ -43,6 +43,27 @@ bool AAIRECompanionCombatTestTarget::IsAliveThreatTarget_Implementation() const
 			AIRECompanionGameplayTags::StateDisabledDead);
 }
 
+FGameplayAttribute
+AAIRECompanionCombatTestTarget::GetHealingHealthAttribute() const
+{
+	return UAIRECompanionAttributeSet::GetHealthAttribute();
+}
+
+FGameplayAttribute
+AAIRECompanionCombatTestTarget::GetHealingMaxHealthAttribute() const
+{
+	return UAIRECompanionAttributeSet::GetMaxHealthAttribute();
+}
+
+bool AAIRECompanionCombatTestTarget::CanReceiveHealingFrom(
+	const AActor* Healer) const
+{
+	return !bIsHostile
+		&& IsValid(Healer)
+		&& Healer != this
+		&& IsAliveThreatTarget_Implementation();
+}
+
 const UAIRECompanionAttributeSet*
 AAIRECompanionCombatTestTarget::GetTestAttributeSet() const
 {
@@ -56,14 +77,18 @@ void AAIRECompanionCombatTestTarget::BeginPlay()
 	check(AbilitySystemComponent);
 	check(AttributeSet);
 	check(StimuliSource);
-	const float ValidInitialHealth =
-		FMath::IsFinite(InitialHealth) && InitialHealth > 0.0f
-			? InitialHealth
+	const float ValidMaxHealth =
+		FMath::IsFinite(MaxHealth) && MaxHealth > 0.0f
+			? MaxHealth
 			: 100.0f;
+	const float ValidInitialHealth = FMath::Clamp(
+		FMath::IsFinite(InitialHealth) ? InitialHealth : ValidMaxHealth,
+		0.0f,
+		ValidMaxHealth);
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	AbilitySystemComponent->SetNumericAttributeBase(
 		UAIRECompanionAttributeSet::GetMaxHealthAttribute(),
-		ValidInitialHealth);
+		ValidMaxHealth);
 	AbilitySystemComponent->SetNumericAttributeBase(
 		UAIRECompanionAttributeSet::GetHealthAttribute(),
 		ValidInitialHealth);
