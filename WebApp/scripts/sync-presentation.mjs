@@ -11,6 +11,7 @@ const presentationEntries = [
   "styles.css",
   "presentation.js",
   "assets",
+  "variants",
 ];
 
 await mkdir(targetDirectory, { recursive: true });

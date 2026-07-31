@@ -39,6 +39,12 @@ npm.cmd run dev
 http://localhost:5173/presentation/index.html
 ```
 
+PDF 기준 강조안:
+
+```text
+http://localhost:5173/presentation/variants/pdf-emphasis/index.html
+```
+
 같은 출처에서 열면 새 창 WebApp과 임베드 WebApp이 동일한 브라우저 인증 정보를 사용합니다.
 로컬 `index.html`을 직접 열면 위 주소로 자동 이동합니다. 새 창에서 Pairing을 완료한 뒤 임베드가 갱신되지 않으면 10페이지의 `새로고침` 버튼을 누르세요.
 

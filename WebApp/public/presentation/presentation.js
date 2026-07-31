@@ -33,6 +33,7 @@
 
   let currentIndex = 0;
   let touchStartX = null;
+  let phoneTransitionTimer = null;
 
   const formatNumber = (value) => String(value).padStart(2, "0");
 
@@ -79,18 +80,42 @@
   };
 
   const setPhoneModalOpen = (open) => {
+    window.clearTimeout(phoneTransitionTimer);
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     if (open) {
       phoneModalStage.appendChild(webappPhone);
-    } else {
-      phonePresentation.insertBefore(webappPhone, phoneActions);
+      phoneModal.classList.remove("is-lowering");
+      phoneModal.classList.add("is-open");
+      phoneModal.setAttribute("aria-hidden", "false");
+      window.requestAnimationFrame(() => {
+        phoneModal.classList.add("is-lifting");
+        fitWebappPhone();
+      });
+      phoneTransitionTimer = window.setTimeout(() => {
+        phoneModal.classList.remove("is-lifting");
+        fitWebappPhone();
+        phoneModalClose.focus({ preventScroll: true });
+      }, prefersReducedMotion ? 0 : 940);
+      return;
     }
 
-    phoneModal.classList.toggle("is-open", open);
-    phoneModal.setAttribute("aria-hidden", String(!open));
-    window.requestAnimationFrame(() => {
+    const finishClosing = () => {
+      phonePresentation.insertBefore(webappPhone, phoneActions);
+      phoneModal.classList.remove("is-open", "is-lifting", "is-lowering");
+      phoneModal.setAttribute("aria-hidden", "true");
       fitWebappPhone();
-      (open ? phoneModalClose : webappExpand).focus({ preventScroll: true });
-    });
+      webappExpand.focus({ preventScroll: true });
+    };
+
+    if (prefersReducedMotion) {
+      finishClosing();
+      return;
+    }
+
+    phoneModal.classList.remove("is-lifting");
+    phoneModal.classList.add("is-lowering");
+    phoneTransitionTimer = window.setTimeout(finishClosing, 640);
   };
 
   const setMenuOpen = (open) => {
