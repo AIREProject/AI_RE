@@ -52,7 +52,7 @@ const printStyles = `
     page-break-after: auto !important;
     break-after: auto !important;
   }
-  .menu-toggle, .slide-menu, .menu-scrim, .phone-modal, .deck-controls {
+  .menu-toggle, .slide-menu, .menu-scrim, .phone-modal, .phone-actions, .deck-controls, .deck-footer, .progress-track {
     display: none !important;
   }
   .phone-screen iframe {
@@ -129,6 +129,7 @@ await fs.mkdir(outputDirectory, { recursive: true });
 const browser = await puppeteer.launch({
   executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   headless: true,
+  timeout: 60000,
 });
 
 try {
