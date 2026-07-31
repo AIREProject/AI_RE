@@ -24,6 +24,16 @@ void AAI_REItemActor::BeginPlay()
 	Super::BeginPlay();
 }
 
+void AAI_REItemActor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	if (ItemAsset && ItemAsset->WorldMesh)
+	{
+		MeshComponent->SetStaticMesh(ItemAsset->WorldMesh);
+	}
+}
+
 void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 {
 	if (ItemAsset == nullptr)
