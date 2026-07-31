@@ -52,13 +52,12 @@ void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, fl
 		// 플레이어 약간 앞이나 주변에 스폰
 		FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
 		
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-		if (AAI_REItemActor* SpawnedItem = GetWorld()->SpawnActor<AAI_REItemActor>(ItemActorClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams))
+		FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
+		if (AAI_REItemActor* SpawnedItem = GetWorld()->SpawnActorDeferred<AAI_REItemActor>(ItemActorClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))
 		{
 			SpawnedItem->ItemAsset = RewardItemAsset;
 			SpawnedItem->ItemCount = GrantedRewardAmount;
+			SpawnedItem->FinishSpawning(SpawnTransform);
 		}
 	}
 }
