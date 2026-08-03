@@ -58,6 +58,29 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	FAIRECompanionLocalBehaviorPolicy DefaultPolicy;
+	DefaultPolicy.EngagementPolicy = DefaultEngagementPolicy;
+	DefaultPolicy.RolePreference = DefaultRolePreference;
+	if (!DefaultPolicy.IsValid())
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidDefaultLocalBehaviorPolicy",
+			"Default local behavior policy values must be supported.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(DefendPlayerRadius)
+		|| DefendPlayerRadius < 0.0f
+		|| DefendPlayerRadius >= MaxChaseDistanceFromPlayer)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidDefendPlayerRadius",
+			"Defend Player Radius must be finite, non-negative, and less than Max Chase Distance From Player.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(MaxHealth) || MaxHealth <= 0.0f)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidMaxHealth", "Max Health must be finite and greater than zero.");

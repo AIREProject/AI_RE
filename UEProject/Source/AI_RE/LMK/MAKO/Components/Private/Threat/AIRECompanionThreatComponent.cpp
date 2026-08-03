@@ -2,6 +2,7 @@
 
 #include "Core/AIRECompanionCharacter.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
+#include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
@@ -33,17 +34,23 @@ void UAIRECompanionThreatComponent::StartThreatDetection(AAIRECompanionCharacter
 	}
 
 	const UAIRECompanionConfigDataAsset* CompanionConfig = InCompanionCharacter->GetCompanionConfig();
-	if (!IsValid(CompanionConfig))
+	UAIRECompanionLocalBehaviorPolicyComponent* PolicyComponent =
+		InCompanionCharacter->GetLocalBehaviorPolicyComponent();
+	if (!IsValid(CompanionConfig) || !IsValid(PolicyComponent))
 	{
 		UE_LOG(
 			LogAIRECompanionThreat,
 			Warning,
-			TEXT("Cannot start threat detection for %s without valid configuration."),
+			TEXT("Cannot start threat detection for %s without valid configuration and policy."),
 			*GetNameSafe(InCompanionCharacter));
 		return;
 	}
 
 	CompanionCharacter = InCompanionCharacter;
+	LocalBehaviorPolicyComponent = PolicyComponent;
+	PolicyComponent->OnLocalBehaviorPolicyChanged.AddUniqueDynamic(
+		this,
+		&UAIRECompanionThreatComponent::HandleLocalBehaviorPolicyChanged);
 	ConfigureSight(*CompanionConfig);
 	bIsThreatDetectionActive = true;
 	SetSenseEnabled(UAISense_Sight::StaticClass(), true);
@@ -61,6 +68,13 @@ void UAIRECompanionThreatComponent::StartThreatDetection(AAIRECompanionCharacter
 
 void UAIRECompanionThreatComponent::StopThreatDetection()
 {
+	if (LocalBehaviorPolicyComponent.IsValid())
+	{
+		LocalBehaviorPolicyComponent->OnLocalBehaviorPolicyChanged.RemoveDynamic(
+			this,
+			&UAIRECompanionThreatComponent::HandleLocalBehaviorPolicyChanged);
+	}
+	LocalBehaviorPolicyComponent.Reset();
 	bIsThreatDetectionActive = false;
 	SetComponentTickEnabled(false);
 	SetSenseEnabled(UAISense_Sight::StaticClass(), false);
@@ -76,8 +90,15 @@ AActor* UAIRECompanionThreatComponent::GetSelectedThreatTarget() const
 
 bool UAIRECompanionThreatComponent::IsCombatRequested() const
 {
+	const FAIRECompanionLocalBehaviorPolicy Policy =
+		LocalBehaviorPolicyComponent.IsValid()
+			? LocalBehaviorPolicyComponent->GetLocalBehaviorPolicy()
+			: FAIRECompanionLocalBehaviorPolicy();
 	return bIsThreatDetectionActive
 		&& CompanionCharacter.IsValid()
+		&& LocalBehaviorPolicyComponent.IsValid()
+		&& Policy.EngagementPolicy
+			!= EAIRECompanionEngagementPolicy::HoldFire
 		&& !CompanionCharacter->IsAbilitySystemDisabled()
 		&& SelectedThreatTarget.IsValid();
 }
@@ -132,6 +153,15 @@ void UAIRECompanionThreatComponent::HandlePerceivedActorDestroyed(AActor* Destro
 	RemovePerceivedHostile(DestroyedActor, EAIREThreatCleanupReason::TargetInvalid);
 }
 
+void UAIRECompanionThreatComponent::HandleLocalBehaviorPolicyChanged(
+	const FAIRECompanionLocalBehaviorPolicy PreviousPolicy,
+	const FAIRECompanionLocalBehaviorPolicy CurrentPolicy)
+{
+	(void)PreviousPolicy;
+	(void)CurrentPolicy;
+	RefreshThreatSelection();
+}
+
 void UAIRECompanionThreatComponent::ConfigureSight(const UAIRECompanionConfigDataAsset& CompanionConfig)
 {
 	SightConfig->SightRadius = CompanionConfig.ThreatDetectionDistance;
@@ -154,11 +184,9 @@ void UAIRECompanionThreatComponent::RefreshThreatSelection()
 	}
 
 	const UAIRECompanionConfigDataAsset* CompanionConfig = CompanionCharacter->GetCompanionConfig();
-	const UWorld* World = CompanionCharacter->GetWorld();
-	APawn* PlayerPawn = IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
-	if (!IsValid(CompanionConfig) || !IsValid(PlayerPawn))
+	if (!IsValid(CompanionConfig) || !LocalBehaviorPolicyComponent.IsValid())
 	{
-		ClearSelectedTarget(EAIREThreatCleanupReason::NoPlayer);
+		ClearSelectedTarget(EAIREThreatCleanupReason::PolicyUnavailable);
 		return;
 	}
 
@@ -175,10 +203,37 @@ void UAIRECompanionThreatComponent::RefreshThreatSelection()
 			IsValid(Actor) ? EAIREThreatCleanupReason::NotHostile : EAIREThreatCleanupReason::TargetInvalid);
 	}
 
+	const FAIRECompanionLocalBehaviorPolicy Policy =
+		LocalBehaviorPolicyComponent->GetLocalBehaviorPolicy();
+	if (!Policy.IsValid())
+	{
+		ClearSelectedTarget(EAIREThreatCleanupReason::PolicyUnavailable);
+		return;
+	}
+	if (Policy.EngagementPolicy == EAIRECompanionEngagementPolicy::HoldFire)
+	{
+		ClearSelectedTarget(EAIREThreatCleanupReason::HoldFire);
+		return;
+	}
+
+	const UWorld* World = CompanionCharacter->GetWorld();
+	APawn* PlayerPawn =
+		IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
+	if (!IsValid(PlayerPawn))
+	{
+		ClearSelectedTarget(EAIREThreatCleanupReason::NoPlayer);
+		return;
+	}
+
 	if (SelectedThreatTarget.IsValid())
 	{
 		EAIREThreatCleanupReason FailureReason = EAIREThreatCleanupReason::None;
-		if (IsActorEligible(SelectedThreatTarget.Get(), PlayerPawn, *CompanionConfig, FailureReason))
+		if (IsActorEligible(
+			SelectedThreatTarget.Get(),
+			PlayerPawn,
+			*CompanionConfig,
+			Policy.EngagementPolicy,
+			FailureReason))
 		{
 			return;
 		}
@@ -186,7 +241,10 @@ void UAIRECompanionThreatComponent::RefreshThreatSelection()
 		ClearSelectedTarget(FailureReason);
 	}
 
-	SelectClosestEligibleTarget(*PlayerPawn, *CompanionConfig);
+	SelectClosestEligibleTarget(
+		*PlayerPawn,
+		*CompanionConfig,
+		Policy.EngagementPolicy);
 }
 
 bool UAIRECompanionThreatComponent::IsActorHostile(AActor* Actor) const
@@ -207,6 +265,7 @@ bool UAIRECompanionThreatComponent::IsActorEligible(
 	AActor* Actor,
 	const APawn* PlayerPawn,
 	const UAIRECompanionConfigDataAsset& CompanionConfig,
+	const EAIRECompanionEngagementPolicy EngagementPolicy,
 	EAIREThreatCleanupReason& OutFailureReason) const
 {
 	OutFailureReason = EAIREThreatCleanupReason::None;
@@ -223,6 +282,11 @@ bool UAIRECompanionThreatComponent::IsActorEligible(
 	if (!IsValid(PlayerPawn))
 	{
 		OutFailureReason = EAIREThreatCleanupReason::NoPlayer;
+		return false;
+	}
+	if (EngagementPolicy == EAIRECompanionEngagementPolicy::HoldFire)
+	{
+		OutFailureReason = EAIREThreatCleanupReason::HoldFire;
 		return false;
 	}
 
@@ -245,7 +309,16 @@ bool UAIRECompanionThreatComponent::IsActorEligible(
 	const float DistanceToPlayerSquared = FVector::DistSquared(
 		Actor->GetActorLocation(),
 		PlayerPawn->GetActorLocation());
-	if (DistanceToPlayerSquared > FMath::Square(CompanionConfig.MaxChaseDistanceFromPlayer))
+	if (EngagementPolicy == EAIRECompanionEngagementPolicy::DefendPlayer
+		&& DistanceToPlayerSquared
+			> FMath::Square(CompanionConfig.DefendPlayerRadius))
+	{
+		OutFailureReason = EAIREThreatCleanupReason::OutsideDefendPlayerRadius;
+		return false;
+	}
+	if (EngagementPolicy == EAIRECompanionEngagementPolicy::Aggressive
+		&& DistanceToPlayerSquared
+			> FMath::Square(CompanionConfig.MaxChaseDistanceFromPlayer))
 	{
 		OutFailureReason = EAIREThreatCleanupReason::OutsidePlayerChaseDistance;
 		return false;
@@ -283,7 +356,8 @@ void UAIRECompanionThreatComponent::RemovePerceivedHostile(
 
 void UAIRECompanionThreatComponent::SelectClosestEligibleTarget(
 	const APawn& PlayerPawn,
-	const UAIRECompanionConfigDataAsset& CompanionConfig)
+	const UAIRECompanionConfigDataAsset& CompanionConfig,
+	const EAIRECompanionEngagementPolicy EngagementPolicy)
 {
 	const AAIRECompanionCharacter* Companion = CompanionCharacter.Get();
 	if (!IsValid(Companion))
@@ -297,7 +371,12 @@ void UAIRECompanionThreatComponent::SelectClosestEligibleTarget(
 	{
 		AActor* CandidateActor = Candidate.Get();
 		EAIREThreatCleanupReason FailureReason = EAIREThreatCleanupReason::None;
-		if (!IsActorEligible(CandidateActor, &PlayerPawn, CompanionConfig, FailureReason))
+		if (!IsActorEligible(
+			CandidateActor,
+			&PlayerPawn,
+			CompanionConfig,
+			EngagementPolicy,
+			FailureReason))
 		{
 			continue;
 		}
@@ -375,8 +454,14 @@ const TCHAR* UAIRECompanionThreatComponent::GetCleanupReasonName(const EAIREThre
 		return TEXT("NoPlayer");
 	case EAIREThreatCleanupReason::OutsideDetectionDistance:
 		return TEXT("OutsideDetectionDistance");
+	case EAIREThreatCleanupReason::OutsideDefendPlayerRadius:
+		return TEXT("OutsideDefendPlayerRadius");
 	case EAIREThreatCleanupReason::OutsidePlayerChaseDistance:
 		return TEXT("OutsidePlayerChaseDistance");
+	case EAIREThreatCleanupReason::HoldFire:
+		return TEXT("HoldFire");
+	case EAIREThreatCleanupReason::PolicyUnavailable:
+		return TEXT("PolicyUnavailable");
 	case EAIREThreatCleanupReason::CompanionDisabled:
 		return TEXT("CompanionDisabled");
 	case EAIREThreatCleanupReason::DetectionStopped:

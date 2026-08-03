@@ -5,6 +5,7 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Threat/AIRECompanionThreatComponent.h"
@@ -224,6 +225,20 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		}
 		InstanceData.bIsDisabledRequested = InstanceData.bIsDisabledRequested
 			|| InstanceData.CompanionCharacter->IsAbilitySystemDisabled();
+
+		if (InstanceData.bIsCombatRequested
+			&& InstanceData.bIsSupportRequested)
+		{
+			const UAIRECompanionLocalBehaviorPolicyComponent* PolicyComponent =
+				InstanceData.CompanionCharacter
+					->GetLocalBehaviorPolicyComponent();
+			if (IsValid(PolicyComponent)
+				&& PolicyComponent->GetLocalBehaviorPolicy().RolePreference
+					== EAIRECompanionRolePreference::SupportPriority)
+			{
+				InstanceData.bIsCombatRequested = false;
+			}
+		}
 
 		const UAIRECompanionConfigDataAsset* CompanionConfig = InstanceData.CompanionCharacter->GetCompanionConfig();
 		if (IsValid(CompanionConfig))

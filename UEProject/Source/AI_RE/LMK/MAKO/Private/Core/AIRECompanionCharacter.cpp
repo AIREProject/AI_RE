@@ -7,6 +7,7 @@
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -37,6 +38,11 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 
 	CompanionAttributeSet = CreateDefaultSubobject<UAIRECompanionAttributeSet>(TEXT("CompanionAttributes"));
 	check(CompanionAttributeSet);
+
+	LocalBehaviorPolicyComponent =
+		CreateDefaultSubobject<UAIRECompanionLocalBehaviorPolicyComponent>(
+			TEXT("LocalBehaviorPolicy"));
+	check(LocalBehaviorPolicyComponent);
 
 	EquipmentComponent = CreateDefaultSubobject<UAIRECompanionEquipmentComponent>(TEXT("Equipment"));
 	check(EquipmentComponent);
@@ -82,6 +88,12 @@ UAIRECompanionSupportComponent*
 AAIRECompanionCharacter::GetSupportComponent() const
 {
 	return SupportComponent;
+}
+
+UAIRECompanionLocalBehaviorPolicyComponent*
+AAIRECompanionCharacter::GetLocalBehaviorPolicyComponent() const
+{
+	return LocalBehaviorPolicyComponent;
 }
 
 UAIRECompanionChatComponent* AAIRECompanionCharacter::GetChatComponent() const
