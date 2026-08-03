@@ -3,12 +3,13 @@
 ## 1. 문서 목적
 
 이 문서는 MAKO Companion의 현재 GAS 전투 구조, 무기별 Data Asset 소유권,
-쌍검 콤보와 신규 무기 확장 규칙, 코드 구조 변경 후 필요한 Unreal Editor 설정과
-PIE 검증 절차를 정의합니다.
+쌍검 콤보, 로컬 전투·지원 정책과 신규 무기 확장 규칙, 코드 구조 변경 후 필요한
+Unreal Editor 설정과 PIE 검증 절차를 정의합니다.
 
 - 관련 Milestone: `M03 Companion Local AI`
-- 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`
-- 코드 기준일: 2026-07-30
+- 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`,
+  `M03-E06-T01`, `M03-E06-T02`
+- 코드 기준일: 2026-08-03
 - 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬 검증 완료.
   T05C 인벤토리·무기 장착·소모품 회복 구현과 현재 자산으로 가능한 UBT·Editor·PIE
   검증 완료, 실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
@@ -20,9 +21,11 @@ UEProject/Source/AI_RE/LMK/MAKO/
 ├─ Public/
 │  ├─ Core/
 │  ├─ LocalAI/
+│  │  ├─ Policy/
 │  │  ├─ StateTree/
 │  │  ├─ Support/
-│  │  └─ Threat/
+│  │  ├─ Threat/
+│  │  └─ UI/
 │  ├─ AbilitySystem/
 │  │  ├─ Core/
 │  │  │  └─ Attributes/
@@ -42,11 +45,13 @@ UEProject/Source/AI_RE/LMK/MAKO/
    ├─ Public/
    │  ├─ Equipment/
    │  ├─ Inventory/
+   │  ├─ Policy/
    │  ├─ Support/
    │  └─ Threat/
    └─ Private/
       ├─ Equipment/
       ├─ Inventory/
+      ├─ Policy/
       ├─ Support/
       └─ Threat/
 ```
@@ -58,6 +63,7 @@ UEProject/Source/AI_RE/LMK/MAKO/
 | Companion Character | ASC·AttributeSet·기능 컴포넌트 조립과 생명주기 |
 | StateTree | 행동 우선순위, Target 접근, 공격 요청과 취소 |
 | Threat Component | 적대 Target 감지·선택·소실 정리 |
+| Local Behavior Policy Component | 지속 교전 정책과 역할 선호의 단일 런타임 원본, 변경 Delegate |
 | Inventory Component | MAKO 소지품 스택, 장착 무기 ItemId와 원자적 추가·소비 |
 | Equipment Component | 현재 무기, 비동기 자산, Ability Handle과 Anim Layer 수명 |
 | Support Component | 명시적 지원 요청, 회복 Target과 지원 AbilitySet 수명 |
@@ -115,7 +121,8 @@ Companion Config가 소유하는 값은 다음과 같습니다.
 
 - 이동 속도와 Walk/Run 전환 거리
 - Follow/Return 거리
-- Threat 감지 거리와 최대 추격 거리
+- Threat 감지 거리, 플레이어 방어 반경과 최대 추격 거리
+- 기본 교전 정책과 역할 선호
 - 초기 Health·Stamina와 Max 값
 
 기존 `CombatDistance`와 `CombatCooldown`은 기존 StateTree 자산 호환을 위해
@@ -471,6 +478,65 @@ Disabled > Survival > Combat > Support > DirectCommand
 회복용 ASC Target fixture는 `Health=50`, `MaxHealth=100`, `bIsHostile=false`로
 설정합니다.
 
+### 8.6 로컬 전투·지원 정책과 데모 패널
+
+정책의 런타임 단일 원본은 Character의
+`UAIRECompanionLocalBehaviorPolicyComponent`입니다. 기본값은 Companion Config의
+`Aggressive + Balanced`이며, 같은 Character를 다시 Possess하면 현재 값을 유지하고
+새 Character는 Config 기본값으로 시작합니다. 정책은 StateTree State나 Gameplay Tag로
+복제하지 않으며 SaveGame·Replication·Backend 동기화도 하지 않습니다.
+
+교전 축은 다음 규칙을 사용합니다.
+
+| 교전 정책 | Combat 요청과 Target 허용 규칙 |
+|---|---|
+| `HoldFire` | 신규 Combat 요청을 억제하고 현재 Target을 해제합니다. 인식 중인 유효 적대 목록은 유지하므로 다른 정책으로 복귀하면 즉시 재선택할 수 있습니다. |
+| `DefendPlayer` | 감지 거리 안이면서 플레이어로부터 `DefendPlayerRadius` 이내인 Target만 허용합니다. 기본 반경은 600cm입니다. |
+| `Aggressive` | 감지 거리 안이면서 플레이어로부터 `MaxChaseDistanceFromPlayer` 이내인 Target을 허용합니다. 기본 상한은 1500cm입니다. |
+
+거리 경계는 포함하며 Target 순위는 기존과 같이 MAKO에서 가장 가까운 유효 Target을
+우선합니다. Threat Component는 정책 변경 Delegate에서 현재 Target을 동기적으로
+재검증합니다. `HoldFire` 전환 뒤 Ability의 늦은 Hit 검증도
+`IsCombatRequested()` 실패로 차단됩니다.
+
+역할 선호는 유효한 Combat 요청과 일회성 `RequestSupport(Target)` 요청이 동시에 있을
+때만 StateTree Evaluator가 적용합니다.
+
+```text
+Balanced:
+Disabled > Survival > Combat > Support > DirectCommand > Work > Return/Follow > Idle
+
+SupportPriority:
+Disabled > Survival > Support > Combat > DirectCommand > Work > Return/Follow > Idle
+```
+
+데모 입력은 독립 Policy HUD가 `P` 키의 Press·Release를 사용합니다. `P`를 누르고 있는
+동안 이동·시점 입력을 억제하고 마우스 커서를 중앙에 배치하며, 방향을 고른 뒤 `P`를
+놓는 시점에 선택한 축 하나만 적용합니다. 중앙 데드존에서 놓으면 취소되며, Release를
+잃어 패널이 남은 경우 다음 `P` Press가 취소·복구합니다. 기존 숫자 퀵슬롯과 Chat HUD
+입력은 변경하지 않습니다.
+
+원형 UI는 두 독립 축을 한 화면에 배치합니다.
+
+| 반원 | 방향 | 변경 값 |
+|---|---|---|
+| 위쪽 | 좌 / 우 | `Balanced` / `SupportPriority` |
+| 아래쪽 | 좌 / 중앙 / 우 | `HoldFire` / `DefendPlayer` / `Aggressive` |
+
+한 번의 제스처는 선택한 축만 바꾸고 다른 축은 현재 값을 보존하므로 `3 × 2`의 모든
+조합을 최대 두 번의 입력으로 만들 수 있습니다. 현재 교전 값과 역할 값은 각 반원의
+활성 섹터로 동시에 표시하고, 커서가 가리키는 값은 별도 강조와 중앙의 전체 정책
+미리보기로 표시합니다. `SupportPriority` 선택은 Support 요청을 만들지 않습니다.
+
+WBP 경로는
+`/Game/Work/LMK/UI/Policy/WBP_AIRECompanionPolicyPanel`이며 부모 클래스는
+`UAIRECompanionPolicyPanelWidget`입니다. WBP는 레이아웃만 소유하고 정책 로직이나
+StateTree 상태 선택 Blueprint Graph를 두지 않습니다. 외부 PNG·아이콘·UI Material은
+사용하지 않으며 원형 섹터 렌더링과 각도 판정은 C++, 텍스트·버튼 배치는 WBP가
+소유합니다. C++ `BindWidget` 계약 이름은 `PolicyPanel`, `CollapsedHint`,
+`CurrentPolicyText`, `StatusText`, `BalancedButton`, `SupportPriorityButton`,
+`HoldFireButton`, `DefendPlayerButton`, `AggressiveButton`입니다.
+
 ## 9. 검증 체크리스트
 
 ### 9.1 빌드·자산 기준선
@@ -605,6 +671,26 @@ Target을 Reset한 뒤 반복합니다.
 > 공격 중 교체 거부와 장착 실패 복구는 실제 두 번째 무기를 추가할 때 검증합니다.
 > 실제 플레이어 ASC·GAS Health 연동 전까지 지원 회복은 ASC 아군 fixture 기준입니다.
 
+### 9.12 로컬 전투·지원 정책과 데모 UI
+
+- [x] `AI_REEditor Win64 Development` UHT·UBT 빌드가 성공한다.
+- [x] WBP가 커스텀 C++ 부모와 필수 `BindWidget` 계약으로 Compile·Save된다.
+- [ ] `P` Hold·방향 선택·Release를 반복하고 취소할 때 이동·시점·커서 상태가 복구된다.
+- [ ] `HoldFire` 전환 즉시 현재 공격이 취소되고 같은 적을 인식한 채 신규 Combat 요청이 억제된다.
+- [ ] `DefendPlayer`가 플레이어 기준 600cm 포함 경계 안 Target만 허용한다.
+- [ ] `Aggressive`가 감지 거리와 플레이어 기준 1500cm 추격 상한을 모두 지킨다.
+- [ ] Combat·Support 동시 요청에서 Balanced는 Combat, SupportPriority는 Support를 선택한다.
+- [ ] Disabled·Survival은 두 역할 선호에서 항상 Combat·Support를 선점한다.
+- [ ] 위 2개 역할·아래 3개 교전 선택으로 여섯 조합을 만들고 각 입력이 한 축만 변경한다.
+- [ ] 연속 축 전환과 Target 소실 뒤 늦은 Ability·이동·Timer가 발생하지 않는다.
+- [ ] Spawn·Possess·UnPossess·Destroy 반복 뒤 정책·Delegate·Widget·Input Component가 누적되지 않는다.
+- [ ] Backend·LLM 없이 전체 경로가 동작한다.
+
+> 2026-08-03 사용자 PIE 스모크에서 원형 UI 표시와 정책 입력의 대략적인 정상 동작을
+> 확인했습니다. WBP는 재빌드된 C++ 부모 기준 19개 Widget, compiler message 0개로
+> Compile·Save되었습니다. 거리 포함 경계, Combat·Support 동시 요청 우선순위와 반복
+> 수명주기 항목은 별도 상세 검증 전이므로 열어 둡니다.
+
 ## 10. 통과 기준과 후속 정리
 
 이번 구조 변경은 다음 조건이 모두 만족되어야 검증 완료로 간주합니다.
@@ -615,6 +701,7 @@ Target을 Reset한 뒤 반복합니다.
 4. 취소·사망·무기 교체·Target 소실 수명주기 통과
 5. Idle·Follow·Combat·Return 로컬 루프 회귀 통과
 6. 인벤토리 원자성, 지원 취소 무소비, 과회복 방지와 무기 실패 복구 통과
+7. 로컬 정책의 거리·우선순위·취소 수명주기와 Policy WBP 입력 경로 통과
 
 검증 후 별도 정리 Task에서 deprecated `CombatDistance`·`CombatCooldown` 프로퍼티와
 기존 StateTree Binding 호환 필드를 제거할 수 있습니다. 실제 적 연동 전에는 현재
@@ -622,6 +709,6 @@ Damage GE가 `UAIRECompanionAttributeSet::Health`에 결합된 점을 해결하�
 Attribute 또는 Target 피해 계약을 확정해야 합니다.
 
 T05C는 실제 플레이어가 ASC·GAS Health·회복 대상 인터페이스를 제공하고 사용자
-UBT·Editor·PIE 검증이 끝날 때까지 `Review`로 유지합니다. 인벤토리 UI, 퀵슬롯,
+UBT·Editor·PIE 검증이 끝날 때까지 `Review`로 유지합니다. 인벤토리 UI,
 플레이어와 MAKO 간 전달, 월드 획득, Drop, Crafting, SaveGame과 Replication은 후속
 범위입니다.

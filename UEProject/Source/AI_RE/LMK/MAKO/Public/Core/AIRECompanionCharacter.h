@@ -10,6 +10,7 @@ class UAIRECompanionAttributeSet;
 class UAIRECompanionChatComponent;
 class UAIRECompanionEquipmentComponent;
 class UAIRECompanionInventoryComponent;
+class UAIRECompanionLocalBehaviorPolicyComponent;
 class UAIRECompanionSupportComponent;
 class UAbilitySystemComponent;
 struct FOnAttributeChangeData;
@@ -38,6 +39,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Support")
 	UAIRECompanionSupportComponent* GetSupportComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Policy")
+	UAIRECompanionLocalBehaviorPolicyComponent*
+		GetLocalBehaviorPolicyComponent() const;
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	UAIRECompanionChatComponent* GetChatComponent() const;
@@ -72,6 +77,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Support", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionSupportComponent> SupportComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Policy", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECompanionLocalBehaviorPolicyComponent>
+		LocalBehaviorPolicyComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Chat", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionChatComponent> ChatComponent;

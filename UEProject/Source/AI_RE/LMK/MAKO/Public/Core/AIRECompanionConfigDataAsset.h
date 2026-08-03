@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "LocalAI/Policy/AIRECompanionLocalBehaviorPolicy.h"
 #include "AIRECompanionConfigDataAsset.generated.h"
 
 class UAIRECompanionAbilitySetDataAsset;
@@ -57,6 +58,17 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (UIMin = "0.0", Units = "cm"))
 	float MaxChaseDistanceFromPlayer = 1500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Policy")
+	EAIRECompanionEngagementPolicy DefaultEngagementPolicy =
+		EAIRECompanionEngagementPolicy::Aggressive;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Policy")
+	EAIRECompanionRolePreference DefaultRolePreference =
+		EAIRECompanionRolePreference::Balanced;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Policy", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float DefendPlayerRadius = 600.0f;
 
 	/** Deprecated. Attack range is owned by the equipped Weapon Definition. */
 	UPROPERTY(
