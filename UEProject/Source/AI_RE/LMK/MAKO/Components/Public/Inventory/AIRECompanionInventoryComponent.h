@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AIREGameplayInventoryTypes.h"
 #include "Components/ActorComponent.h"
 #include "AIRECompanionInventoryComponent.generated.h"
 
@@ -8,14 +9,8 @@ class UAIRECompanionConfigDataAsset;
 class UAIRECompanionEquipmentComponent;
 class UAIRECompanionItemDefinitionDataAsset;
 class UAIRECompanionWeaponDefinitionDataAsset;
+class UAIREGameplayInventorySubsystem;
 class UAbilitySystemComponent;
-
-struct FAIRECompanionInventoryStack
-{
-	TObjectPtr<UAIRECompanionItemDefinitionDataAsset> ItemDefinition;
-
-	int32 Count = 0;
-};
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAIRECompanionInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -54,8 +49,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Inventory")
 	bool EquipWeaponItem(FName ItemId);
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Inventory")
+	FAIREInventoryMutationResult RequestEquipWeaponItem(
+		const FAIREInventoryEquipRequest& Request);
+
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Inventory")
 	FName GetEquippedWeaponItemId() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Inventory")
+	FName GetPendingWeaponItemId() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Inventory")
+	bool GetInventorySnapshot(
+		FAIREInventoryContainerSnapshot& OutSnapshot) const;
 
 	const UAIRECompanionItemDefinitionDataAsset* FindItemDefinition(
 		FName ItemId) const;
@@ -70,27 +76,34 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	bool TryAddItemDefinition(
-		UAIRECompanionItemDefinitionDataAsset* ItemDefinition,
-		int32 Count);
-	bool EquipWeaponItemInternal(FName ItemId, bool bIsRecovery);
+	enum class EAIREEquipmentCallbackMode : uint8
+	{
+		None,
+		RestoreCurrent,
+		Equipping,
+		Recovering
+	};
+
 	void HandleWeaponEquipCompleted(
 		UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition,
 		bool bSucceeded);
+	UFUNCTION()
+	void HandleContainerChanged(FName ContainerId, int64 Revision);
+	bool RequestRuntimeEquipment(
+		FName ItemId,
+		EAIREEquipmentCallbackMode CallbackMode,
+		const FGuid& SessionId,
+		const FGuid& MutationId);
+	void ClearActiveEquipmentRequest();
 
-	TArray<FAIRECompanionInventoryStack> ItemStacks;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UAIRECompanionItemDefinitionDataAsset>> KnownItemDefinitions;
-
-	int32 MaxInventorySlots = 0;
-
-	FName EquippedWeaponItemId;
-
-	FName PendingWeaponItemId;
-	FName PreviousWeaponItemId;
+	TWeakObjectPtr<UAIREGameplayInventorySubsystem> GameplayInventory;
 	TWeakObjectPtr<UAIRECompanionEquipmentComponent> EquipmentComponent;
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
 	FDelegateHandle WeaponEquipCompletedDelegateHandle;
+	FGuid BoundInventorySessionId;
+	FGuid ActiveEquipmentSessionId;
+	FGuid ActiveEquipmentMutationId;
+	EAIREEquipmentCallbackMode EquipmentCallbackMode =
+		EAIREEquipmentCallbackMode::None;
 	bool bIsInitialized = false;
 };

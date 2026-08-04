@@ -9,10 +9,11 @@ Unreal Editor 설정과 PIE 검증 절차를 정의합니다.
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`,
   `M03-E06-T01`, `M03-E06-T02`
-- 코드 기준일: 2026-08-03
+- 코드 기준일: 2026-08-04
 - 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬 검증 완료.
   T05C 인벤토리·무기 장착·소모품 회복 구현과 현재 자산으로 가능한 UBT·Editor·PIE
-  검증 완료, 실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
+  검증 완료. M03-E08-T01 Gameplay Inventory Subsystem은 Review이며 사용자 UBT·Editor·PIE,
+  실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
 
 ## 2. 현재 코드 구조
 
@@ -64,7 +65,8 @@ UEProject/Source/AI_RE/LMK/MAKO/
 | StateTree | 행동 우선순위, Target 접근, 공격 요청과 취소 |
 | Threat Component | 적대 Target 감지·선택·소실 정리 |
 | Local Behavior Policy Component | 지속 교전 정책과 역할 선호의 단일 런타임 원본, 변경 Delegate |
-| Inventory Component | MAKO 소지품 스택, 장착 무기 ItemId와 원자적 추가·소비 |
+| Gameplay Inventory Subsystem | GameInstance 수명의 MAKO Item 20칸·Equipment 1칸, 공유 창고와 원자적 mutation |
+| Inventory Component | Gameplay Inventory façade와 Equipment/ASC 비동기 Callback 수명 |
 | Equipment Component | 현재 무기, 비동기 자산, Ability Handle과 Anim Layer 수명 |
 | Support Component | 명시적 지원 요청, 회복 Target과 지원 AbilitySet 수명 |
 | Gameplay Ability | 공격·회복 검증, Cooldown Commit, Montage·Timer와 GE 실행 |
@@ -286,11 +288,13 @@ Window에서 처리합니다. 스킬 활성화가 Cooldown·Target·상태 검�
 
 ### 6.3 MAKO 인벤토리·지원 회복 계약
 
-MAKO 인벤토리는 플레이어 인벤토리와 독립적이며 이번 범위에서는 `Consumable`과
-`Weapon`만 소유합니다. 무기 장착은 Item을 제거하지 않고
-`EquippedWeaponItemId`만 변경합니다. 존재하지 않거나 Weapon이 아닌 Item, 공격 중
-교체 요청은 거부합니다. 새 무기 로드 또는 AbilitySet 부여가 실패하면 이전 무기와
-Ability Handle을 복구하고 장착 ItemId를 유지합니다.
+MAKO 일반 인벤토리는 `UAIREGameplayInventorySubsystem`의 20칸 Container이며 이번
+범위에서는 `Consumable`과 `Weapon`만 소유합니다. 장착 무기는 일반 Stack과 분리된
+Equipment 1칸에 저장합니다. 존재하지 않거나 Weapon이 아닌 Item, 공격 중 교체 요청은
+거부합니다. 새 무기 Slot은 비동기 장착 동안 잠그고, 성공한 뒤에만 이전 Equipment와
+원자 교환합니다. 새 무기 로드 또는 AbilitySet 부여가 실패하면 Item 배치를 유지한 채
+이전 무기와 Ability Handle을 복구합니다. 상세 mutation·revision·공유 창고 계약은
+[`GAMEPLAY_INVENTORY.md`](GAMEPLAY_INVENTORY.md)를 따릅니다.
 
 회복은 마법이 아니라 MAKO가 자기 인벤토리의 응급 회복 앰플을 아군에게 사용하는
 행동입니다.
