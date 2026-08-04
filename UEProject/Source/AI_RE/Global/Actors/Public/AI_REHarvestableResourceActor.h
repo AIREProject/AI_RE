@@ -42,6 +42,9 @@ private:
 	void HandleDepletedStateChanged(bool bNewIsDepleted);
 
 	UFUNCTION()
-	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount);
+	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount, FGuid DeliveryId);
 
+	bool SpawnHarvestReward(class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount);
+
+	TSet<FGuid> CompletedRewardDeliveries;
 };

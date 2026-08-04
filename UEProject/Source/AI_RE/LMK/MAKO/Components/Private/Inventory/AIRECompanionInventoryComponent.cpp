@@ -373,6 +373,43 @@ bool UAIRECompanionInventoryComponent::GetInventorySnapshot(
 			OutSnapshot);
 }
 
+bool UAIRECompanionInventoryComponent::CanCompleteMakoCraftWork(
+	const FAIREMakoCraftWorkRequest& Request,
+	FAIREInventoryWorkResult& OutResult) const
+{
+	if (!bIsInitialized || !GameplayInventory.IsValid())
+	{
+		OutResult = FAIREInventoryWorkResult();
+		OutResult.Code = EAIREInventoryMutationCode::NotInitialized;
+		return false;
+	}
+	return GameplayInventory->CanCompleteMakoCraftWork(Request, OutResult);
+}
+
+FAIREInventoryWorkResult UAIRECompanionInventoryComponent::TryCompleteMakoCraftWork(
+	const FAIREMakoCraftWorkRequest& Request)
+{
+	if (!bIsInitialized || !GameplayInventory.IsValid())
+	{
+		FAIREInventoryWorkResult Result;
+		Result.Code = EAIREInventoryMutationCode::NotInitialized;
+		return Result;
+	}
+	return GameplayInventory->TryCompleteMakoCraftWork(Request);
+}
+
+FAIREInventoryWorkResult UAIRECompanionInventoryComponent::TryStoreMakoWorkReward(
+	const FAIREMakoWorkRewardRequest& Request)
+{
+	if (!bIsInitialized || !GameplayInventory.IsValid())
+	{
+		FAIREInventoryWorkResult Result;
+		Result.Code = EAIREInventoryMutationCode::NotInitialized;
+		return Result;
+	}
+	return GameplayInventory->TryStoreMakoWorkReward(Request);
+}
+
 const UAIRECompanionItemDefinitionDataAsset*
 UAIRECompanionInventoryComponent::FindItemDefinition(
 	const FName ItemId) const

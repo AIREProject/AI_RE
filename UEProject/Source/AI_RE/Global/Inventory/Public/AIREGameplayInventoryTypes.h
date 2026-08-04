@@ -38,6 +38,15 @@ enum class EAIREInventoryMutationCode : uint8
 };
 
 UENUM(BlueprintType)
+enum class EAIREInventoryWorkResultDestination : uint8
+{
+	None,
+	Mako,
+	SharedWarehouse,
+	WorldDrop
+};
+
+UENUM(BlueprintType)
 enum class EAIREEquipmentTransitionState : uint8
 {
 	Idle,
@@ -255,6 +264,94 @@ struct AI_RE_API FAIREInventoryMutationResult
 		return Code == EAIREInventoryMutationCode::Succeeded
 			|| Code == EAIREInventoryMutationCode::AlreadyApplied;
 	}
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREInventoryItemQuantity
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FName ItemId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int32 Count = 0;
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREMakoCraftWorkRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FGuid SessionId;
+
+	/** WorkOrderId is the idempotent mutation identifier for this craft completion. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FGuid WorkOrderId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	int64 ExpectedMakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	int64 ExpectedWarehouseRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	TArray<FAIREInventoryItemQuantity> Ingredients;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FAIREInventoryItemQuantity Result;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	bool bCanWorldDrop = false;
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREMakoWorkRewardRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FGuid SessionId;
+
+	/** DeliveryId is the idempotent mutation identifier for this harvested reward. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FGuid DeliveryId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	int64 ExpectedMakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	int64 ExpectedWarehouseRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
+	FAIREInventoryItemQuantity Reward;
+
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREInventoryWorkResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	EAIREInventoryMutationCode Code = EAIREInventoryMutationCode::NotInitialized;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	bool bAlreadyApplied = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	EAIREInventoryWorkResultDestination Destination =
+		EAIREInventoryWorkResultDestination::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	FAIREInventoryItemQuantity DeliveredItem;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	int64 MakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
+	int64 WarehouseRevision = INDEX_NONE;
 };
 
 struct AI_RE_API FAIREInventorySessionScope

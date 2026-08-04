@@ -5,6 +5,8 @@
 #include "Core/AIRECompanionAIController.h"
 #include "AIRECompanionTestingBlueprintLibrary.generated.h"
 
+class UDataTable;
+
 /** Temporary PIE-only Inventory transfer directions. Replace with M03-E08-T02 UI requests. */
 UENUM(BlueprintType)
 enum class EAIRECompanionTestingInventoryTransferDirection : uint8
@@ -30,6 +32,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Testing", meta = (WorldContext = "WorldContextObject"))
 	static bool ClearFirstCompanionTestBehaviorRequests(const UObject* WorldContextObject);
+
+	/** Temporary M03-E07-T02 PIE fixture. Replace with production work input. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Testing", meta = (WorldContext = "WorldContextObject"))
+	static bool RequestFirstCompanionNearestCraftingWork(
+		const UObject* WorldContextObject,
+		UDataTable* CraftingRecipeTable);
+
+	/** Temporary M03-E07-T02 PIE fixture. Replace with production work input. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Testing", meta = (WorldContext = "WorldContextObject"))
+	static bool RequestFirstCompanionNearestHarvestWork(const UObject* WorldContextObject);
+
+	/** Temporary M03-E07-T02 PIE fixture. Replace with production work cancellation input. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Testing", meta = (WorldContext = "WorldContextObject"))
+	static bool CancelFirstCompanionWorkOrder(const UObject* WorldContextObject);
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Testing", meta = (WorldContext = "WorldContextObject"))
 	static bool ApplyDamageToFirstCompanion(const UObject* WorldContextObject, float DamageAmount);

@@ -1,8 +1,10 @@
 # Gameplay Inventory와 공유 창고 계약
 
 - 관련 Milestone: `M03 Companion Local AI`
-- 관련 Task: `M03-E08-T01`
-- 현재 상태: Review, 사용자 UBT·월드 창고 Snapshot 스모크 통과; 자동화·Transfer·두 번째 MAKO 무기 검증 대기
+- 관련 Task: `M03-E08-T01`, `M03-E07-T02`, `M03-E08-T02`
+- 현재 상태: M03-E08-T01·M03-E07-T02 Review, M03-E08-T02 Ready. 사용자 UBT·월드
+  창고 Snapshot·MAKO 채집 고갈 스모크 통과; 자동화·Transfer·Work 결과 수량 UI·
+  두 번째 MAKO 무기 검증 대기
 
 ## 1. 책임과 수명
 
@@ -69,10 +71,25 @@ Player 개인 Inventory와 Quick Slot은 기존 Actor Component가 계속 소유
 창고 Transfer는 일반 Slot만 대상으로 post-state를 먼저 준비하고 Player·창고를 함께
 commit합니다. 기존 `AddItem`의 부분 성공 동작, `UseItem`, Crafting과 UI는 바꾸지 않습니다.
 
-Work 구현 전에는 기존 MAKO Config의 기본 쌍검·회복 앰플과 Testing Blueprint helper의
-명시적 seed를 검증 입력으로 사용합니다. 실제 Work 결과는 후속 E07 통합에서 같은
-검증된 Add mutation을 한 번만 호출합니다. 두 번째 MAKO Weapon 자산이 없으므로 실제
-다중 무기 async 교체·복구 검증 전까지 T01은 `Review`입니다.
+MAKO 제작 완료는 `FAIREMakoCraftWorkRequest`로 재료 전체와 결과를 먼저 검증한 뒤
+`TryCompleteMakoCraftWork`에서 한 번에 commit합니다. `WorkOrderId`를 mutation ID로
+사용하므로 재호출은 `AlreadyApplied`를 반환하고 재료 소비·결과 지급·revision·Event를
+반복하지 않습니다. 결과는 MAKO Inventory, 공유 창고, 허용된 World Drop 순서로
+귀결됩니다.
+
+채집 보상은 보상 발생마다 생성한 `DeliveryId`와 `FAIREMakoWorkRewardRequest`를 사용해
+`TryStoreMakoWorkReward`로 전달합니다. MAKO가 수용하지 못하면 공유 창고를 사용하고,
+두 컨테이너가 모두 수용하지 못하면 호출자가 기존 World Item Actor를 한 번만
+생성합니다. 공유 창고 직접 적재는 Inventory mutation이며, MAKO가 물리적으로 창고까지
+이동하는 자동화는 `M03-E08-T02` 이후 별도 WorkOrder가 소유합니다.
+
+두 번째 MAKO Weapon 자산이 없으므로 실제 다중 무기 async 교체·복구 검증 전까지
+T01은 `Review`입니다.
+
+2026-08-04 사용자 결정으로 제작·채집 결과 수량의 화면 확인은 `M03-E08-T02`
+Inventory·공유 창고 UI 검증에 포함합니다. 이 이관은 E07의 원자 mutation과 exact-once
+계약을 변경하지 않으며 UI는 Snapshot을 표시할 뿐 WorkOrder나 보상 수량을 직접
+수정하지 않습니다.
 
 ## 6. 외부 Import 경계
 

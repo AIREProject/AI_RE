@@ -21,7 +21,10 @@ void UAI_REHarvestableResourceComponent::BeginPlay()
 bool UAI_REHarvestableResourceComponent::ApplyHarvestDamage(float DamageAmount, AActor* InstigatorActor)
 {
 	AActor* Owner = GetOwner();
-	if (Owner == nullptr || bIsDepleted || DamageAmount <= 0.0f)
+	if (Owner == nullptr
+		|| bIsDepleted
+		|| !FMath::IsFinite(DamageAmount)
+		|| DamageAmount <= 0.0f)
 	{
 		return false;
 	}
@@ -31,9 +34,17 @@ bool UAI_REHarvestableResourceComponent::ApplyHarvestDamage(float DamageAmount, 
 	const float AppliedDamage = PreviousHealth - CurrentHealth;
 	const int32 RewardMultiplier = ConsumeRewardIntervals(AppliedDamage);
 	const int32 GrantedRewardAmount = RewardMultiplier * RewardAmount;
+	const FGuid DeliveryId = GrantedRewardAmount > 0
+		? FGuid::NewGuid()
+		: FGuid();
 
-	GrantReward(InstigatorActor, RewardMultiplier);
-	OnHarvested.Broadcast(InstigatorActor, AppliedDamage, CurrentHealth, RewardItemAsset, GrantedRewardAmount);
+	OnHarvested.Broadcast(
+		InstigatorActor,
+		AppliedDamage,
+		CurrentHealth,
+		RewardItemAsset,
+		GrantedRewardAmount,
+		DeliveryId);
 
 	UE_LOG(
 		LogTemp,
@@ -131,19 +142,4 @@ int32 UAI_REHarvestableResourceComponent::ConsumeRewardIntervals(float AppliedDa
 	}
 
 	return RewardMultiplier;
-}
-
-void UAI_REHarvestableResourceComponent::GrantReward(AActor* InstigatorActor, int32 RewardMultiplier)
-{
-	const int32 GrantedRewardAmount = RewardMultiplier * RewardAmount;
-	if (!InstigatorActor || GrantedRewardAmount <= 0 || !RewardItemAsset)
-	{
-		return;
-	}
-
-	// TODO: Inventory System Integration
-	// In singleplayer AI_RE project, we will later link this to the Grid Inventory System.
-	// For now, we simply log the reward grant.
-	UE_LOG(LogTemp, Warning, TEXT("GrantReward (Singleplayer Stub): %s x%d granted to %s. Implement Inventory Link!"), 
-		*RewardItemAsset->ItemId.ToString(), GrantedRewardAmount, *InstigatorActor->GetName());
 }

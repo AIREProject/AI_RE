@@ -63,6 +63,16 @@ public:
 	bool GetInventorySnapshot(
 		FAIREInventoryContainerSnapshot& OutSnapshot) const;
 
+	bool CanCompleteMakoCraftWork(
+		const FAIREMakoCraftWorkRequest& Request,
+		FAIREInventoryWorkResult& OutResult) const;
+
+	FAIREInventoryWorkResult TryCompleteMakoCraftWork(
+		const FAIREMakoCraftWorkRequest& Request);
+
+	FAIREInventoryWorkResult TryStoreMakoWorkReward(
+		const FAIREMakoWorkRewardRequest& Request);
+
 	const UAIRECompanionItemDefinitionDataAsset* FindItemDefinition(
 		FName ItemId) const;
 

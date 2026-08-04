@@ -9,9 +9,14 @@
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Animation/AnimMontage.h"
 #include "Core/AIRECompanionAIController.h"
+#include "Core/AIRECompanionCharacter.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "Work/AIRECompanionWorkOrderComponent.h"
+#include "AI_REHarvestDamageTarget.h"
+#include "AI_REHarvestableResourceActor.h"
+#include "AI_REHarvestableResourceComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
@@ -54,8 +59,13 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		? ActiveWeaponDefinition->AttackRange
 		: 0.0f;
 
+	const bool bHasEventTarget = InitializeEventTarget(TriggerEventData);
+	ActiveExecutionMode = bHasEventTarget
+		? ResolveExecutionMode(GetEventTarget())
+		: EExecutionMode::None;
 	const bool bHasValidRange = FMath::IsFinite(AttackRange) && AttackRange >= 0.0f;
-	if (!InitializeEventTarget(TriggerEventData)
+	if (!bHasEventTarget
+		|| ActiveExecutionMode == EExecutionMode::None
 		|| !IsValid(ActiveWeaponDefinition)
 		|| !ActiveWeaponDefinition->IsMeleeWeapon()
 		|| !IsAttackStepIndexValid(CurrentStepIndex)
@@ -102,10 +112,13 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		}
 	}
 
-	StartCombatSkillTransitionEventWait();
-	if (bIsEnding)
+	if (ActiveExecutionMode == EExecutionMode::Combat)
 	{
-		return;
+		StartCombatSkillTransitionEventWait();
+		if (bIsEnding)
+		{
+			return;
+		}
 	}
 
 	FaceTarget(GetEventTarget());
@@ -146,6 +159,7 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 	CombatSkillTransitionEventTask = nullptr;
 	ActiveWeaponDefinition = nullptr;
 	AttackRange = 0.0f;
+	ActiveExecutionMode = EExecutionMode::None;
 	CurrentStepIndex = INDEX_NONE;
 	ResumeStepIndex = INDEX_NONE;
 	bCurrentStepHitConsumed = false;
@@ -219,9 +233,73 @@ FName UAIRECompanionMeleeAttackAbility::GetAttackStepMontageSection(const int32 
 	return ActiveWeaponDefinition->ComboSteps[StepIndex].MontageSection;
 }
 
+UAIRECompanionMeleeAttackAbility::EExecutionMode
+UAIRECompanionMeleeAttackAbility::ResolveExecutionMode(
+	const AActor* TargetActor) const
+{
+	const APawn* AvatarPawn = Cast<APawn>(GetAvatarActorFromActorInfo());
+	const AAIRECompanionAIController* CompanionController =
+		IsValid(AvatarPawn)
+			? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
+			: nullptr;
+	const UAIRECompanionThreatComponent* ThreatComponent =
+		IsValid(CompanionController)
+			? CompanionController->GetThreatComponent()
+			: nullptr;
+	if (IsValid(ThreatComponent)
+		&& ThreatComponent->IsCombatRequested()
+		&& IsValid(ThreatComponent->GetSelectedThreatTarget()))
+	{
+		return ThreatComponent->GetSelectedThreatTarget() == TargetActor
+			? EExecutionMode::Combat
+			: EExecutionMode::None;
+	}
+
+	if (IsValid(TargetActor)
+		&& TargetActor->GetClass()->ImplementsInterface(
+			UAI_REHarvestDamageTarget::StaticClass()))
+	{
+		const AAIRECompanionCharacter* CompanionCharacter =
+			Cast<AAIRECompanionCharacter>(AvatarPawn);
+		const UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+			IsValid(CompanionCharacter)
+				? CompanionCharacter->GetWorkOrderComponent()
+				: nullptr;
+		if (IsValid(WorkOrderComponent))
+		{
+			const FAIRECompanionWorkOrderSnapshot Snapshot =
+				WorkOrderComponent->GetWorkOrderSnapshot();
+			if (Snapshot.WorkType
+					== EAIRECompanionWorkOrderType::Harvesting
+				&& Snapshot.State
+					== EAIRECompanionWorkOrderState::Working
+				&& Snapshot.TargetActor.Get() == TargetActor)
+			{
+				return EExecutionMode::Harvest;
+			}
+		}
+	}
+
+	return IsTargetValidForAttack(TargetActor)
+		? EExecutionMode::Combat
+		: EExecutionMode::None;
+}
+
 bool UAIRECompanionMeleeAttackAbility::IsTargetValidForAttack(
 	const AActor* TargetActor) const
 {
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		const AAI_REHarvestableResourceActor* ResourceActor =
+			Cast<AAI_REHarvestableResourceActor>(TargetActor);
+		const UAI_REHarvestableResourceComponent* ResourceComponent =
+			IsValid(ResourceActor)
+				? ResourceActor->GetHarvestableResourceComponent()
+				: nullptr;
+		return IsValid(ResourceComponent)
+			&& !ResourceComponent->IsDepleted();
+	}
+
 	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	if (!IsValid(AvatarActor)
 		|| !IsValid(TargetActor)
@@ -303,6 +381,29 @@ bool UAIRECompanionMeleeAttackAbility::IsActiveExecutionValid() const
 	}
 
 	const APawn* AvatarPawn = Cast<APawn>(ActorInfo->AvatarActor.Get());
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		const AAIRECompanionCharacter* CompanionCharacter =
+			Cast<AAIRECompanionCharacter>(AvatarPawn);
+		const UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+			IsValid(CompanionCharacter)
+				? CompanionCharacter->GetWorkOrderComponent()
+				: nullptr;
+		if (!IsValid(WorkOrderComponent))
+		{
+			return false;
+		}
+
+		const FAIRECompanionWorkOrderSnapshot Snapshot =
+			WorkOrderComponent->GetWorkOrderSnapshot();
+		return Snapshot.WorkType
+				== EAIRECompanionWorkOrderType::Harvesting
+			&& Snapshot.State
+				== EAIRECompanionWorkOrderState::Working
+			&& Snapshot.TargetActor.Get() == GetEventTarget()
+			&& IsTargetValidForAttack(GetEventTarget());
+	}
+
 	const AAIRECompanionAIController* CompanionController = IsValid(AvatarPawn)
 		? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
 		: nullptr;
@@ -496,6 +597,33 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 		return false;
 	}
 
+	const float StepDamage = GetAttackStepDamage(CurrentStepIndex);
+	if (!FMath::IsFinite(StepDamage) || StepDamage <= 0.0f)
+	{
+		return false;
+	}
+
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		const bool bAppliedHarvestDamage =
+			IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(
+				TargetActor,
+				StepDamage,
+				GetAvatarActorFromActorInfo());
+		if (bAppliedHarvestDamage)
+		{
+			UE_LOG(
+				LogAIRECompanionMeleeAttack,
+				Log,
+				TEXT("Companion harvest hit applied. Source=%s Target=%s Step=%d Damage=%.2f"),
+				*GetNameSafe(GetAvatarActorFromActorInfo()),
+				*GetNameSafe(TargetActor),
+				CurrentStepIndex,
+				StepDamage);
+		}
+		return bAppliedHarvestDamage;
+	}
+
 	UAbilitySystemComponent* SourceAbilitySystem = GetAbilitySystemComponentFromActorInfo();
 	UAbilitySystemComponent* TargetAbilitySystem =
 		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor, true);
@@ -515,7 +643,6 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 		return false;
 	}
 
-	const float StepDamage = GetAttackStepDamage(CurrentStepIndex);
 	DamageSpec.Data->SetSetByCallerMagnitude(
 		AIRECompanionGameplayTags::DataDamage,
 		-StepDamage);
