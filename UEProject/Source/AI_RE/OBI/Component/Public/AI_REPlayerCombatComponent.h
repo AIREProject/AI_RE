@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "../../Global/Components/Public/AI_REStatusComponent.h"
-#include "../../OBI/Component/Public/AI_REItemDataAsset.h"
+#include "AI_REItemDataAsset.h"
+#include "Engine/StreamableManager.h"
 #include "AI_REPlayerCombatComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnPrimaryActionHitSignature, AActor*, HitActor);
@@ -36,18 +36,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
 	FOnPrimaryActionHitSignature OnPrimaryActionHit;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	float TraceDistance = 300.f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Combat")
-	float BaseDamage = 10.f;
-
+	// 스태미나 소모량 (기획자 요청으로 보존, 0으로 설정하면 소모 안함)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat")
 	float AttackStaminaCost = 15.f;
-
-	// Montage to play on primary action
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat|Animation")
-	TObjectPtr<class UAnimMontage> PrimaryAttackMontage;
 
 protected:
 	virtual void BeginPlay() override;
@@ -58,4 +49,12 @@ protected:
 
 	UPROPERTY()
 	FTimerHandle ActionTimerHandle;
+	
+	// 비동기 로딩이 완료된 애니메이션 몽타주 캐싱
+	UPROPERTY(Transient)
+	TObjectPtr<class UAnimMontage> CachedAttackMontage;
+	
+	TSharedPtr<struct FStreamableHandle> MontageLoadHandle;
+	
+	void OnWeaponMontageLoaded();
 };

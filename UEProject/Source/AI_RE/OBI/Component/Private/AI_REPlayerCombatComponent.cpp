@@ -14,6 +14,9 @@
 #include "AbilitySystemComponent.h"
 #include "AI_REAttributeSet.h"
 #include "AbilitySystemInterface.h"
+#include "Engine/AssetManager.h"
+#include "../../LMK/MAKO/Public/Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "AI_REWeaponItemDataAsset.h"
 #include "Engine/Engine.h"
 
 UAI_REPlayerCombatComponent::UAI_REPlayerCombatComponent()
@@ -51,10 +54,10 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 
 	bIsActionActive = true;
 
-	// If we have an animation montage, we would play it here via Character->PlayAnimMontage
-	if (PrimaryAttackMontage && OwnerChar)
+	// Play async loaded montage if available
+	if (CachedAttackMontage && OwnerChar)
 	{
-		OwnerChar->PlayAnimMontage(PrimaryAttackMontage);
+		OwnerChar->PlayAnimMontage(CachedAttackMontage);
 	}
 
 	// In single player, instantly perform the hit for maximum responsiveness.
@@ -84,13 +87,56 @@ void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)
 	{
 		EquippedWeapon = WeaponData;
 		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Equipped Weapon: %s"), *WeaponData->DisplayName.ToString()));
-		// TODO: Attach Weapon Mesh to Character Hand Socket
+		
+		// 비동기 로딩 초기화
+		CachedAttackMontage = nullptr;
+		if (MontageLoadHandle.IsValid())
+		{
+			MontageLoadHandle->CancelHandle();
+			MontageLoadHandle.Reset();
+		}
+
+		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(WeaponData))
+		{
+			if (WeaponItem->WeaponDefinition)
+			{
+				TSoftObjectPtr<UAnimMontage> SoftMontage = WeaponItem->WeaponDefinition->AttackMontage;
+				if (!SoftMontage.IsNull())
+				{
+					UAssetManager& AssetManager = UAssetManager::Get();
+					FStreamableManager& StreamableManager = AssetManager.GetStreamableManager();
+					
+					MontageLoadHandle = StreamableManager.RequestAsyncLoad(SoftMontage.ToSoftObjectPath(), 
+						FStreamableDelegate::CreateUObject(this, &UAI_REPlayerCombatComponent::OnWeaponMontageLoaded));
+				}
+			}
+		}
+	}
+}
+
+void UAI_REPlayerCombatComponent::OnWeaponMontageLoaded()
+{
+	if (EquippedWeapon)
+	{
+		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(EquippedWeapon))
+		{
+			if (WeaponItem->WeaponDefinition)
+			{
+				CachedAttackMontage = WeaponItem->WeaponDefinition->AttackMontage.Get();
+			}
+		}
 	}
 }
 
 void UAI_REPlayerCombatComponent::UnequipWeapon()
 {
 	EquippedWeapon = nullptr;
+	CachedAttackMontage = nullptr;
+	if (MontageLoadHandle.IsValid())
+	{
+		MontageLoadHandle->CancelHandle();
+		MontageLoadHandle.Reset();
+	}
 	GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, TEXT("Unequipped Weapon"));
 	// TODO: Destroy/Hide Weapon Mesh
 }
@@ -107,8 +153,23 @@ void UAI_REPlayerCombatComponent::PerformTraceHit()
 	FRotator ViewRotation;
 	PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
 
+	float TraceDist = 150.f; // Fallback
+	float BaseDmg = 10.f;    // Fallback
+
+	if (EquippedWeapon)
+	{
+		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(EquippedWeapon))
+		{
+			if (WeaponItem->WeaponDefinition)
+			{
+				TraceDist = WeaponItem->WeaponDefinition->AttackRange;
+				BaseDmg = WeaponItem->WeaponDefinition->Damage;
+			}
+		}
+	}
+
 	FVector TraceStart = ViewLocation;
-	FVector TraceEnd = TraceStart + (ViewRotation.Vector() * TraceDistance);
+	FVector TraceEnd = TraceStart + (ViewRotation.Vector() * TraceDist);
 
 	FHitResult HitResult;
 	FCollisionQueryParams QueryParams;
@@ -126,7 +187,7 @@ void UAI_REPlayerCombatComponent::PerformTraceHit()
 			// Apply harvest damage
 			if (HitActor->Implements<UAI_REHarvestDamageTarget>())
 			{
-				IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(HitActor, BaseDamage, OwnerPawn);
+				IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(HitActor, BaseDmg, OwnerPawn);
 			}
 			
 			OnPrimaryActionHit.Broadcast(HitActor);
