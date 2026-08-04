@@ -9,6 +9,7 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
+#include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -55,6 +56,9 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 
 	ChatComponent = CreateDefaultSubobject<UAIRECompanionChatComponent>(TEXT("Chat"));
 	check(ChatComponent);
+
+	WorkOrderComponent = CreateDefaultSubobject<UAIRECompanionWorkOrderComponent>(TEXT("WorkOrder"));
+	check(WorkOrderComponent);
 }
 
 UAbilitySystemComponent* AAIRECompanionCharacter::GetAbilitySystemComponent() const
@@ -99,6 +103,12 @@ AAIRECompanionCharacter::GetLocalBehaviorPolicyComponent() const
 UAIRECompanionChatComponent* AAIRECompanionCharacter::GetChatComponent() const
 {
 	return ChatComponent;
+}
+
+UAIRECompanionWorkOrderComponent*
+AAIRECompanionCharacter::GetWorkOrderComponent() const
+{
+	return WorkOrderComponent;
 }
 
 FString AAIRECompanionCharacter::GetCompanionId() const
@@ -193,6 +203,11 @@ void AAIRECompanionCharacter::BeginPlay()
 
 void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(WorkOrderComponent))
+	{
+		WorkOrderComponent->ShutdownWorkOrder();
+	}
+
 	if (IsValid(SupportComponent))
 	{
 		SupportComponent->ShutdownSupport();
