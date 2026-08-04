@@ -345,6 +345,7 @@ void UAIREGameplayInventorySubsystem::Deinitialize()
 	OnContainerChanged.Clear();
 	Containers.Reset();
 	AppliedMutations.Reset();
+	AppliedWorkResults.Reset();
 	AppliedImportCandidateIds.Reset();
 	AppliedImportOperationIds.Reset();
 	SessionScope = FAIREInventorySessionScope();
@@ -922,6 +923,7 @@ FGuid UAIREGameplayInventorySubsystem::ResetInventorySession(
 	SessionScope = NewScope;
 	InventorySessionId = FGuid::NewGuid();
 	AppliedMutations.Reset();
+	AppliedWorkResults.Reset();
 	AppliedImportCandidateIds.Reset();
 	AppliedImportOperationIds.Reset();
 	bMakoInventoryInitialized = false;
@@ -930,6 +932,278 @@ FGuid UAIREGameplayInventorySubsystem::ResetInventorySession(
 	BroadcastContainerChanged(
 		Containers.FindChecked(GetSharedWarehouseContainerId()));
 	return InventorySessionId;
+}
+
+bool UAIREGameplayInventorySubsystem::CanCompleteMakoCraftWork(
+	const FAIREMakoCraftWorkRequest& Request,
+	FAIREInventoryWorkResult& OutResult) const
+{
+	OutResult = MakeWorkResult(
+		EAIREInventoryMutationCode::NotInitialized,
+		EAIREInventoryWorkResultDestination::None,
+		Request.Result);
+	FAIREInventoryWorkResult PreviousResult;
+	if (FindAppliedWorkResult(Request.WorkOrderId, PreviousResult))
+	{
+		PreviousResult.Code = EAIREInventoryMutationCode::AlreadyApplied;
+		PreviousResult.bAlreadyApplied = true;
+		OutResult = PreviousResult;
+		return true;
+	}
+	if (!InventorySessionId.IsValid())
+	{
+		return false;
+	}
+	if (Request.SessionId != InventorySessionId)
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidSession;
+		return false;
+	}
+	if (!Request.WorkOrderId.IsValid())
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidMutationId;
+		return false;
+	}
+	FAIREInventoryMutationResult ExistingMutation;
+	if (FindAppliedMutation(Request.WorkOrderId, ExistingMutation))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::DuplicateOperation;
+		return false;
+	}
+	const FAIREContainerState* MakoContainer =
+		FindContainer(GetMakoContainerId());
+	const FAIREContainerState* WarehouseContainer =
+		FindContainer(GetSharedWarehouseContainerId());
+	if (!MakoContainer || !WarehouseContainer)
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidContainer;
+		return false;
+	}
+	if (MakoContainer->Revision != Request.ExpectedMakoRevision
+		|| WarehouseContainer->Revision != Request.ExpectedWarehouseRevision)
+	{
+		OutResult.Code = EAIREInventoryMutationCode::RevisionConflict;
+		OutResult.MakoRevision = MakoContainer->Revision;
+		OutResult.WarehouseRevision = WarehouseContainer->Revision;
+		return false;
+	}
+	if (IsEquipmentTransitionActive(*MakoContainer))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::EquipmentBusy;
+		return false;
+	}
+	if (Request.Result.ItemId.IsNone() || Request.Result.Count <= 0)
+	{
+		OutResult.Code = Request.Result.ItemId.IsNone()
+			? EAIREInventoryMutationCode::InvalidItem
+			: EAIREInventoryMutationCode::InvalidQuantity;
+		return false;
+	}
+
+	TMap<FName, int32> IngredientTotals;
+	if (!AggregateWorkIngredients(Request.Ingredients, IngredientTotals))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidQuantity;
+		return false;
+	}
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		FAIREItemRules IngredientRules;
+		if (!ResolveItemRules(Ingredient.Key, false, IngredientRules))
+		{
+			OutResult.Code = EAIREInventoryMutationCode::InvalidItem;
+			return false;
+		}
+		if (Ingredient.Key == MakoContainer->EquippedItemId
+			|| Ingredient.Key == MakoContainer->PendingItemId)
+		{
+			OutResult.Code = EAIREInventoryMutationCode::EquipmentBusy;
+			return false;
+		}
+		int64 AvailableCount = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack : MakoContainer->ItemStacks)
+		{
+			if (Stack.ItemId == Ingredient.Key)
+			{
+				AvailableCount += Stack.Count;
+			}
+		}
+		if (AvailableCount < Ingredient.Value)
+		{
+			OutResult.Code = EAIREInventoryMutationCode::InsufficientQuantity;
+			return false;
+		}
+	}
+
+	FAIREItemRules WarehouseResultRules;
+	if (!ResolveItemRules(Request.Result.ItemId, false, WarehouseResultRules))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidItem;
+		return false;
+	}
+	TArray<FAIREInventoryItemStackSnapshot> MakoAfterIngredients =
+		MakoContainer->ItemStacks;
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		if (!TryRemoveItemFromStacks(
+				MakoAfterIngredients,
+				Ingredient.Key,
+				Ingredient.Value))
+		{
+			OutResult.Code = EAIREInventoryMutationCode::InsufficientQuantity;
+			return false;
+		}
+	}
+	FAIREItemRules MakoResultRules;
+	if (ResolveItemRules(Request.Result.ItemId, false, MakoResultRules)
+		&& TryAddToStacks(MakoAfterIngredients, MakoContainer->Capacity,
+			Request.Result.ItemId, Request.Result.Count, MakoResultRules.MaxStackSize))
+	{
+		OutResult = MakeWorkResult(EAIREInventoryMutationCode::Succeeded,
+			EAIREInventoryWorkResultDestination::Mako, Request.Result);
+		return true;
+	}
+	TArray<FAIREInventoryItemStackSnapshot> WarehouseAfterResult =
+		WarehouseContainer->ItemStacks;
+	if (TryAddToStacks(WarehouseAfterResult, WarehouseContainer->Capacity,
+		Request.Result.ItemId, Request.Result.Count, WarehouseResultRules.MaxStackSize))
+	{
+		OutResult = MakeWorkResult(EAIREInventoryMutationCode::Succeeded,
+			EAIREInventoryWorkResultDestination::SharedWarehouse, Request.Result);
+		return true;
+	}
+	if (Request.bCanWorldDrop)
+	{
+		OutResult = MakeWorkResult(EAIREInventoryMutationCode::Succeeded,
+			EAIREInventoryWorkResultDestination::WorldDrop, Request.Result);
+		return true;
+	}
+	OutResult.Code = EAIREInventoryMutationCode::CapacityExceeded;
+	return false;
+}
+
+FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryCompleteMakoCraftWork(
+	const FAIREMakoCraftWorkRequest& Request)
+{
+	FAIREInventoryWorkResult Result;
+	if (!CanCompleteMakoCraftWork(Request, Result) || Result.bAlreadyApplied)
+	{
+		return Result;
+	}
+	FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
+	FAIREContainerState* WarehouseContainer = FindContainer(GetSharedWarehouseContainerId());
+	TMap<FName, int32> IngredientTotals;
+	if (!MakoContainer || !WarehouseContainer
+		|| !AggregateWorkIngredients(Request.Ingredients, IngredientTotals))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+		return Result;
+	}
+	TArray<FAIREInventoryItemStackSnapshot> NewMakoStacks = MakoContainer->ItemStacks;
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		if (!TryRemoveItemFromStacks(NewMakoStacks, Ingredient.Key, Ingredient.Value))
+		{
+			Result.Code = EAIREInventoryMutationCode::InsufficientQuantity;
+			return Result;
+		}
+	}
+	TArray<FAIREInventoryItemStackSnapshot> NewWarehouseStacks = WarehouseContainer->ItemStacks;
+	FAIREItemRules ResultRules;
+	const bool bResultInMako = Result.Destination == EAIREInventoryWorkResultDestination::Mako;
+	if (Result.Destination != EAIREInventoryWorkResultDestination::WorldDrop
+		&& (!ResolveItemRules(Request.Result.ItemId, false, ResultRules)
+			|| !TryAddToStacks(bResultInMako ? NewMakoStacks : NewWarehouseStacks,
+				bResultInMako ? MakoContainer->Capacity : WarehouseContainer->Capacity,
+				Request.Result.ItemId, Request.Result.Count, ResultRules.MaxStackSize)))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+		return Result;
+	}
+	MakoContainer->ItemStacks = MoveTemp(NewMakoStacks);
+	++MakoContainer->Revision;
+	if (Result.Destination == EAIREInventoryWorkResultDestination::SharedWarehouse)
+	{
+		WarehouseContainer->ItemStacks = MoveTemp(NewWarehouseStacks);
+		++WarehouseContainer->Revision;
+	}
+	Result.MakoRevision = MakoContainer->Revision;
+	Result.WarehouseRevision = WarehouseContainer->Revision;
+	AppliedWorkResults.Add(Request.WorkOrderId, Result);
+	RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded,
+		Request.WorkOrderId, MakoContainer->Revision, WarehouseContainer->Revision));
+	BroadcastContainerChanged(*MakoContainer);
+	if (Result.Destination == EAIREInventoryWorkResultDestination::SharedWarehouse)
+	{
+		BroadcastContainerChanged(*WarehouseContainer);
+	}
+	return Result;
+}
+
+FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryStoreMakoWorkReward(
+	const FAIREMakoWorkRewardRequest& Request)
+{
+	FAIREInventoryWorkResult PreviousResult;
+	if (FindAppliedWorkResult(Request.DeliveryId, PreviousResult))
+	{
+		PreviousResult.Code = EAIREInventoryMutationCode::AlreadyApplied;
+		PreviousResult.bAlreadyApplied = true;
+		return PreviousResult;
+	}
+	FAIREInventoryWorkResult Result = MakeWorkResult(EAIREInventoryMutationCode::NotInitialized,
+		EAIREInventoryWorkResultDestination::None, Request.Reward);
+	if (!InventorySessionId.IsValid()) { return Result; }
+	if (Request.SessionId != InventorySessionId) { Result.Code = EAIREInventoryMutationCode::InvalidSession; return Result; }
+	if (!Request.DeliveryId.IsValid()) { Result.Code = EAIREInventoryMutationCode::InvalidMutationId; return Result; }
+	FAIREInventoryMutationResult ExistingMutation;
+	if (FindAppliedMutation(Request.DeliveryId, ExistingMutation))
+	{
+		Result.Code = EAIREInventoryMutationCode::DuplicateOperation;
+		return Result;
+	}
+	FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
+	FAIREContainerState* WarehouseContainer = FindContainer(GetSharedWarehouseContainerId());
+	if (!MakoContainer || !WarehouseContainer) { Result.Code = EAIREInventoryMutationCode::InvalidContainer; return Result; }
+	if (MakoContainer->Revision != Request.ExpectedMakoRevision || WarehouseContainer->Revision != Request.ExpectedWarehouseRevision) { Result.Code = EAIREInventoryMutationCode::RevisionConflict; Result.MakoRevision = MakoContainer->Revision; Result.WarehouseRevision = WarehouseContainer->Revision; return Result; }
+	if (Request.Reward.ItemId.IsNone() || Request.Reward.Count <= 0) { Result.Code = Request.Reward.ItemId.IsNone() ? EAIREInventoryMutationCode::InvalidItem : EAIREInventoryMutationCode::InvalidQuantity; return Result; }
+	TArray<FAIREInventoryItemStackSnapshot> NewMakoStacks = MakoContainer->ItemStacks;
+	FAIREItemRules MakoRules;
+	if (!IsEquipmentTransitionActive(*MakoContainer)
+		&& ResolveItemRules(Request.Reward.ItemId, false, MakoRules)
+		&& TryAddToStacks(NewMakoStacks, MakoContainer->Capacity, Request.Reward.ItemId, Request.Reward.Count, MakoRules.MaxStackSize))
+	{
+		MakoContainer->ItemStacks = MoveTemp(NewMakoStacks);
+		++MakoContainer->Revision;
+		Result = MakeWorkResult(EAIREInventoryMutationCode::Succeeded, EAIREInventoryWorkResultDestination::Mako, Request.Reward);
+		Result.MakoRevision = MakoContainer->Revision;
+		Result.WarehouseRevision = WarehouseContainer->Revision;
+		AppliedWorkResults.Add(Request.DeliveryId, Result);
+		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, WarehouseContainer->Revision));
+		BroadcastContainerChanged(*MakoContainer);
+		return Result;
+	}
+	TArray<FAIREInventoryItemStackSnapshot> NewWarehouseStacks = WarehouseContainer->ItemStacks;
+	FAIREItemRules WarehouseRules;
+	if (ResolveItemRules(Request.Reward.ItemId, false, WarehouseRules)
+		&& TryAddToStacks(NewWarehouseStacks, WarehouseContainer->Capacity, Request.Reward.ItemId, Request.Reward.Count, WarehouseRules.MaxStackSize))
+	{
+		WarehouseContainer->ItemStacks = MoveTemp(NewWarehouseStacks);
+		++WarehouseContainer->Revision;
+		Result = MakeWorkResult(EAIREInventoryMutationCode::Succeeded, EAIREInventoryWorkResultDestination::SharedWarehouse, Request.Reward);
+		Result.MakoRevision = MakoContainer->Revision;
+		Result.WarehouseRevision = WarehouseContainer->Revision;
+		AppliedWorkResults.Add(Request.DeliveryId, Result);
+		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, WarehouseContainer->Revision));
+		BroadcastContainerChanged(*WarehouseContainer);
+		return Result;
+	}
+	Result = MakeWorkResult(
+		EAIREInventoryMutationCode::Succeeded,
+		EAIREInventoryWorkResultDestination::WorldDrop,
+		Request.Reward);
+	Result.MakoRevision = MakoContainer->Revision;
+	Result.WarehouseRevision = WarehouseContainer->Revision;
+	return Result;
 }
 
 bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
@@ -1356,6 +1630,65 @@ void UAIREGameplayInventorySubsystem::BroadcastContainerChanged(
 	++GInventoryAutomationBroadcastCount;
 #endif
 	OnContainerChanged.Broadcast(Container.ContainerId, Container.Revision);
+}
+
+bool UAIREGameplayInventorySubsystem::AggregateWorkIngredients(
+	const TArray<FAIREInventoryItemQuantity>& Ingredients,
+	TMap<FName, int32>& OutIngredients) const
+{
+	OutIngredients.Reset();
+	for (const FAIREInventoryItemQuantity& Ingredient : Ingredients)
+	{
+		if (Ingredient.ItemId.IsNone() || Ingredient.Count <= 0)
+		{
+			return false;
+		}
+		const int32 ExistingCount = OutIngredients.FindRef(Ingredient.ItemId);
+		const int64 TotalCount = static_cast<int64>(ExistingCount)
+			+ static_cast<int64>(Ingredient.Count);
+		if (TotalCount > MAX_int32)
+		{
+			return false;
+		}
+		OutIngredients.Add(Ingredient.ItemId, static_cast<int32>(TotalCount));
+	}
+	return !OutIngredients.IsEmpty();
+}
+
+FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::MakeWorkResult(
+	const EAIREInventoryMutationCode Code,
+	const EAIREInventoryWorkResultDestination Destination,
+	const FAIREInventoryItemQuantity& DeliveredItem) const
+{
+	FAIREInventoryWorkResult Result;
+	Result.Code = Code;
+	Result.Destination = Destination;
+	Result.DeliveredItem = DeliveredItem;
+	const FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
+	const FAIREContainerState* WarehouseContainer =
+		FindContainer(GetSharedWarehouseContainerId());
+	Result.MakoRevision = MakoContainer ? MakoContainer->Revision : INDEX_NONE;
+	Result.WarehouseRevision = WarehouseContainer
+		? WarehouseContainer->Revision
+		: INDEX_NONE;
+	return Result;
+}
+
+bool UAIREGameplayInventorySubsystem::FindAppliedWorkResult(
+	const FGuid& MutationId,
+	FAIREInventoryWorkResult& OutResult) const
+{
+	if (!MutationId.IsValid())
+	{
+		return false;
+	}
+	const FAIREInventoryWorkResult* Found = AppliedWorkResults.Find(MutationId);
+	if (!Found)
+	{
+		return false;
+	}
+	OutResult = *Found;
+	return true;
 }
 
 FAIREInventoryMutationResult
@@ -2297,6 +2630,336 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 		PlayerInventory->Items[0].Count,
 		4);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAIREGameplayInventoryMakoCraftWorkTest,
+	"AIRE.Inventory.Subsystem.MakoCraftWork",
+	EAutomationTestFlags::EditorContext
+		| EAutomationTestFlags::EngineFilter)
+
+bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	const FName MakoContainerId =
+		UAIREGameplayInventorySubsystem::GetMakoContainerId();
+	const FName WarehouseContainerId =
+		UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId();
+	const FName IngredientItemId(TEXT("AIRE.Test.Stack4"));
+	const FName ResultItemId(TEXT("AIRE.Test.Stack2"));
+
+	TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>());
+	TStrongObjectPtr<UAIREGameplayInventorySubsystem> Inventory(
+		NewObject<UAIREGameplayInventorySubsystem>(TestGameInstance.Get()));
+	const FGuid SessionId = Inventory->ResetInventorySession();
+
+	auto GetSnapshots = [&Inventory, &MakoContainerId, &WarehouseContainerId](
+		FAIREInventoryContainerSnapshot& OutMako,
+		FAIREInventoryContainerSnapshot& OutWarehouse)
+	{
+		return Inventory->GetContainerSnapshot(MakoContainerId, OutMako)
+			&& Inventory->GetContainerSnapshot(
+				WarehouseContainerId,
+				OutWarehouse);
+	};
+	auto CountItem = [](const TArray<FAIREInventoryItemStackSnapshot>& Stacks,
+		const FName ItemId)
+	{
+		int32 TotalCount = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack : Stacks)
+		{
+			if (Stack.ItemId == ItemId)
+			{
+				TotalCount += Stack.Count;
+			}
+		}
+		return TotalCount;
+	};
+	auto AddItem = [this, &Inventory, &SessionId](
+		const FName ContainerId,
+		const FName ItemId,
+		const int32 Count)
+	{
+		FAIREInventoryContainerSnapshot Snapshot;
+		if (!Inventory->GetContainerSnapshot(ContainerId, Snapshot))
+		{
+			return false;
+		}
+		FAIREInventoryMutationRequest AddRequest;
+		AddRequest.SessionId = SessionId;
+		AddRequest.MutationId = FGuid::NewGuid();
+		AddRequest.ContainerId = ContainerId;
+		AddRequest.ExpectedRevision = Snapshot.Revision;
+		AddRequest.ItemId = ItemId;
+		AddRequest.Count = Count;
+		return TestTrue(
+			TEXT("Craft work test item is added"),
+			Inventory->TryAddItem(AddRequest).Code
+				== EAIREInventoryMutationCode::Succeeded);
+	};
+
+	TestTrue(
+		TEXT("Craft ingredient is prepared"),
+		AddItem(MakoContainerId, IngredientItemId, 4));
+	FAIREInventoryContainerSnapshot MakoBefore;
+	FAIREInventoryContainerSnapshot WarehouseBefore;
+	if (!TestTrue(
+			TEXT("Craft work snapshots are available"),
+			GetSnapshots(MakoBefore, WarehouseBefore)))
+	{
+		return false;
+	}
+
+	FAIREMakoCraftWorkRequest CraftRequest;
+	CraftRequest.SessionId = SessionId;
+	CraftRequest.WorkOrderId = FGuid::NewGuid();
+	CraftRequest.ExpectedMakoRevision = MakoBefore.Revision;
+	CraftRequest.ExpectedWarehouseRevision = WarehouseBefore.Revision;
+	FAIREInventoryItemQuantity& FirstIngredient =
+		CraftRequest.Ingredients.AddDefaulted_GetRef();
+	FirstIngredient.ItemId = IngredientItemId;
+	FirstIngredient.Count = 1;
+	FAIREInventoryItemQuantity& DuplicateIngredient =
+		CraftRequest.Ingredients.AddDefaulted_GetRef();
+	DuplicateIngredient.ItemId = IngredientItemId;
+	DuplicateIngredient.Count = 2;
+	CraftRequest.Result.ItemId = ResultItemId;
+	CraftRequest.Result.Count = 1;
+	FAIREInventoryWorkResult PreflightResult;
+	TestTrue(
+		TEXT("Aggregated craft ingredients pass preflight"),
+		Inventory->CanCompleteMakoCraftWork(
+			CraftRequest,
+			PreflightResult));
+	TestTrue(
+		TEXT("Craft result prefers MAKO inventory"),
+		PreflightResult.Destination
+			== EAIREInventoryWorkResultDestination::Mako);
+	const FAIREInventoryWorkResult CompletionResult =
+		Inventory->TryCompleteMakoCraftWork(CraftRequest);
+	TestTrue(
+		TEXT("Craft completion succeeds"),
+		CompletionResult.Code == EAIREInventoryMutationCode::Succeeded);
+
+	FAIREInventoryContainerSnapshot MakoAfter;
+	FAIREInventoryContainerSnapshot WarehouseAfter;
+	GetSnapshots(MakoAfter, WarehouseAfter);
+	TestEqual(
+		TEXT("Craft consumes the aggregated ingredient quantity"),
+		CountItem(MakoAfter.ItemStacks, IngredientItemId),
+		1);
+	TestEqual(
+		TEXT("Craft stores the result exactly once"),
+		CountItem(MakoAfter.ItemStacks, ResultItemId),
+		1);
+	TestEqual(
+		TEXT("Craft changes MAKO revision once"),
+		MakoAfter.Revision,
+		MakoBefore.Revision + 1);
+	TestEqual(
+		TEXT("MAKO craft does not change warehouse revision"),
+		WarehouseAfter.Revision,
+		WarehouseBefore.Revision);
+
+	const FAIREInventoryWorkResult ReplayResult =
+		Inventory->TryCompleteMakoCraftWork(CraftRequest);
+	TestTrue(
+		TEXT("Craft replay is idempotent"),
+		ReplayResult.Code == EAIREInventoryMutationCode::AlreadyApplied
+			&& ReplayResult.bAlreadyApplied);
+	FAIREInventoryContainerSnapshot MakoAfterReplay;
+	FAIREInventoryContainerSnapshot WarehouseAfterReplay;
+	GetSnapshots(MakoAfterReplay, WarehouseAfterReplay);
+	TestEqual(
+		TEXT("Craft replay preserves MAKO revision"),
+		MakoAfterReplay.Revision,
+		MakoAfter.Revision);
+	TestEqual(
+		TEXT("Craft replay preserves warehouse revision"),
+		WarehouseAfterReplay.Revision,
+		WarehouseAfter.Revision);
+
+	FAIREMakoCraftWorkRequest StaleRequest = CraftRequest;
+	StaleRequest.WorkOrderId = FGuid::NewGuid();
+	TestTrue(
+		TEXT("Stale craft revision is rejected"),
+		Inventory->TryCompleteMakoCraftWork(StaleRequest).Code
+			== EAIREInventoryMutationCode::RevisionConflict);
+	FAIREMakoCraftWorkRequest InsufficientRequest = CraftRequest;
+	InsufficientRequest.WorkOrderId = FGuid::NewGuid();
+	InsufficientRequest.ExpectedMakoRevision = MakoAfter.Revision;
+	InsufficientRequest.ExpectedWarehouseRevision = WarehouseAfter.Revision;
+	InsufficientRequest.Ingredients.Reset();
+	FAIREInventoryItemQuantity& InsufficientIngredient =
+		InsufficientRequest.Ingredients.AddDefaulted_GetRef();
+	InsufficientIngredient.ItemId = IngredientItemId;
+	InsufficientIngredient.Count = 2;
+	TestTrue(
+		TEXT("Insufficient craft ingredients are rejected"),
+		Inventory->TryCompleteMakoCraftWork(InsufficientRequest).Code
+			== EAIREInventoryMutationCode::InsufficientQuantity);
+	FAIREInventoryContainerSnapshot MakoAfterRejectedRequests;
+	FAIREInventoryContainerSnapshot WarehouseAfterRejectedRequests;
+	GetSnapshots(MakoAfterRejectedRequests, WarehouseAfterRejectedRequests);
+	TestEqual(
+		TEXT("Rejected craft requests preserve MAKO revision"),
+		MakoAfterRejectedRequests.Revision,
+		MakoAfter.Revision);
+	TestEqual(
+		TEXT("Rejected craft requests preserve warehouse revision"),
+		WarehouseAfterRejectedRequests.Revision,
+		WarehouseAfter.Revision);
+	FAIREMakoWorkRewardRequest RewardRequest;
+	RewardRequest.SessionId = SessionId;
+	RewardRequest.DeliveryId = FGuid::NewGuid();
+	RewardRequest.ExpectedMakoRevision =
+		MakoAfterRejectedRequests.Revision;
+	RewardRequest.ExpectedWarehouseRevision =
+		WarehouseAfterRejectedRequests.Revision;
+	RewardRequest.Reward.ItemId = ResultItemId;
+	RewardRequest.Reward.Count = 1;
+	const FAIREInventoryWorkResult RewardResult =
+		Inventory->TryStoreMakoWorkReward(RewardRequest);
+	TestTrue(
+		TEXT("Harvest reward prefers MAKO inventory"),
+		RewardResult.Code == EAIREInventoryMutationCode::Succeeded
+			&& RewardResult.Destination
+				== EAIREInventoryWorkResultDestination::Mako);
+	TestTrue(
+		TEXT("Harvest reward replay is idempotent"),
+		Inventory->TryStoreMakoWorkReward(RewardRequest).Code
+			== EAIREInventoryMutationCode::AlreadyApplied);
+
+	const FName WeaponItemId(TEXT("AIRE.Test.WeaponA"));
+	TestTrue(
+		TEXT("Equipment transition test weapon is prepared"),
+		AddItem(MakoContainerId, WeaponItemId, 1));
+	FAIREInventoryContainerSnapshot MakoBeforeEquipment;
+	Inventory->GetContainerSnapshot(MakoContainerId, MakoBeforeEquipment);
+	const FAIREInventoryItemStackSnapshot* WeaponStack =
+		MakoBeforeEquipment.ItemStacks.FindByPredicate(
+			[WeaponItemId](const FAIREInventoryItemStackSnapshot& Stack)
+			{
+				return Stack.ItemId == WeaponItemId;
+			});
+	if (!TestNotNull(
+			TEXT("Equipment transition test weapon stack exists"),
+			WeaponStack))
+	{
+		return false;
+	}
+	FAIREInventoryEquipRequest EquipRequest;
+	EquipRequest.SessionId = SessionId;
+	EquipRequest.MutationId = FGuid::NewGuid();
+	EquipRequest.ExpectedRevision = MakoBeforeEquipment.Revision;
+	EquipRequest.SourceSlotIndex = WeaponStack->SlotIndex;
+	TestTrue(
+		TEXT("Equipment transition is reserved"),
+		Inventory->ReserveMakoEquipmentSwap(EquipRequest).Code
+			== EAIREInventoryMutationCode::Succeeded);
+	FAIREInventoryContainerSnapshot MakoDuringEquipment;
+	FAIREInventoryContainerSnapshot WarehouseDuringEquipment;
+	GetSnapshots(MakoDuringEquipment, WarehouseDuringEquipment);
+	FAIREMakoCraftWorkRequest EquipmentBusyRequest = CraftRequest;
+	EquipmentBusyRequest.WorkOrderId = FGuid::NewGuid();
+	EquipmentBusyRequest.ExpectedMakoRevision = MakoDuringEquipment.Revision;
+	EquipmentBusyRequest.ExpectedWarehouseRevision =
+		WarehouseDuringEquipment.Revision;
+	EquipmentBusyRequest.Ingredients[0].Count = 1;
+	EquipmentBusyRequest.Ingredients.SetNum(1);
+	TestTrue(
+		TEXT("Active equipment transition rejects craft mutation"),
+		Inventory->TryCompleteMakoCraftWork(EquipmentBusyRequest).Code
+			== EAIREInventoryMutationCode::EquipmentBusy);
+
+	TStrongObjectPtr<UGameInstance> FullGameInstance(NewObject<UGameInstance>());
+	TStrongObjectPtr<UAIREGameplayInventorySubsystem> FullInventory(
+		NewObject<UAIREGameplayInventorySubsystem>(FullGameInstance.Get()));
+	const FGuid FullSessionId = FullInventory->ResetInventorySession();
+	FAIREInventoryContainerSnapshot InitialFullMako;
+	FullInventory->GetContainerSnapshot(MakoContainerId, InitialFullMako);
+	FAIREInventoryMutationRequest FullIngredientAdd;
+	FullIngredientAdd.SessionId = FullSessionId;
+	FullIngredientAdd.MutationId = FGuid::NewGuid();
+	FullIngredientAdd.ContainerId = MakoContainerId;
+	FullIngredientAdd.ExpectedRevision = InitialFullMako.Revision;
+	FullIngredientAdd.ItemId = IngredientItemId;
+	FullIngredientAdd.Count = 2;
+	TestTrue(
+		TEXT("World-drop route ingredient stack is prepared"),
+		FullInventory->TryAddItem(FullIngredientAdd).Code
+			== EAIREInventoryMutationCode::Succeeded);
+	auto FillContainer = [this, &FullInventory, &FullSessionId](
+		const FName ContainerId,
+		const int32 Capacity,
+		const FString& ItemPrefix)
+	{
+		for (int32 Index = 0; Index < Capacity; ++Index)
+		{
+			FAIREInventoryContainerSnapshot Snapshot;
+			FullInventory->GetContainerSnapshot(ContainerId, Snapshot);
+			FAIREInventoryMutationRequest AddRequest;
+			AddRequest.SessionId = FullSessionId;
+			AddRequest.MutationId = FGuid::NewGuid();
+			AddRequest.ContainerId = ContainerId;
+			AddRequest.ExpectedRevision = Snapshot.Revision;
+			AddRequest.ItemId = FName(*FString::Printf(
+				TEXT("%s.%d"),
+				*ItemPrefix,
+				Index));
+			AddRequest.Count = 1;
+			if (!TestTrue(
+					TEXT("World-drop route container slot is filled"),
+					FullInventory->TryAddItem(AddRequest).Code
+						== EAIREInventoryMutationCode::Succeeded))
+			{
+				return false;
+			}
+		}
+		return true;
+	};
+	TestTrue(
+		TEXT("Full MAKO inventory is prepared"),
+		FillContainer(
+			MakoContainerId,
+			AIREGameplayInventory::MakoItemSlotCapacity - 1,
+			TEXT("AIRE.Test.Unique.FullMako")));
+	TestTrue(
+		TEXT("Full warehouse is prepared"),
+		FillContainer(
+			WarehouseContainerId,
+			AIREGameplayInventory::SharedWarehouseSlotCapacity,
+			TEXT("AIRE.Test.Unique.FullWarehouse")));
+	FAIREInventoryContainerSnapshot FullMako;
+	FAIREInventoryContainerSnapshot FullWarehouse;
+	FullInventory->GetContainerSnapshot(MakoContainerId, FullMako);
+	FullInventory->GetContainerSnapshot(WarehouseContainerId, FullWarehouse);
+	FAIREMakoCraftWorkRequest WorldDropRequest;
+	WorldDropRequest.SessionId = FullSessionId;
+	WorldDropRequest.WorkOrderId = FGuid::NewGuid();
+	WorldDropRequest.ExpectedMakoRevision = FullMako.Revision;
+	WorldDropRequest.ExpectedWarehouseRevision = FullWarehouse.Revision;
+	FAIREInventoryItemQuantity& WorldDropIngredient =
+		WorldDropRequest.Ingredients.AddDefaulted_GetRef();
+	WorldDropIngredient.ItemId = IngredientItemId;
+	WorldDropIngredient.Count = 1;
+	WorldDropRequest.Result.ItemId =
+		FName(TEXT("AIRE.Test.Unique.CraftResult"));
+	WorldDropRequest.Result.Count = 1;
+	WorldDropRequest.bCanWorldDrop = true;
+	const FAIREInventoryWorkResult WorldDropResult =
+		FullInventory->TryCompleteMakoCraftWork(WorldDropRequest);
+	TestTrue(
+		TEXT("Full inventories route craft result to world drop"),
+		WorldDropResult.Code == EAIREInventoryMutationCode::Succeeded
+			&& WorldDropResult.Destination
+				== EAIREInventoryWorkResultDestination::WorldDrop);
+	TestTrue(
+		TEXT("World-drop craft replay is idempotent"),
+		FullInventory->TryCompleteMakoCraftWork(WorldDropRequest).Code
+			== EAIREInventoryMutationCode::AlreadyApplied);
 	return true;
 }
 

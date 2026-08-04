@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "AIREHarvestRewardReceiver.h"
 #include "GameFramework/Character.h"
 #include "AIRECompanionCharacter.generated.h"
 
@@ -17,7 +18,10 @@ class UAbilitySystemComponent;
 struct FOnAttributeChangeData;
 
 UCLASS(Blueprintable)
-class AI_RE_API AAIRECompanionCharacter : public ACharacter, public IAbilitySystemInterface
+class AI_RE_API AAIRECompanionCharacter
+	: public ACharacter
+	, public IAbilitySystemInterface
+	, public IAIREHarvestRewardReceiver
 {
 	GENERATED_BODY()
 
@@ -25,6 +29,10 @@ public:
 	AAIRECompanionCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual bool TryReceiveHarvestReward_Implementation(
+		FGuid DeliveryId,
+		FName ItemId,
+		int32 Count) override;
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Abilities")
 	const UAIRECompanionAttributeSet* GetCompanionAttributeSet() const;

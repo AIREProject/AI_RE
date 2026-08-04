@@ -22,8 +22,7 @@ public:
 	UAIRECompanionWorkOrderComponent();
 
 	bool TryRequestWorkOrder(
-		AActor* TargetActor,
-		FName RecipeRowId,
+		const FAIRECompanionWorkOrderRequest& Request,
 		FGuid& OutWorkOrderId);
 	bool TryStartMoving(const FGuid& WorkOrderId);
 	bool TryStartWorking(const FGuid& WorkOrderId);

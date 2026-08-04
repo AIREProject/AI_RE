@@ -4,6 +4,7 @@
 #include "AI_REHarvestableResourceComponent.h" 
 #include "AI_REItemActor.h"
 #include "AI_REItemDataAsset.h"
+#include "AIREHarvestRewardReceiver.h"
 #include "Engine/World.h"
 
 AAI_REHarvestableResourceActor::AAI_REHarvestableResourceActor()
@@ -45,21 +46,69 @@ void AAI_REHarvestableResourceActor::HandleDepletedStateChanged(bool bNewIsDeple
 	ApplyDepletedVisualState(bNewIsDepleted);
 }
 
-void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount)
+void AAI_REHarvestableResourceActor::HandleHarvested(
+	AActor* InstigatorActor,
+	float AppliedDamage,
+	float CurrentHealth,
+	UAI_REItemDataAsset* RewardItemAsset,
+	int32 GrantedRewardAmount,
+	FGuid DeliveryId)
 {
-	if (GrantedRewardAmount > 0 && ItemActorClass && RewardItemAsset)
+	(void)AppliedDamage;
+	(void)CurrentHealth;
+	if (GrantedRewardAmount <= 0
+		|| RewardItemAsset == nullptr
+		|| !DeliveryId.IsValid()
+		|| CompletedRewardDeliveries.Contains(DeliveryId))
 	{
-		// 플레이어 약간 앞이나 주변에 스폰
-		FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
-		
-		FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
-		if (AAI_REItemActor* SpawnedItem = GetWorld()->SpawnActorDeferred<AAI_REItemActor>(ItemActorClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))
-		{
-			SpawnedItem->ItemAsset = RewardItemAsset;
-			SpawnedItem->ItemCount = GrantedRewardAmount;
-			SpawnedItem->FinishSpawning(SpawnTransform);
-		}
+		return;
 	}
+
+	bool bDeliveredToReceiver = false;
+	if (!RewardItemAsset->ItemId.IsNone())
+	{
+		bDeliveredToReceiver =
+			InstigatorActor != nullptr &&
+			InstigatorActor->Implements<UAIREHarvestRewardReceiver>() &&
+			IAIREHarvestRewardReceiver::Execute_TryReceiveHarvestReward(
+				InstigatorActor,
+				DeliveryId,
+				RewardItemAsset->ItemId,
+				GrantedRewardAmount);
+	}
+
+	if (bDeliveredToReceiver
+		|| SpawnHarvestReward(RewardItemAsset, GrantedRewardAmount))
+	{
+		CompletedRewardDeliveries.Add(DeliveryId);
+	}
+}
+
+bool AAI_REHarvestableResourceActor::SpawnHarvestReward(
+	UAI_REItemDataAsset* RewardItemAsset,
+	int32 GrantedRewardAmount)
+{
+	if (ItemActorClass == nullptr || RewardItemAsset == nullptr || GrantedRewardAmount <= 0)
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+
+	const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
+	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
+	if (AAI_REItemActor* SpawnedItem = World->SpawnActorDeferred<AAI_REItemActor>(ItemActorClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))
+	{
+		SpawnedItem->ItemAsset = RewardItemAsset;
+		SpawnedItem->ItemCount = GrantedRewardAmount;
+		SpawnedItem->FinishSpawning(SpawnTransform);
+		return IsValid(SpawnedItem);
+	}
+	return false;
 }
 
 void AAI_REHarvestableResourceActor::ApplyDepletedVisualState_Implementation(bool bNewIsDepleted)

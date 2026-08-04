@@ -7,10 +7,12 @@
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
+#include "AIREGameplayInventorySubsystem.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCharacter, Log, All);
@@ -64,6 +66,50 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 UAbilitySystemComponent* AAIRECompanionCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
+	const FGuid DeliveryId,
+	const FName ItemId,
+	const int32 Count)
+{
+	FAIREInventoryContainerSnapshot MakoSnapshot;
+	UGameInstance* GameInstance = GetGameInstance();
+	UAIREGameplayInventorySubsystem* GameplayInventory =
+		IsValid(GameInstance)
+			? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+			: nullptr;
+	FAIREInventoryContainerSnapshot WarehouseSnapshot;
+	if (!IsValid(InventoryComponent)
+		|| !DeliveryId.IsValid()
+		|| ItemId.IsNone()
+		|| Count <= 0
+		|| !InventoryComponent->GetInventorySnapshot(MakoSnapshot)
+		|| !IsValid(GameplayInventory)
+		|| !GameplayInventory->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(),
+			WarehouseSnapshot)
+		|| MakoSnapshot.SessionId != WarehouseSnapshot.SessionId)
+	{
+		return false;
+	}
+
+	FAIREMakoWorkRewardRequest Request;
+	Request.SessionId = MakoSnapshot.SessionId;
+	Request.DeliveryId = DeliveryId;
+	Request.ExpectedMakoRevision = MakoSnapshot.Revision;
+	Request.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
+	Request.Reward.ItemId = ItemId;
+	Request.Reward.Count = Count;
+	const FAIREInventoryWorkResult Result =
+		InventoryComponent->TryStoreMakoWorkReward(Request);
+	if (Result.Code == EAIREInventoryMutationCode::AlreadyApplied)
+	{
+		return true;
+	}
+	return Result.Code == EAIREInventoryMutationCode::Succeeded
+		&& Result.Destination
+			!= EAIREInventoryWorkResultDestination::WorldDrop;
 }
 
 const UAIRECompanionAttributeSet* AAIRECompanionCharacter::GetCompanionAttributeSet() const

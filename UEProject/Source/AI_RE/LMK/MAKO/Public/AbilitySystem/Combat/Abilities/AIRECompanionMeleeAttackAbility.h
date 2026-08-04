@@ -32,6 +32,13 @@ protected:
 		bool bWasCancelled) override;
 
 private:
+	enum class EExecutionMode : uint8
+	{
+		None,
+		Combat,
+		Harvest
+	};
+
 	UAIRECompanionWeaponDefinitionDataAsset* GetWeaponDefinition(
 		FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo) const;
@@ -39,6 +46,7 @@ private:
 	bool IsAttackStepIndexValid(int32 StepIndex) const;
 	float GetAttackStepDamage(int32 StepIndex) const;
 	FName GetAttackStepMontageSection(int32 StepIndex) const;
+	EExecutionMode ResolveExecutionMode(const AActor* TargetActor) const;
 	bool IsTargetValidForAttack(const AActor* TargetActor) const;
 	bool IsTargetInRange(const AActor* TargetActor) const;
 	void FaceTarget(const AActor* TargetActor) const;
@@ -93,6 +101,7 @@ private:
 	FTimerHandle FallbackHitTimerHandle;
 	FTimerHandle FallbackRecoveryTimerHandle;
 	float AttackRange = 0.0f;
+	EExecutionMode ActiveExecutionMode = EExecutionMode::None;
 	int32 CurrentStepIndex = INDEX_NONE;
 	int32 ResumeStepIndex = INDEX_NONE;
 	bool bCurrentStepHitConsumed = false;

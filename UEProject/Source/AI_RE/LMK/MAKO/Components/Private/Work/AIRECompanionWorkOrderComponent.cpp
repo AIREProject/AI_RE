@@ -1,5 +1,7 @@
 #include "Work/AIRECompanionWorkOrderComponent.h"
 
+#include "AI_REHarvestableResourceActor.h"
+#include "AI_REWorkBenchBase.h"
 #include "GameFramework/Actor.h"
 
 UAIRECompanionWorkOrderComponent::UAIRECompanionWorkOrderComponent()
@@ -9,15 +11,24 @@ UAIRECompanionWorkOrderComponent::UAIRECompanionWorkOrderComponent()
 }
 
 bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
-	AActor* TargetActor,
-	const FName RecipeRowId,
+	const FAIRECompanionWorkOrderRequest& Request,
 	FGuid& OutWorkOrderId)
 {
 	OutWorkOrderId = FGuid();
+	AActor* TargetActor = Request.TargetActor.Get();
+	const bool bHasValidTypedPayload =
+		(Request.WorkType == EAIRECompanionWorkOrderType::Crafting
+			&& IsValid(Request.RecipeTable)
+			&& !Request.RecipeRowId.IsNone()
+			&& IsValid(Cast<AAI_REWorkBenchBase>(TargetActor)))
+		|| (Request.WorkType == EAIRECompanionWorkOrderType::Harvesting
+			&& !IsValid(Request.RecipeTable)
+			&& Request.RecipeRowId.IsNone()
+			&& IsValid(Cast<AAI_REHarvestableResourceActor>(TargetActor)));
 	if (bIsShuttingDown
 		|| !IsValid(TargetActor)
 		|| TargetActor->IsActorBeingDestroyed()
-		|| RecipeRowId.IsNone()
+		|| !bHasValidTypedPayload
 		|| HasActiveWorkOrder()
 		|| (CurrentWorkOrder.State
 				!= EAIRECompanionWorkOrderState::None
@@ -36,7 +47,9 @@ bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
 		CurrentWorkOrder;
 	CurrentWorkOrder.WorkOrderId = NewWorkOrderId;
 	CurrentWorkOrder.TargetActor = TargetActor;
-	CurrentWorkOrder.RecipeRowId = RecipeRowId;
+	CurrentWorkOrder.WorkType = Request.WorkType;
+	CurrentWorkOrder.RecipeTable = Request.RecipeTable;
+	CurrentWorkOrder.RecipeRowId = Request.RecipeRowId;
 	CurrentWorkOrder.State = EAIRECompanionWorkOrderState::Requested;
 	BindTargetDestroyed();
 

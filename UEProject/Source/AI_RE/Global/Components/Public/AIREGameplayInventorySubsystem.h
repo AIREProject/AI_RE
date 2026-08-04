@@ -61,6 +61,21 @@ public:
 		UAI_REPlayerInventoryComponent* PlayerInventory,
 		const FAIREPlayerWarehouseTransferRequest& Request);
 
+	/** Validates a craft completion without changing containers or mutation ledgers. */
+	bool CanCompleteMakoCraftWork(
+		const FAIREMakoCraftWorkRequest& Request,
+		FAIREInventoryWorkResult& OutResult) const;
+
+	FAIREInventoryWorkResult TryCompleteMakoCraftWork(
+		const FAIREMakoCraftWorkRequest& Request);
+
+	/**
+	 * Stores a reward in MAKO or the shared warehouse. WorldDrop is a routing
+	 * decision only; the harvest actor owns spawn success and duplicate suppression.
+	 */
+	FAIREInventoryWorkResult TryStoreMakoWorkReward(
+		const FAIREMakoWorkRewardRequest& Request);
+
 	FGuid ResetInventorySession(
 		const FAIREInventorySessionScope& NewScope =
 			FAIREInventorySessionScope());
@@ -79,6 +94,7 @@ public:
 private:
 	friend class UAIRECompanionInventoryComponent;
 	friend class FAIREGameplayInventorySubsystemContractTest;
+	friend class FAIREGameplayInventoryMakoCraftWorkTest;
 
 	struct FAIREContainerState
 	{
@@ -127,6 +143,16 @@ private:
 		FAIREInventoryMutationResult& OutResult) const;
 	void RecordAppliedMutation(const FAIREInventoryMutationResult& Result);
 	void BroadcastContainerChanged(const FAIREContainerState& Container);
+	bool AggregateWorkIngredients(
+		const TArray<FAIREInventoryItemQuantity>& Ingredients,
+		TMap<FName, int32>& OutIngredients) const;
+	FAIREInventoryWorkResult MakeWorkResult(
+		EAIREInventoryMutationCode Code,
+		EAIREInventoryWorkResultDestination Destination,
+		const FAIREInventoryItemQuantity& DeliveredItem) const;
+	bool FindAppliedWorkResult(
+		const FGuid& MutationId,
+		FAIREInventoryWorkResult& OutResult) const;
 
 	FAIREInventoryMutationResult ReserveMakoEquipmentSwap(
 		const FAIREInventoryEquipRequest& Request);
@@ -152,6 +178,7 @@ private:
 	FAIREInventorySessionScope SessionScope;
 	TMap<FName, FAIREContainerState> Containers;
 	TMap<FGuid, FAIREInventoryMutationResult> AppliedMutations;
+	TMap<FGuid, FAIREInventoryWorkResult> AppliedWorkResults;
 	TSet<FString> AppliedImportCandidateIds;
 	TSet<FString> AppliedImportOperationIds;
 	bool bMakoInventoryInitialized = false;
