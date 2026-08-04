@@ -1,8 +1,8 @@
 // Copyright MixUpProject. All Rights Reserved.
 
 #include "AI_REItemEffect_GradualRecovery.h"
-#include "../../Global/Characters/Public/AI_RECharacterBase.h"
-#include "../../Global/Components/Public/AI_REStatusComponent.h"
+#include "AI_RECharacterBase.h"
+#include "AI_REStatusComponent.h"
 #include "Engine/Engine.h"
 
 bool UAI_REItemEffect_GradualRecovery::ApplyEffect_Implementation(AAI_RECharacterBase* TargetCharacter)

@@ -16,6 +16,9 @@
 #include "AI_REStatusComponent.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
+#include "AI_REPlayerCombatComponent.h"
+#include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
 #include "AI_REPlayerCraftingComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "AI_RECraftingUI.h"
@@ -177,7 +180,7 @@ void AAI_RECharacter::DoJumpEnd()
 void AAI_RECharacter::StartSprint()
 {
 	// 스태미나가 충분할 때만 달리기 허용
-	if (StatusComponent->CurrentSP >= 10.f)
+	if (AbilitySystemComponent && AbilitySystemComponent->GetNumericAttribute(UAI_REAttributeSet::GetSPAttribute()) >= 10.f)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 1000.f;
 		bIsSprint = true;
