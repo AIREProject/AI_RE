@@ -6,6 +6,9 @@
 #include "Components/ActorComponent.h"
 #include "AI_REPlayerInventoryComponent.generated.h"
 
+class UAIREGameplayInventorySubsystem;
+class UAIRECompanionTestingBlueprintLibrary;
+
 USTRUCT(BlueprintType)
 struct FInventoryItemStack
 {
@@ -76,4 +79,20 @@ protected:
 	int32 FindStackIndexBySlot(int32 SlotIndex) const;
 	int32 FindFirstEmptySlotIndex() const;
 	int32 GetMaxStackForItem(FName ItemId) const;
+
+private:
+	friend class UAIREGameplayInventorySubsystem;
+	friend class UAIRECompanionTestingBlueprintLibrary;
+
+	bool BuildExactAddState(
+		FName ItemId,
+		int32 Count,
+		TArray<FInventoryItemStack>& OutItems) const;
+	bool BuildExactRemoveFromSlotState(
+		int32 SlotIndex,
+		int32 Count,
+		TArray<FInventoryItemStack>& OutItems,
+		FName& OutItemId) const;
+	void CommitExactInventoryState(TArray<FInventoryItemStack>&& NewItems);
+	void NotifyExactInventoryMutation();
 };

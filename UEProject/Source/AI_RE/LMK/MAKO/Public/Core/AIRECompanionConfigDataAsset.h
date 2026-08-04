@@ -98,8 +98,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Attributes", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float MaxStamina = 100.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory", meta = (ClampMin = "1", UIMin = "1"))
-	int32 MaxInventorySlots = 12;
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadOnly,
+		Category = "AIRE|Companion|Deprecated",
+		meta = (DeprecatedProperty, DeprecationMessage = "MAKO uses the fixed 20-slot Gameplay Inventory container."))
+	int32 MaxInventorySlots = 20;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory")
 	TArray<FAIRECompanionInitialInventoryEntry> InitialInventory;

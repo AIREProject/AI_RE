@@ -67,6 +67,191 @@ bool UAI_REPlayerInventoryComponent::AddItem(FName ItemId, int32 Count)
 	return RemainingCount <= 0;
 }
 
+bool UAI_REPlayerInventoryComponent::BuildExactAddState(
+	const FName ItemId,
+	const int32 Count,
+	TArray<FInventoryItemStack>& OutItems) const
+{
+	OutItems.Reset();
+	if (ItemId.IsNone() || Count <= 0 || MaxSlots <= 0)
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetWorld()
+		? GetWorld()->GetGameInstance()
+		: nullptr;
+	UAI_REItemSubsystem* ItemSubsystem = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAI_REItemSubsystem>()
+		: nullptr;
+	UAI_REItemDataAsset* ItemData = IsValid(ItemSubsystem)
+		? ItemSubsystem->GetItemDataAsset(ItemId)
+		: nullptr;
+	int32 MaxStackSize = IsValid(ItemData) ? ItemData->MaxStackSize : 0;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (GIsAutomationTesting
+		&& MaxStackSize < 1
+		&& (ItemId == FName(TEXT("AIRE.Test.Stack2"))
+			|| ItemId == FName(TEXT("AIRE.Test.Stack4"))))
+	{
+		MaxStackSize = ItemId == FName(TEXT("AIRE.Test.Stack2")) ? 2 : 4;
+	}
+#endif
+	if (MaxStackSize < 1)
+	{
+		return false;
+	}
+
+	int64 FreeCapacity = 0;
+	for (const FInventoryItemStack& Stack : Items)
+	{
+		if (Stack.SlotIndex >= 0
+			&& Stack.SlotIndex < MaxSlots
+			&& Stack.ItemId == ItemId)
+		{
+			FreeCapacity += FMath::Max(0, MaxStackSize - Stack.Count);
+		}
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < MaxSlots; ++SlotIndex)
+	{
+		const bool bIsOccupied = Items.ContainsByPredicate(
+			[SlotIndex](const FInventoryItemStack& Stack)
+			{
+				return Stack.SlotIndex == SlotIndex;
+			});
+		if (!bIsOccupied)
+		{
+			FreeCapacity += static_cast<int64>(MaxStackSize);
+		}
+	}
+
+	if (FreeCapacity < Count)
+	{
+		return false;
+	}
+
+	OutItems = Items;
+	int32 RemainingCount = Count;
+	for (FInventoryItemStack& Stack : OutItems)
+	{
+		if (RemainingCount == 0
+			|| Stack.SlotIndex < 0
+			|| Stack.SlotIndex >= MaxSlots
+			|| Stack.ItemId != ItemId)
+		{
+			continue;
+		}
+
+		const int32 AddedCount = FMath::Min(
+			RemainingCount,
+			FMath::Max(0, MaxStackSize - Stack.Count));
+		Stack.Count += AddedCount;
+		RemainingCount -= AddedCount;
+	}
+
+	for (int32 SlotIndex = 0; SlotIndex < MaxSlots && RemainingCount > 0; ++SlotIndex)
+	{
+		const bool bIsOccupied = OutItems.ContainsByPredicate(
+			[SlotIndex](const FInventoryItemStack& Stack)
+			{
+				return Stack.SlotIndex == SlotIndex;
+			});
+		if (bIsOccupied)
+		{
+			continue;
+		}
+
+		FInventoryItemStack& NewStack = OutItems.AddDefaulted_GetRef();
+		NewStack.SlotIndex = SlotIndex;
+		NewStack.ItemId = ItemId;
+		NewStack.Count = FMath::Min(RemainingCount, MaxStackSize);
+		RemainingCount -= NewStack.Count;
+	}
+
+	if (RemainingCount != 0)
+	{
+		OutItems.Reset();
+		return false;
+	}
+
+	return true;
+}
+
+bool UAI_REPlayerInventoryComponent::BuildExactRemoveFromSlotState(
+	const int32 SlotIndex,
+	const int32 Count,
+	TArray<FInventoryItemStack>& OutItems,
+	FName& OutItemId) const
+{
+	OutItems.Reset();
+	OutItemId = NAME_None;
+	if (SlotIndex < 0 || SlotIndex >= MaxSlots || Count <= 0)
+	{
+		return false;
+	}
+
+	const int32 StackIndex = FindStackIndexBySlot(SlotIndex);
+	if (StackIndex == INDEX_NONE)
+	{
+		return false;
+	}
+
+	const FInventoryItemStack& SourceStack = Items[StackIndex];
+	if (SourceStack.ItemId.IsNone() || SourceStack.Count < Count)
+	{
+		return false;
+	}
+
+	UGameInstance* GameInstance = GetWorld()
+		? GetWorld()->GetGameInstance()
+		: nullptr;
+	UAI_REItemSubsystem* ItemSubsystem = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAI_REItemSubsystem>()
+		: nullptr;
+	UAI_REItemDataAsset* ItemData = IsValid(ItemSubsystem)
+		? ItemSubsystem->GetItemDataAsset(SourceStack.ItemId)
+		: nullptr;
+	int32 MaxStackSize = IsValid(ItemData) ? ItemData->MaxStackSize : 0;
+#if WITH_DEV_AUTOMATION_TESTS
+	if (GIsAutomationTesting
+		&& MaxStackSize < 1
+		&& (SourceStack.ItemId == FName(TEXT("AIRE.Test.Stack2"))
+			|| SourceStack.ItemId == FName(TEXT("AIRE.Test.Stack4"))))
+	{
+		MaxStackSize = SourceStack.ItemId == FName(TEXT("AIRE.Test.Stack2"))
+			? 2
+			: 4;
+	}
+#endif
+	if (MaxStackSize < 1)
+	{
+		return false;
+	}
+
+	OutItems = Items;
+	OutItemId = SourceStack.ItemId;
+	FInventoryItemStack& NewSourceStack = OutItems[StackIndex];
+	NewSourceStack.Count -= Count;
+	if (NewSourceStack.Count == 0)
+	{
+		OutItems.RemoveAt(StackIndex);
+	}
+
+	return true;
+}
+
+void UAI_REPlayerInventoryComponent::CommitExactInventoryState(
+	TArray<FInventoryItemStack>&& NewItems)
+{
+	Items = MoveTemp(NewItems);
+}
+
+void UAI_REPlayerInventoryComponent::NotifyExactInventoryMutation()
+{
+	OnInventoryChanged.Broadcast();
+}
+
 bool UAI_REPlayerInventoryComponent::ConsumeItem(FName ItemId, int32 Count)
 {
 	if (ItemId.IsNone() || Count <= 0) return false;

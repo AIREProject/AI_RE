@@ -3,6 +3,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AIREGameplayInventoryTypes.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
 
@@ -121,15 +122,6 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
-	if (MaxInventorySlots < 1)
-	{
-		OutValidationError = NSLOCTEXT(
-			"AIRECompanionConfig",
-			"InvalidInventorySlots",
-			"Max Inventory Slots must be at least one.");
-		return false;
-	}
-
 	int32 RequiredSlots = 0;
 	TSet<FName> InitialItemIds;
 	for (const FAIRECompanionInitialInventoryEntry& Entry : InitialInventory)
@@ -161,17 +153,21 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		}
 
 		InitialItemIds.Add(Entry.ItemDefinition->ItemId);
+		const int32 GeneralItemCount =
+			Entry.ItemDefinition->ItemId == DefaultEquippedWeaponItemId
+			? FMath::Max(0, Entry.Count - 1)
+			: Entry.Count;
 		RequiredSlots += FMath::DivideAndRoundUp(
-			Entry.Count,
+			GeneralItemCount,
 			Entry.ItemDefinition->MaxStackSize);
 	}
 
-	if (RequiredSlots > MaxInventorySlots)
+	if (RequiredSlots > AIREGameplayInventory::MakoItemSlotCapacity)
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionConfig",
 			"InitialInventoryTooLarge",
-			"Initial inventory requires more slots than Max Inventory Slots.");
+			"Initial inventory requires more than 20 general MAKO item slots after the equipped weapon is separated.");
 		return false;
 	}
 

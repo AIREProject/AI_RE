@@ -48,6 +48,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/OBI/Component/Public",
 			"AI_RE/OBI/UI/Public",
 			"AI_RE/Global/Components/Public",
+			"AI_RE/Global/Inventory/Public",
 			"AI_RE/Global/Actors/Public",
 			"AI_RE/Global/Interfaces/Public",
 			"AI_RE/Global/Abilities/Attributes/Public",
