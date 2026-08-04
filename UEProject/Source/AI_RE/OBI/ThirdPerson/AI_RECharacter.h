@@ -127,6 +127,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Input|QuickMenu")
 	void UseQuickSlot(int32 SlotIndex);
 	
+	// 체력 테스트용 디버그 콘솔 커맨드
+	UFUNCTION(Exec)
+	void DebugTakeDamage(float DamageAmount);
+	
 protected:
 	// UI
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")

@@ -193,6 +193,16 @@ void AAI_RECharacter::StopSprint()
 	bIsSprint = false;
 }
 
+void AAI_RECharacter::DebugTakeDamage(float DamageAmount)
+{
+	if (AbilitySystemComponent)
+	{
+		// GAS를 통해 다이렉트로 HP를 차감합니다 (서버 권한 등 무시하고 즉각 적용)
+		AbilitySystemComponent->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHPAttribute(), EGameplayModOp::Additive, -DamageAmount);
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("Debug: Took %f damage via GAS!"), DamageAmount));
+	}
+}
+
 void AAI_RECharacter::UseQuickSlot(int32 SlotIndex)
 {
 	if (InventoryComponent)

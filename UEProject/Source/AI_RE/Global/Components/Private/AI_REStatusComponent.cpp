@@ -87,13 +87,79 @@ bool UAI_REStatusComponent::IsOwnerRunning() const
 
 void UAI_REStatusComponent::AddGradualRecovery(float HP, float SP, float Hunger, float Thirsty, float Duration)
 {
-	// Deprecated: Use GAS (GameplayEffect with Duration/Infinite and Period) instead.
-	UE_LOG(LogTemp, Warning, TEXT("UAI_REStatusComponent::AddGradualRecovery is deprecated. Please use GAS."));
+	if (Duration <= 0.f) return;
+
+	// 0.5초마다 틱이 돈다고 가정
+	float TickInterval = 0.5f;
+	int32 TotalTicks = FMath::CeilToInt(Duration / TickInterval);
+
+	if (TotalTicks > 0)
+	{
+		FGradualRecovery Recovery;
+		Recovery.HPPerTick = HP / TotalTicks;
+		Recovery.SPPerTick = SP / TotalTicks;
+		Recovery.HungerPerTick = Hunger / TotalTicks;
+		Recovery.ThirstyPerTick = Thirsty / TotalTicks;
+		Recovery.TicksRemaining = TotalTicks;
+
+		ActiveRecoveries.Add(Recovery);
+
+		// 타이머가 돌고 있지 않다면 시작
+		if (!GetWorld()->GetTimerManager().IsTimerActive(RecoveryTimerHandle))
+		{
+			GetWorld()->GetTimerManager().SetTimer(RecoveryTimerHandle, this, &UAI_REStatusComponent::ProcessGradualRecovery, TickInterval, true);
+		}
+	}
 }
 
 void UAI_REStatusComponent::ProcessGradualRecovery()
 {
-	// Deprecated
+	if (ActiveRecoveries.Num() == 0)
+	{
+		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+		return;
+	}
+
+	float TotalHP = 0.f;
+	float TotalSP = 0.f;
+	float TotalHunger = 0.f;
+	float TotalThirsty = 0.f;
+
+	for (int32 i = ActiveRecoveries.Num() - 1; i >= 0; --i)
+	{
+		FGradualRecovery& Rec = ActiveRecoveries[i];
+		
+		TotalHP += Rec.HPPerTick;
+		TotalSP += Rec.SPPerTick;
+		TotalHunger += Rec.HungerPerTick;
+		TotalThirsty += Rec.ThirstyPerTick;
+
+		Rec.TicksRemaining--;
+		if (Rec.TicksRemaining <= 0)
+		{
+			ActiveRecoveries.RemoveAtSwap(i);
+		}
+	}
+
+	// 일괄 적용 (GAS를 통해)
+	if (AActor* Owner = GetOwner())
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Owner))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				if (TotalHP > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHPAttribute(), EGameplayModOp::Additive, TotalHP);
+				if (TotalSP > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetSPAttribute(), EGameplayModOp::Additive, TotalSP);
+				if (TotalHunger > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHungerAttribute(), EGameplayModOp::Additive, TotalHunger);
+				if (TotalThirsty > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetThirstyAttribute(), EGameplayModOp::Additive, TotalThirsty);
+			}
+		}
+	}
+
+	if (ActiveRecoveries.Num() == 0)
+	{
+		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+	}
 }
 
 void UAI_REStatusComponent::BroadcastCurrentStats()

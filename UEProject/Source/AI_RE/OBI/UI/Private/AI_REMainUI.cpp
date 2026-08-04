@@ -25,6 +25,8 @@ void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 		{
 			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
 			{
+				CachedASC = ASC;
+				
 				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHPAttribute()).AddUObject(this, &UAI_REMainUI::OnHealthAttributeChanged);
 				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetSPAttribute()).AddUObject(this, &UAI_REMainUI::OnSPAttributeChanged);
 				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHungerAttribute()).AddUObject(this, &UAI_REMainUI::OnHungerAttributeChanged);
@@ -129,57 +131,33 @@ void UAI_REMainUI::UpdateThirstyBar(float Current, float Max)
 
 void UAI_REMainUI::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
 {
-	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	if (CachedASC.IsValid())
 	{
-		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
-		{
-			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-			{
-				UpdateHPBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
-			}
-		}
+		UpdateHPBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
 	}
 }
 
 void UAI_REMainUI::OnSPAttributeChanged(const FOnAttributeChangeData& Data)
 {
-	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	if (CachedASC.IsValid())
 	{
-		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
-		{
-			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-			{
-				UpdateSPBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
-			}
-		}
+		UpdateSPBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
 	}
 }
 
 void UAI_REMainUI::OnHungerAttributeChanged(const FOnAttributeChangeData& Data)
 {
-	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	if (CachedASC.IsValid())
 	{
-		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
-		{
-			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-			{
-				UpdateHungerBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
-			}
-		}
+		UpdateHungerBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
 	}
 }
 
 void UAI_REMainUI::OnThirstyAttributeChanged(const FOnAttributeChangeData& Data)
 {
-	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	if (CachedASC.IsValid())
 	{
-		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
-		{
-			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-			{
-				UpdateThirstyBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
-			}
-		}
+		UpdateThirstyBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
 	}
 }
 

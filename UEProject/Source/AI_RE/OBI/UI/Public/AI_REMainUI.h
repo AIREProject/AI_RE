@@ -45,6 +45,8 @@ private:
 
 	TWeakObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComp;
 
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedASC;
+
 	UPROPERTY()
 	TArray<class UAI_REInventorySlotUI*> QuickSlotWidgets;
 	
