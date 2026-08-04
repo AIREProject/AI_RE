@@ -10,22 +10,37 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "GameFramework/Actor.h"
+#include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
+#include "AbilitySystemInterface.h"
 
 void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 {
 	if (InStatus == nullptr) return; 
 	
-	InStatus -> OnHPChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateHPBar);
-	InStatus -> OnSPChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateSPBar);
-	InStatus -> OnHungerChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateHungerBar);
-	InStatus -> OnThirstyChanged.AddUniqueDynamic(this, &UAI_REMainUI::UpdateThirstyBar);
-	
-	// 모든 델리게이트 바인딩이 끝난 후 한 번에 스탯을 뿌려 UI를 초기화합니다.
-	InStatus->BroadcastCurrentStats();
+	AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(InStatus->GetOwner());
+	if (PlayerChar)
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHPAttribute()).AddUObject(this, &UAI_REMainUI::OnHealthAttributeChanged);
+				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetSPAttribute()).AddUObject(this, &UAI_REMainUI::OnSPAttributeChanged);
+				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHungerAttribute()).AddUObject(this, &UAI_REMainUI::OnHungerAttributeChanged);
+				ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetThirstyAttribute()).AddUObject(this, &UAI_REMainUI::OnThirstyAttributeChanged);
+				
+				// 초기 UI 세팅
+				UpdateHPBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetHPAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
+				UpdateSPBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetSPAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
+				UpdateHungerBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetHungerAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
+				UpdateThirstyBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetThirstyAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
+			}
+		}
+	}
 
 	if (QuickSlotGrid && SlotWidgetClass)
 	{
-		AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(InStatus->GetOwner());
 		if (PlayerChar && PlayerChar->GetInventoryComponent())
 		{
 			UAI_REPlayerInventoryComponent* InvComp = PlayerChar->GetInventoryComponent();
@@ -109,6 +124,62 @@ void UAI_REMainUI::UpdateThirstyBar(float Current, float Max)
 	if (ThirstyBar && Max > 0.f)
 	{
 		ThirstyBar->SetTargetPercent(Current/Max);
+	}
+}
+
+void UAI_REMainUI::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				UpdateHPBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
+			}
+		}
+	}
+}
+
+void UAI_REMainUI::OnSPAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				UpdateSPBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
+			}
+		}
+	}
+}
+
+void UAI_REMainUI::OnHungerAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				UpdateHungerBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
+			}
+		}
+	}
+}
+
+void UAI_REMainUI::OnThirstyAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwningPlayerPawn()))
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				UpdateThirstyBar(Data.NewValue, ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
+			}
+		}
 	}
 }
 
