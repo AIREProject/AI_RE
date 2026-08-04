@@ -16,6 +16,9 @@
 #include "AI_REStatusComponent.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
+#include "AI_REPlayerCombatComponent.h"
+#include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
 #include "AI_REPlayerCraftingComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "AI_RECraftingUI.h"
@@ -177,7 +180,7 @@ void AAI_RECharacter::DoJumpEnd()
 void AAI_RECharacter::StartSprint()
 {
 	// 스태미나가 충분할 때만 달리기 허용
-	if (StatusComponent->CurrentSP >= 10.f)
+	if (AbilitySystemComponent && AbilitySystemComponent->GetNumericAttribute(UAI_REAttributeSet::GetSPAttribute()) >= 10.f)
 	{
 		GetCharacterMovement()->MaxWalkSpeed = 1000.f;
 		bIsSprint = true;
@@ -188,6 +191,16 @@ void AAI_RECharacter::StopSprint()
 {
 	GetCharacterMovement() -> MaxWalkSpeed = 500.f;
 	bIsSprint = false;
+}
+
+void AAI_RECharacter::DebugTakeDamage(float DamageAmount)
+{
+	if (AbilitySystemComponent)
+	{
+		// GAS를 통해 다이렉트로 HP를 차감합니다 (서버 권한 등 무시하고 즉각 적용)
+		AbilitySystemComponent->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHPAttribute(), EGameplayModOp::Additive, -DamageAmount);
+		GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("Debug: Took %f damage via GAS!"), DamageAmount));
+	}
 }
 
 void AAI_RECharacter::UseQuickSlot(int32 SlotIndex)

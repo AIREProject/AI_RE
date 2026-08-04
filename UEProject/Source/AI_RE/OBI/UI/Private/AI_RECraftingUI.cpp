@@ -9,7 +9,6 @@
 #include "Components/TextBlock.h"
 #include "AI_REItemSubsystem.h"
 #include "AI_REItemDataAsset.h"
-#include "AI_REPlayerCraftingComponent.h"
 #include "Engine/Engine.h"
 
 void UAI_RECraftingUI::NativeOnInitialized()

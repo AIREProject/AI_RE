@@ -52,56 +52,6 @@ public:
 	FTimerHandle SurvivalTimerHandle;
 
     // ----------------------------------------------------
-    // Stats
-    // ----------------------------------------------------
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|HP")
-	float MaxHP;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|HP")
-	float CurrentHP;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|SP")
-	float MaxSP;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|SP")
-	float CurrentSP;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Hunger")
-	float MaxHunger;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|Hunger")
-	float CurrentHunger;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Thirsty")
-	float MaxThirsty;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Thirsty")
-	float CurrentThirsty;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Combat")
-	float Attack;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Combat")
-	float Defense;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Work")
-	float WorkSpeed;
-
-    // ----------------------------------------------------
-    // Delegates (UI 연동용)
-    // ----------------------------------------------------
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnHPChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnSPChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnHungerChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnThirstyChanged;
-
-    // ----------------------------------------------------
     // Functions
     // ----------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "Status|Functions")

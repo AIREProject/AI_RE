@@ -9,7 +9,12 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "AI_REHarvestDamageTarget.h"
-#include "../../Global/Characters/Public/AI_RECharacterBase.h"
+#include "AI_RECharacterBase.h"
+#include "AI_REStatusComponent.h"
+#include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
+#include "AbilitySystemInterface.h"
+#include "Engine/Engine.h"
 
 UAI_REPlayerCombatComponent::UAI_REPlayerCombatComponent()
 {
@@ -26,17 +31,22 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 	if (bIsActionActive) return;
 
 	AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
-	if (OwnerChar && OwnerChar->GetStatusComponent())
+	if (OwnerChar)
 	{
-		UAI_REStatusComponent* StatusComp = OwnerChar->GetStatusComponent();
-		if (StatusComp->CurrentSP < AttackStaminaCost)
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(OwnerChar))
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Not enough SP to attack!"));
-			return;
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				if (ASC->GetNumericAttribute(UAI_REAttributeSet::GetSPAttribute()) < AttackStaminaCost)
+				{
+					GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, TEXT("Not enough SP to attack!"));
+					return;
+				}
+				
+				// Consume SP
+				ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetSPAttribute(), EGameplayModOp::Additive, -AttackStaminaCost);
+			}
 		}
-		
-		// Consume SP
-		StatusComp->ConsumeSP(AttackStaminaCost);
 	}
 
 	bIsActionActive = true;

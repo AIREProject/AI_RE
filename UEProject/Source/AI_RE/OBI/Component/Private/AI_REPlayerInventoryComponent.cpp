@@ -4,9 +4,9 @@
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "AI_REItemSubsystem.h"
-#include "../../OBI/Component/Public/AI_REItemDataAsset.h"
+#include "AI_REItemDataAsset.h"
 #include "AI_REItemEffect.h"
-#include "../../Global/Characters/Public/AI_RECharacterBase.h"
+#include "AI_RECharacterBase.h"
 #include "Engine/Engine.h"
 
 UAI_REPlayerInventoryComponent::UAI_REPlayerInventoryComponent()

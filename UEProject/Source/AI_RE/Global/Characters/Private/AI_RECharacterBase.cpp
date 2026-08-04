@@ -4,6 +4,7 @@
 #include "AI_REStatusComponent.h"
 #include "AI_RESkillComponent.h" // Assuming this is where it's located currently
 #include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
 
 AAI_RECharacterBase::AAI_RECharacterBase()
 {
@@ -16,6 +17,7 @@ AAI_RECharacterBase::AAI_RECharacterBase()
 	
 	// GAS 컴포넌트 초기화
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AttributeSet = CreateDefaultSubobject<UAI_REAttributeSet>(TEXT("AttributeSet"));
 }
 
 void AAI_RECharacterBase::BeginPlay()

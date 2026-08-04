@@ -1,41 +1,18 @@
 #include "AI_REStatusComponent.h"
-
 #include "TimerManager.h"
 #include "Engine/Engine.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "AI_REAttributeSet.h"
 
 UAI_REStatusComponent::UAI_REStatusComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-
-    // 디폴트 스탯 세팅
-	MaxHP = 100.f;
-	MaxSP = 100.f;
-	MaxHunger = 100.f;
-	MaxThirsty = 100.f;
-	
-	Attack = 10.f;
-	Defense = 10.f;
-	WorkSpeed = 1.0f;
 }
 
 void UAI_REStatusComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
-	// 에디터에서 실수로 0으로 설정되는 것을 방지 (Division by Zero 오류 및 UI 미갱신 원인)
-	if (MaxHP <= 0.f) MaxHP = 100.f;
-	if (MaxSP <= 0.f) MaxSP = 100.f;
-	if (MaxHunger <= 0.f) MaxHunger = 100.f;
-	if (MaxThirsty <= 0.f) MaxThirsty = 100.f;
-
-	// 에디터(블루프린트)에서 수정된 Max 값을 기준으로 Current 값을 꽉 채워줍니다.
-	CurrentHP = MaxHP;
-	CurrentSP = MaxSP;
-	CurrentHunger = MaxHunger;
-	CurrentThirsty = MaxThirsty;
-
-    // 시작 시 UI 업데이트용 델리게이트 브로드캐스트
-	BroadcastCurrentStats();
 
 	// 생존 스탯(허기, 목마름) 자동 감소 타이머 실행 (2초 주기)
 	GetWorld()->GetTimerManager().SetTimer(SurvivalTimerHandle, this, &UAI_REStatusComponent::HandleSurvivalStats, SurvivalTickRate, true);
@@ -48,57 +25,61 @@ void UAI_REStatusComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 void UAI_REStatusComponent::ConsumeSP(float Amount)
 {
-    CurrentSP = FMath::Clamp(CurrentSP - Amount, 0.f, MaxSP);
-    OnSPChanged.Broadcast(CurrentSP, MaxSP);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
+    UE_LOG(LogTemp, Warning, TEXT("UAI_REStatusComponent::ConsumeSP is deprecated. Please use GAS Gameplay Effects."));
 }
 
 void UAI_REStatusComponent::ApplyDamage(float Amount)
 {
-    float ActualDamage = FMath::Max(Amount - Defense, 1.f);
-    CurrentHP = FMath::Clamp(CurrentHP - ActualDamage, 0.f, MaxHP);
-    OnHPChanged.Broadcast(CurrentHP, MaxHP);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
+    UE_LOG(LogTemp, Warning, TEXT("UAI_REStatusComponent::ApplyDamage is deprecated. Please use GAS Gameplay Effects."));
 }
 
 void UAI_REStatusComponent::RecoverHP(float Amount)
 {
-    CurrentHP = FMath::Clamp(CurrentHP + Amount, 0.f, MaxHP);
-    OnHPChanged.Broadcast(CurrentHP, MaxHP);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
 }
 
 void UAI_REStatusComponent::RecoverSP(float Amount)
 {
-    CurrentSP = FMath::Clamp(CurrentSP + Amount, 0.f, MaxSP);
-    OnSPChanged.Broadcast(CurrentSP, MaxSP);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
 }
 
 void UAI_REStatusComponent::RecoverHunger(float Amount)
 {
-    CurrentHunger = FMath::Clamp(CurrentHunger + Amount, 0.f, MaxHunger);
-    OnHungerChanged.Broadcast(CurrentHunger, MaxHunger);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
 }
 
 void UAI_REStatusComponent::RecoverThirsty(float Amount)
 {
-    CurrentThirsty = FMath::Clamp(CurrentThirsty + Amount, 0.f, MaxThirsty);
-    OnThirstyChanged.Broadcast(CurrentThirsty, MaxThirsty);
+    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
 }
 
 void UAI_REStatusComponent::HandleSurvivalStats()
 {
 	float Multiplier = IsOwnerRunning() ? RunMultiplier : 1.0f;
 
-	CurrentHunger = FMath::Clamp(CurrentHunger - (BaseHungerDepleteRate * Multiplier), 0.f, MaxHunger);
-	CurrentThirsty = FMath::Clamp(CurrentThirsty - (BaseThirstyDepleteRate * Multiplier), 0.f, MaxThirsty);
+	if (AActor* Owner = GetOwner())
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Owner))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				float HungerDeplete = -(BaseHungerDepleteRate * Multiplier);
+				float ThirstyDeplete = -(BaseThirstyDepleteRate * Multiplier);
 
-	OnHungerChanged.Broadcast(CurrentHunger, MaxHunger);
-	OnThirstyChanged.Broadcast(CurrentThirsty, MaxThirsty);
+				ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHungerAttribute(), EGameplayModOp::Additive, HungerDeplete);
+				ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetThirstyAttribute(), EGameplayModOp::Additive, ThirstyDeplete);
+			}
+		}
+	}
 }
 
 bool UAI_REStatusComponent::IsOwnerRunning() const
 {
 	if (AActor* Owner = GetOwner())
 	{
-		// 달리기 판정: 속도가 400.0f 이상이면 달리는 것으로 간주
+		// 달리기 판정: 속도가 600.0f 이상이면 달리는 것으로 간주
 		return Owner->GetVelocity().SizeSquared() > 600.f;
 	}
 	return false;
@@ -135,7 +116,6 @@ void UAI_REStatusComponent::ProcessGradualRecovery()
 {
 	if (ActiveRecoveries.Num() == 0)
 	{
-		// 틱 배열이 비었으면 타이머 중지
 		GetWorld()->GetTimerManager().ClearTimer(RecoveryTimerHandle);
 		return;
 	}
@@ -161,11 +141,20 @@ void UAI_REStatusComponent::ProcessGradualRecovery()
 		}
 	}
 
-	// 일괄 적용 (기존 Recover 함수 재사용하여 이벤트 브로드캐스트)
-	if (TotalHP > 0.f) RecoverHP(TotalHP);
-	if (TotalSP > 0.f) RecoverSP(TotalSP);
-	if (TotalHunger > 0.f) RecoverHunger(TotalHunger);
-	if (TotalThirsty > 0.f) RecoverThirsty(TotalThirsty);
+	// 일괄 적용 (GAS를 통해)
+	if (AActor* Owner = GetOwner())
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(Owner))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				if (TotalHP > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHPAttribute(), EGameplayModOp::Additive, TotalHP);
+				if (TotalSP > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetSPAttribute(), EGameplayModOp::Additive, TotalSP);
+				if (TotalHunger > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetHungerAttribute(), EGameplayModOp::Additive, TotalHunger);
+				if (TotalThirsty > 0.f) ASC->ApplyModToAttributeUnsafe(UAI_REAttributeSet::GetThirstyAttribute(), EGameplayModOp::Additive, TotalThirsty);
+			}
+		}
+	}
 
 	if (ActiveRecoveries.Num() == 0)
 	{
@@ -175,9 +164,5 @@ void UAI_REStatusComponent::ProcessGradualRecovery()
 
 void UAI_REStatusComponent::BroadcastCurrentStats()
 {
-	OnHPChanged.Broadcast(CurrentHP, MaxHP);
-	OnSPChanged.Broadcast(CurrentSP, MaxSP);
-	OnHungerChanged.Broadcast(CurrentHunger, MaxHunger);
-	OnThirstyChanged.Broadcast(CurrentThirsty, MaxThirsty);
+	// Deprecated: UI directly binds to GAS.
 }
-

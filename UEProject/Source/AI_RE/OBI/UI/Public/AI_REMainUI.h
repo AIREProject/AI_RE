@@ -31,6 +31,11 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void UpdateThirstyBar(float Current, float Max);
 
+	void OnHealthAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnSPAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnHungerAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnThirstyAttributeChanged(const struct FOnAttributeChangeData& Data);
+
 	UFUNCTION()
 	void RefreshQuickSlots();
 	
@@ -39,6 +44,8 @@ private:
 	FTimerHandle HPSmoothTimerHandle;
 
 	TWeakObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComp;
+
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedASC;
 
 	UPROPERTY()
 	TArray<class UAI_REInventorySlotUI*> QuickSlotWidgets;
