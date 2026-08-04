@@ -12,6 +12,7 @@ class UAIRECompanionEquipmentComponent;
 class UAIRECompanionInventoryComponent;
 class UAIRECompanionLocalBehaviorPolicyComponent;
 class UAIRECompanionSupportComponent;
+class UAIRECompanionWorkOrderComponent;
 class UAbilitySystemComponent;
 struct FOnAttributeChangeData;
 
@@ -46,6 +47,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	UAIRECompanionChatComponent* GetChatComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Work")
+	UAIRECompanionWorkOrderComponent* GetWorkOrderComponent() const;
 
 	bool ResetAttributesToConfiguredDefaults();
 
@@ -84,6 +88,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Chat", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionChatComponent> ChatComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Work", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECompanionWorkOrderComponent> WorkOrderComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Configuration", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig;
