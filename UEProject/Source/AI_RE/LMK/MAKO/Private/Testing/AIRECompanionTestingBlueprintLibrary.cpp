@@ -470,20 +470,20 @@ bool UAIRECompanionTestingBlueprintLibrary::TransferFirstInventoryItem(
 	}
 
 	FAIREInventoryContainerSnapshot MakoSnapshot;
-	FAIREInventoryContainerSnapshot WarehouseSnapshot;
+	FAIREInventoryContainerSnapshot StorageSnapshot;
 	if (!InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetMakoContainerId(), MakoSnapshot)
-		|| !InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(), WarehouseSnapshot))
+		|| !InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(), StorageSnapshot))
 	{
 		return false;
 	}
 
-	if (Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToWarehouse
-		|| Direction == EAIRECompanionTestingInventoryTransferDirection::WarehouseToMako)
+	if (Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToStorage
+		|| Direction == EAIRECompanionTestingInventoryTransferDirection::StorageToMako)
 	{
 		const FAIREInventoryContainerSnapshot& SourceSnapshot =
-			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToWarehouse
+			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToStorage
 			? MakoSnapshot
-			: WarehouseSnapshot;
+			: StorageSnapshot;
 		FAIREInventoryItemStackSnapshot SourceStack;
 		if (!FindFirstMatchingStack(SourceSnapshot, ItemId, SourceStack))
 		{
@@ -495,13 +495,13 @@ bool UAIRECompanionTestingBlueprintLibrary::TransferFirstInventoryItem(
 		Request.MutationId = FGuid::NewGuid();
 		Request.SourceContainerId = SourceSnapshot.ContainerId;
 		Request.DestinationContainerId =
-			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToWarehouse
-			? WarehouseSnapshot.ContainerId
+			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToStorage
+			? StorageSnapshot.ContainerId
 			: MakoSnapshot.ContainerId;
 		Request.ExpectedSourceRevision = SourceSnapshot.Revision;
 		Request.ExpectedDestinationRevision =
-			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToWarehouse
-			? WarehouseSnapshot.Revision
+			Direction == EAIRECompanionTestingInventoryTransferDirection::MakoToStorage
+			? StorageSnapshot.Revision
 			: MakoSnapshot.Revision;
 		Request.SourceSlotIndex = SourceStack.SlotIndex;
 		Request.Count = Count;
@@ -514,12 +514,12 @@ bool UAIRECompanionTestingBlueprintLibrary::TransferFirstInventoryItem(
 		return false;
 	}
 
-	FAIREPlayerWarehouseTransferRequest Request;
+	FAIREPlayerStorageTransferRequest Request;
 	Request.SessionId = InventorySubsystem->GetInventorySessionId();
 	Request.MutationId = FGuid::NewGuid();
-	Request.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
+	Request.ExpectedStorageRevision = StorageSnapshot.Revision;
 	Request.Count = Count;
-	if (Direction == EAIRECompanionTestingInventoryTransferDirection::PlayerToWarehouse)
+	if (Direction == EAIRECompanionTestingInventoryTransferDirection::PlayerToStorage)
 	{
 		const FInventoryItemStack* SourceStack = PlayerInventory->Items.FindByPredicate(
 			[ItemId, PlayerInventory](const FInventoryItemStack& Stack)
@@ -534,22 +534,22 @@ bool UAIRECompanionTestingBlueprintLibrary::TransferFirstInventoryItem(
 			return false;
 		}
 
-		Request.Direction = EAIREPlayerWarehouseTransferDirection::DepositPlayerToWarehouse;
+		Request.Direction = EAIREPlayerStorageTransferDirection::DepositPlayerToStorage;
 		Request.SourceSlotIndex = SourceStack->SlotIndex;
 	}
 	else
 	{
 		FAIREInventoryItemStackSnapshot SourceStack;
-		if (!FindFirstMatchingStack(WarehouseSnapshot, ItemId, SourceStack))
+		if (!FindFirstMatchingStack(StorageSnapshot, ItemId, SourceStack))
 		{
 			return false;
 		}
 
-		Request.Direction = EAIREPlayerWarehouseTransferDirection::WithdrawWarehouseToPlayer;
+		Request.Direction = EAIREPlayerStorageTransferDirection::WithdrawStorageToPlayer;
 		Request.SourceSlotIndex = SourceStack.SlotIndex;
 	}
 
-	return InventorySubsystem->TryTransferPlayerWarehouse(PlayerInventory, Request).WasApplied();
+	return InventorySubsystem->TryTransferPlayerStorage(PlayerInventory, Request).WasApplied();
 }
 
 bool UAIRECompanionTestingBlueprintLibrary::LogFirstCompanionInventoryState(
@@ -562,15 +562,15 @@ bool UAIRECompanionTestingBlueprintLibrary::LogFirstCompanionInventoryState(
 	}
 
 	FAIREInventoryContainerSnapshot MakoSnapshot;
-	FAIREInventoryContainerSnapshot WarehouseSnapshot;
+	FAIREInventoryContainerSnapshot StorageSnapshot;
 	if (!InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetMakoContainerId(), MakoSnapshot)
-		|| !InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(), WarehouseSnapshot))
+		|| !InventorySubsystem->GetContainerSnapshot(UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(), StorageSnapshot))
 	{
 		return false;
 	}
 
 	LogInventorySnapshot(TEXT("MAKO"), MakoSnapshot);
-	LogInventorySnapshot(TEXT("Shared Warehouse"), WarehouseSnapshot);
+	LogInventorySnapshot(TEXT("Shared Storage"), StorageSnapshot);
 	return true;
 }
 

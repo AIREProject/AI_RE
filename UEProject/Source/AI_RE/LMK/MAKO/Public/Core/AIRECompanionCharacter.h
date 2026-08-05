@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "AIREHarvestRewardReceiver.h"
+#include "AI_REInteractableInterface.h"
 #include "GameFramework/Character.h"
 #include "AIRECompanionCharacter.generated.h"
 
@@ -11,8 +12,10 @@ class UAIRECompanionAttributeSet;
 class UAIRECompanionChatComponent;
 class UAIRECompanionEquipmentComponent;
 class UAIRECompanionInventoryComponent;
+class UAIRECompanionInventoryInteractionComponent;
 class UAIRECompanionLocalBehaviorPolicyComponent;
 class UAIRECompanionSupportComponent;
+class UAIRECompanionStorageAutomationComponent;
 class UAIRECompanionWorkOrderComponent;
 class UAbilitySystemComponent;
 struct FOnAttributeChangeData;
@@ -22,6 +25,7 @@ class AI_RE_API AAIRECompanionCharacter
 	: public ACharacter
 	, public IAbilitySystemInterface
 	, public IAIREHarvestRewardReceiver
+	, public IAI_REInteractableInterface
 {
 	GENERATED_BODY()
 
@@ -33,6 +37,7 @@ public:
 		FGuid DeliveryId,
 		FName ItemId,
 		int32 Count) override;
+	virtual void Interact_Implementation(AActor* Interactor) override;
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Abilities")
 	const UAIRECompanionAttributeSet* GetCompanionAttributeSet() const;
@@ -46,6 +51,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory")
 	UAIRECompanionInventoryComponent* GetInventoryComponent() const;
 
+	UFUNCTION(BlueprintPure, Category = "AIRE|Interaction")
+	UAIRECompanionInventoryInteractionComponent*
+		GetInventoryInteractionComponent() const;
+
 	UFUNCTION(BlueprintPure, Category = "AIRE|Support")
 	UAIRECompanionSupportComponent* GetSupportComponent() const;
 
@@ -58,6 +67,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Work")
 	UAIRECompanionWorkOrderComponent* GetWorkOrderComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Storage")
+	UAIRECompanionStorageAutomationComponent*
+		GetStorageAutomationComponent() const;
 
 	bool ResetAttributesToConfiguredDefaults();
 
@@ -87,6 +100,10 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Inventory", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Interaction", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECompanionInventoryInteractionComponent>
+		InventoryInteractionComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Support", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionSupportComponent> SupportComponent;
 
@@ -99,6 +116,10 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Work", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionWorkOrderComponent> WorkOrderComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Storage", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECompanionStorageAutomationComponent>
+		StorageAutomationComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Configuration", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig;

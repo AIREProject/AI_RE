@@ -15,6 +15,15 @@
 
 namespace
 {
+	FName NormalizeContainerId(const FName ContainerId)
+	{
+		static const FName LegacySharedStorageId(
+			AIREGameplayInventory::LegacySharedStorageContainerId);
+		return ContainerId == LegacySharedStorageId
+			? FName(AIREGameplayInventory::SharedStorageContainerId)
+			: ContainerId;
+	}
+
 #if WITH_DEV_AUTOMATION_TESTS
 	int32 GInventoryAutomationBroadcastCount = 0;
 
@@ -208,6 +217,86 @@ namespace
 		return true;
 	}
 
+	int64 CountItemInStacks(
+		const TArray<FAIREInventoryItemStackSnapshot>& Stacks,
+		const FName ItemId)
+	{
+		int64 Count = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack : Stacks)
+		{
+			if (Stack.ItemId == ItemId)
+			{
+				Count += Stack.Count;
+			}
+		}
+		return Count;
+	}
+
+	bool TryRemoveLocalFirst(
+		TArray<FAIREInventoryItemStackSnapshot>& LocalStacks,
+		TArray<FAIREInventoryItemStackSnapshot>& StorageStacks,
+		const FName ItemId,
+		const int32 Count,
+		bool& bOutLocalChanged,
+		bool& bOutStorageChanged)
+	{
+		const int32 LocalCount = static_cast<int32>(FMath::Min<int64>(
+			CountItemInStacks(LocalStacks, ItemId),
+			Count));
+		if (LocalCount > 0)
+		{
+			if (!TryRemoveItemFromStacks(LocalStacks, ItemId, LocalCount))
+			{
+				return false;
+			}
+			bOutLocalChanged = true;
+		}
+
+		const int32 StorageCount = Count - LocalCount;
+		if (StorageCount > 0)
+		{
+			if (!TryRemoveItemFromStacks(
+					StorageStacks,
+					ItemId,
+					StorageCount))
+			{
+				return false;
+			}
+			bOutStorageChanged = true;
+		}
+		return true;
+	}
+
+	void CopyPlayerItemsToSnapshots(
+		const TArray<FInventoryItemStack>& PlayerItems,
+		TArray<FAIREInventoryItemStackSnapshot>& OutStacks)
+	{
+		OutStacks.Reset(PlayerItems.Num());
+		for (const FInventoryItemStack& PlayerItem : PlayerItems)
+		{
+			FAIREInventoryItemStackSnapshot& Stack =
+				OutStacks.AddDefaulted_GetRef();
+			Stack.SlotIndex = PlayerItem.SlotIndex;
+			Stack.ItemId = PlayerItem.ItemId;
+			Stack.Count = PlayerItem.Count;
+		}
+	}
+
+	void CopySnapshotsToPlayerItems(
+		const TArray<FAIREInventoryItemStackSnapshot>& Stacks,
+		TArray<FInventoryItemStack>& OutPlayerItems)
+	{
+		OutPlayerItems.Reset(Stacks.Num());
+		for (const FAIREInventoryItemStackSnapshot& Stack : Stacks)
+		{
+			FInventoryItemStack& PlayerItem =
+				OutPlayerItems.AddDefaulted_GetRef();
+			PlayerItem.SlotIndex = Stack.SlotIndex;
+			PlayerItem.ItemId = Stack.ItemId;
+			PlayerItem.Count = Stack.Count;
+		}
+	}
+
 	bool TryRemoveFromSlot(
 		TArray<FAIREInventoryItemStackSnapshot>& Stacks,
 		const int32 SlotIndex,
@@ -364,9 +453,9 @@ FName UAIREGameplayInventorySubsystem::GetMakoContainerId()
 	return FName(AIREGameplayInventory::MakoContainerId);
 }
 
-FName UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId()
+FName UAIREGameplayInventorySubsystem::GetSharedStorageContainerId()
 {
-	return FName(AIREGameplayInventory::SharedWarehouseContainerId);
+	return FName(AIREGameplayInventory::SharedStorageContainerId);
 }
 
 bool UAIREGameplayInventorySubsystem::GetContainerSnapshot(
@@ -752,9 +841,9 @@ FAIREInventoryMutationResult UAIREGameplayInventorySubsystem::TryTransferItem(
 }
 
 FAIREInventoryMutationResult
-UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
+UAIREGameplayInventorySubsystem::TryTransferPlayerStorage(
 	UAI_REPlayerInventoryComponent* PlayerInventory,
-	const FAIREPlayerWarehouseTransferRequest& Request)
+	const FAIREPlayerStorageTransferRequest& Request)
 {
 	FAIREInventoryMutationResult PreviousResult;
 	if (FindAppliedMutation(Request.MutationId, PreviousResult))
@@ -763,13 +852,13 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 		return PreviousResult;
 	}
 
-	FAIREContainerState* Warehouse = FindContainer(
-		GetSharedWarehouseContainerId());
+	FAIREContainerState* Storage = FindContainer(
+		GetSharedStorageContainerId());
 	FAIREInventoryMutationResult Validation = ValidateMutation(
 		Request.SessionId,
 		Request.MutationId,
-		Warehouse,
-		Request.ExpectedWarehouseRevision);
+		Storage,
+		Request.ExpectedStorageRevision);
 	if (Validation.Code != EAIREInventoryMutationCode::Succeeded)
 	{
 		return Validation;
@@ -779,32 +868,32 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 		return MakeResult(
 			EAIREInventoryMutationCode::NotInitialized,
 			Request.MutationId,
-			Warehouse->Revision);
+			Storage->Revision);
 	}
 	if (Request.Count <= 0)
 	{
 		return MakeResult(
 			EAIREInventoryMutationCode::InvalidQuantity,
 			Request.MutationId,
-			Warehouse->Revision);
+			Storage->Revision);
 	}
 	if (Request.Direction
-			!= EAIREPlayerWarehouseTransferDirection::DepositPlayerToWarehouse
+			!= EAIREPlayerStorageTransferDirection::DepositPlayerToStorage
 		&& Request.Direction
-			!= EAIREPlayerWarehouseTransferDirection::WithdrawWarehouseToPlayer)
+			!= EAIREPlayerStorageTransferDirection::WithdrawStorageToPlayer)
 	{
 		return MakeResult(
 			EAIREInventoryMutationCode::InvalidOperation,
 			Request.MutationId,
-			Warehouse->Revision);
+			Storage->Revision);
 	}
 
 	TArray<FInventoryItemStack> NewPlayerItems;
-	TArray<FAIREInventoryItemStackSnapshot> NewWarehouseStacks =
-		Warehouse->ItemStacks;
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks =
+		Storage->ItemStacks;
 	FName ItemId;
 	if (Request.Direction
-		== EAIREPlayerWarehouseTransferDirection::DepositPlayerToWarehouse)
+		== EAIREPlayerStorageTransferDirection::DepositPlayerToStorage)
 	{
 		const int32 PlayerStackIndex =
 			PlayerInventory->FindStackIndexBySlot(Request.SourceSlotIndex);
@@ -815,14 +904,14 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::InvalidSlot,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		if (PlayerInventory->Items[PlayerStackIndex].Count < Request.Count)
 		{
 			return MakeResult(
 				EAIREInventoryMutationCode::InsufficientQuantity,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		FAIREItemRules Rules;
 		if (!ResolveItemRules(
@@ -833,7 +922,7 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::InvalidItem,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		if (!PlayerInventory->BuildExactRemoveFromSlotState(
 				Request.SourceSlotIndex,
@@ -844,12 +933,12 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::InsufficientQuantity,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 
 		if (!TryAddToStacks(
-				NewWarehouseStacks,
-				Warehouse->Capacity,
+				NewStorageStacks,
+				Storage->Capacity,
 				ItemId,
 				Request.Count,
 				Rules.MaxStackSize))
@@ -857,24 +946,24 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::CapacityExceeded,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 	}
 	else
 	{
 		if (Request.SourceSlotIndex < 0
-			|| Request.SourceSlotIndex >= Warehouse->Capacity
+			|| Request.SourceSlotIndex >= Storage->Capacity
 			|| FindStackIndexBySlot(
-				Warehouse->ItemStacks,
+				Storage->ItemStacks,
 				Request.SourceSlotIndex) == INDEX_NONE)
 		{
 			return MakeResult(
 				EAIREInventoryMutationCode::InvalidSlot,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		if (!TryRemoveFromSlot(
-				NewWarehouseStacks,
+				NewStorageStacks,
 				Request.SourceSlotIndex,
 				Request.Count,
 				ItemId))
@@ -882,7 +971,7 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::InsufficientQuantity,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		FAIREItemRules Rules;
 		if (!ResolveItemRules(ItemId, false, Rules))
@@ -890,7 +979,7 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::InvalidItem,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 		if (!PlayerInventory->BuildExactAddState(
 				ItemId,
@@ -900,20 +989,198 @@ UAIREGameplayInventorySubsystem::TryTransferPlayerWarehouse(
 			return MakeResult(
 				EAIREInventoryMutationCode::CapacityExceeded,
 				Request.MutationId,
-				Warehouse->Revision);
+				Storage->Revision);
 		}
 	}
 
 	PlayerInventory->CommitExactInventoryState(MoveTemp(NewPlayerItems));
-	Warehouse->ItemStacks = MoveTemp(NewWarehouseStacks);
-	++Warehouse->Revision;
+	Storage->ItemStacks = MoveTemp(NewStorageStacks);
+	++Storage->Revision;
 	FAIREInventoryMutationResult Result = MakeResult(
 		EAIREInventoryMutationCode::Succeeded,
 		Request.MutationId,
-		Warehouse->Revision);
+		Storage->Revision);
 	RecordAppliedMutation(Result);
 	PlayerInventory->NotifyExactInventoryMutation();
-	BroadcastContainerChanged(*Warehouse);
+	BroadcastContainerChanged(*Storage);
+	return Result;
+}
+
+bool UAIREGameplayInventorySubsystem::CanCompletePlayerCraft(
+	const UAI_REPlayerInventoryComponent* PlayerInventory,
+	const FAIREPlayerCraftRequest& Request,
+	FAIREInventoryMutationResult& OutResult) const
+{
+	OutResult = MakeResult(
+		EAIREInventoryMutationCode::NotInitialized,
+		Request.MutationId);
+	FAIREInventoryMutationResult PreviousResult;
+	if (FindAppliedMutation(Request.MutationId, PreviousResult))
+	{
+		PreviousResult.Code = EAIREInventoryMutationCode::AlreadyApplied;
+		OutResult = PreviousResult;
+		return true;
+	}
+
+	const FAIREContainerState* Storage = FindContainer(
+		GetSharedStorageContainerId());
+	OutResult = ValidateMutation(
+		Request.SessionId,
+		Request.MutationId,
+		Storage,
+		Request.ExpectedStorageRevision);
+	if (OutResult.Code != EAIREInventoryMutationCode::Succeeded)
+	{
+		return false;
+	}
+	if (!IsValid(PlayerInventory))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::NotInitialized;
+		return false;
+	}
+	if (Request.Result.ItemId.IsNone() || Request.Result.Count <= 0)
+	{
+		OutResult.Code = Request.Result.ItemId.IsNone()
+			? EAIREInventoryMutationCode::InvalidItem
+			: EAIREInventoryMutationCode::InvalidQuantity;
+		return false;
+	}
+
+	TMap<FName, int32> IngredientTotals;
+	if (!AggregateWorkIngredients(Request.Ingredients, IngredientTotals))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidQuantity;
+		return false;
+	}
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		FAIREItemRules IngredientRules;
+		if (!ResolveItemRules(Ingredient.Key, false, IngredientRules))
+		{
+			OutResult.Code = EAIREInventoryMutationCode::InvalidItem;
+			return false;
+		}
+	}
+
+	FAIREItemRules ResultRules;
+	if (!ResolveItemRules(Request.Result.ItemId, false, ResultRules))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::InvalidItem;
+		return false;
+	}
+
+	TArray<FAIREInventoryItemStackSnapshot> NewPlayerStacks;
+	CopyPlayerItemsToSnapshots(PlayerInventory->Items, NewPlayerStacks);
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks =
+		Storage->ItemStacks;
+	bool bPlayerChanged = false;
+	bool bStorageChanged = false;
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		if (!TryRemoveLocalFirst(
+				NewPlayerStacks,
+				NewStorageStacks,
+				Ingredient.Key,
+				Ingredient.Value,
+				bPlayerChanged,
+				bStorageChanged))
+		{
+			OutResult.Code = EAIREInventoryMutationCode::InsufficientQuantity;
+			return false;
+		}
+	}
+	if (!TryAddToStacks(
+			NewPlayerStacks,
+			PlayerInventory->MaxSlots,
+			Request.Result.ItemId,
+			Request.Result.Count,
+			ResultRules.MaxStackSize))
+	{
+		OutResult.Code = EAIREInventoryMutationCode::CapacityExceeded;
+		return false;
+	}
+
+	OutResult = MakeResult(
+		EAIREInventoryMutationCode::Succeeded,
+		Request.MutationId,
+		Storage->Revision);
+	return true;
+}
+
+FAIREInventoryMutationResult
+UAIREGameplayInventorySubsystem::TryCompletePlayerCraft(
+	UAI_REPlayerInventoryComponent* PlayerInventory,
+	const FAIREPlayerCraftRequest& Request)
+{
+	FAIREInventoryMutationResult Result;
+	if (!CanCompletePlayerCraft(PlayerInventory, Request, Result)
+		|| Result.Code == EAIREInventoryMutationCode::AlreadyApplied)
+	{
+		return Result;
+	}
+
+	FAIREContainerState* Storage = FindContainer(
+		GetSharedStorageContainerId());
+	TMap<FName, int32> IngredientTotals;
+	FAIREItemRules ResultRules;
+	if (!IsValid(PlayerInventory)
+		|| !Storage
+		|| !AggregateWorkIngredients(Request.Ingredients, IngredientTotals)
+		|| !ResolveItemRules(Request.Result.ItemId, false, ResultRules))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+		return Result;
+	}
+
+	TArray<FAIREInventoryItemStackSnapshot> NewPlayerStacks;
+	CopyPlayerItemsToSnapshots(PlayerInventory->Items, NewPlayerStacks);
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks =
+		Storage->ItemStacks;
+	bool bPlayerChanged = false;
+	bool bStorageChanged = false;
+	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
+	{
+		if (!TryRemoveLocalFirst(
+				NewPlayerStacks,
+				NewStorageStacks,
+				Ingredient.Key,
+				Ingredient.Value,
+				bPlayerChanged,
+				bStorageChanged))
+		{
+			Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+			return Result;
+		}
+	}
+	if (!TryAddToStacks(
+			NewPlayerStacks,
+			PlayerInventory->MaxSlots,
+			Request.Result.ItemId,
+			Request.Result.Count,
+			ResultRules.MaxStackSize))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+		return Result;
+	}
+	TArray<FInventoryItemStack> NewPlayerItems;
+	CopySnapshotsToPlayerItems(NewPlayerStacks, NewPlayerItems);
+
+	PlayerInventory->CommitExactInventoryState(MoveTemp(NewPlayerItems));
+	if (bStorageChanged)
+	{
+		Storage->ItemStacks = MoveTemp(NewStorageStacks);
+		++Storage->Revision;
+	}
+	Result = MakeResult(
+		EAIREInventoryMutationCode::Succeeded,
+		Request.MutationId,
+		Storage->Revision);
+	RecordAppliedMutation(Result);
+	PlayerInventory->NotifyExactInventoryMutation();
+	if (bStorageChanged)
+	{
+		BroadcastContainerChanged(*Storage);
+	}
 	return Result;
 }
 
@@ -930,7 +1197,7 @@ FGuid UAIREGameplayInventorySubsystem::ResetInventorySession(
 	CreateEmptyContainers();
 	BroadcastContainerChanged(Containers.FindChecked(GetMakoContainerId()));
 	BroadcastContainerChanged(
-		Containers.FindChecked(GetSharedWarehouseContainerId()));
+		Containers.FindChecked(GetSharedStorageContainerId()));
 	return InventorySessionId;
 }
 
@@ -972,19 +1239,19 @@ bool UAIREGameplayInventorySubsystem::CanCompleteMakoCraftWork(
 	}
 	const FAIREContainerState* MakoContainer =
 		FindContainer(GetMakoContainerId());
-	const FAIREContainerState* WarehouseContainer =
-		FindContainer(GetSharedWarehouseContainerId());
-	if (!MakoContainer || !WarehouseContainer)
+	const FAIREContainerState* StorageContainer =
+		FindContainer(GetSharedStorageContainerId());
+	if (!MakoContainer || !StorageContainer)
 	{
 		OutResult.Code = EAIREInventoryMutationCode::InvalidContainer;
 		return false;
 	}
 	if (MakoContainer->Revision != Request.ExpectedMakoRevision
-		|| WarehouseContainer->Revision != Request.ExpectedWarehouseRevision)
+		|| StorageContainer->Revision != Request.ExpectedStorageRevision)
 	{
 		OutResult.Code = EAIREInventoryMutationCode::RevisionConflict;
 		OutResult.MakoRevision = MakoContainer->Revision;
-		OutResult.WarehouseRevision = WarehouseContainer->Revision;
+		OutResult.StorageRevision = StorageContainer->Revision;
 		return false;
 	}
 	if (IsEquipmentTransitionActive(*MakoContainer))
@@ -1020,56 +1287,54 @@ bool UAIREGameplayInventorySubsystem::CanCompleteMakoCraftWork(
 			OutResult.Code = EAIREInventoryMutationCode::EquipmentBusy;
 			return false;
 		}
-		int64 AvailableCount = 0;
-		for (const FAIREInventoryItemStackSnapshot& Stack : MakoContainer->ItemStacks)
-		{
-			if (Stack.ItemId == Ingredient.Key)
-			{
-				AvailableCount += Stack.Count;
-			}
-		}
-		if (AvailableCount < Ingredient.Value)
-		{
-			OutResult.Code = EAIREInventoryMutationCode::InsufficientQuantity;
-			return false;
-		}
 	}
 
-	FAIREItemRules WarehouseResultRules;
-	if (!ResolveItemRules(Request.Result.ItemId, false, WarehouseResultRules))
+	FAIREItemRules ResultRules;
+	if (!ResolveItemRules(Request.Result.ItemId, false, ResultRules))
 	{
 		OutResult.Code = EAIREInventoryMutationCode::InvalidItem;
 		return false;
 	}
 	TArray<FAIREInventoryItemStackSnapshot> MakoAfterIngredients =
 		MakoContainer->ItemStacks;
+	TArray<FAIREInventoryItemStackSnapshot> StorageAfterIngredients =
+		StorageContainer->ItemStacks;
+	bool bMakoChanged = false;
+	bool bStorageChanged = false;
 	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
 	{
-		if (!TryRemoveItemFromStacks(
+		if (!TryRemoveLocalFirst(
 				MakoAfterIngredients,
+				StorageAfterIngredients,
 				Ingredient.Key,
-				Ingredient.Value))
+				Ingredient.Value,
+				bMakoChanged,
+				bStorageChanged))
 		{
 			OutResult.Code = EAIREInventoryMutationCode::InsufficientQuantity;
 			return false;
 		}
 	}
-	FAIREItemRules MakoResultRules;
-	if (ResolveItemRules(Request.Result.ItemId, false, MakoResultRules)
-		&& TryAddToStacks(MakoAfterIngredients, MakoContainer->Capacity,
-			Request.Result.ItemId, Request.Result.Count, MakoResultRules.MaxStackSize))
+	TArray<FAIREInventoryItemStackSnapshot> MakoAfterResult =
+		MakoAfterIngredients;
+	if (TryAddToStacks(
+			MakoAfterResult,
+			MakoContainer->Capacity,
+			Request.Result.ItemId,
+			Request.Result.Count,
+			ResultRules.MaxStackSize))
 	{
 		OutResult = MakeWorkResult(EAIREInventoryMutationCode::Succeeded,
 			EAIREInventoryWorkResultDestination::Mako, Request.Result);
 		return true;
 	}
-	TArray<FAIREInventoryItemStackSnapshot> WarehouseAfterResult =
-		WarehouseContainer->ItemStacks;
-	if (TryAddToStacks(WarehouseAfterResult, WarehouseContainer->Capacity,
-		Request.Result.ItemId, Request.Result.Count, WarehouseResultRules.MaxStackSize))
+	TArray<FAIREInventoryItemStackSnapshot> StorageAfterResult =
+		StorageAfterIngredients;
+	if (TryAddToStacks(StorageAfterResult, StorageContainer->Capacity,
+		Request.Result.ItemId, Request.Result.Count, ResultRules.MaxStackSize))
 	{
 		OutResult = MakeWorkResult(EAIREInventoryMutationCode::Succeeded,
-			EAIREInventoryWorkResultDestination::SharedWarehouse, Request.Result);
+			EAIREInventoryWorkResultDestination::SharedStorage, Request.Result);
 		return true;
 	}
 	if (Request.bCanWorldDrop)
@@ -1091,51 +1356,75 @@ FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryCompleteMakoCraftWo
 		return Result;
 	}
 	FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
-	FAIREContainerState* WarehouseContainer = FindContainer(GetSharedWarehouseContainerId());
+	FAIREContainerState* StorageContainer = FindContainer(GetSharedStorageContainerId());
 	TMap<FName, int32> IngredientTotals;
-	if (!MakoContainer || !WarehouseContainer
+	if (!MakoContainer || !StorageContainer
 		|| !AggregateWorkIngredients(Request.Ingredients, IngredientTotals))
 	{
 		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
 		return Result;
 	}
 	TArray<FAIREInventoryItemStackSnapshot> NewMakoStacks = MakoContainer->ItemStacks;
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks =
+		StorageContainer->ItemStacks;
+	bool bMakoChanged = false;
+	bool bStorageChanged = false;
 	for (const TPair<FName, int32>& Ingredient : IngredientTotals)
 	{
-		if (!TryRemoveItemFromStacks(NewMakoStacks, Ingredient.Key, Ingredient.Value))
+		if (!TryRemoveLocalFirst(
+				NewMakoStacks,
+				NewStorageStacks,
+				Ingredient.Key,
+				Ingredient.Value,
+				bMakoChanged,
+				bStorageChanged))
 		{
 			Result.Code = EAIREInventoryMutationCode::InsufficientQuantity;
 			return Result;
 		}
 	}
-	TArray<FAIREInventoryItemStackSnapshot> NewWarehouseStacks = WarehouseContainer->ItemStacks;
 	FAIREItemRules ResultRules;
 	const bool bResultInMako = Result.Destination == EAIREInventoryWorkResultDestination::Mako;
 	if (Result.Destination != EAIREInventoryWorkResultDestination::WorldDrop
 		&& (!ResolveItemRules(Request.Result.ItemId, false, ResultRules)
-			|| !TryAddToStacks(bResultInMako ? NewMakoStacks : NewWarehouseStacks,
-				bResultInMako ? MakoContainer->Capacity : WarehouseContainer->Capacity,
+			|| !TryAddToStacks(bResultInMako ? NewMakoStacks : NewStorageStacks,
+				bResultInMako ? MakoContainer->Capacity : StorageContainer->Capacity,
 				Request.Result.ItemId, Request.Result.Count, ResultRules.MaxStackSize)))
 	{
 		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
 		return Result;
 	}
-	MakoContainer->ItemStacks = MoveTemp(NewMakoStacks);
-	++MakoContainer->Revision;
-	if (Result.Destination == EAIREInventoryWorkResultDestination::SharedWarehouse)
+	if (bResultInMako)
 	{
-		WarehouseContainer->ItemStacks = MoveTemp(NewWarehouseStacks);
-		++WarehouseContainer->Revision;
+		bMakoChanged = true;
+	}
+	else if (Result.Destination
+		== EAIREInventoryWorkResultDestination::SharedStorage)
+	{
+		bStorageChanged = true;
+	}
+	if (bMakoChanged)
+	{
+		MakoContainer->ItemStacks = MoveTemp(NewMakoStacks);
+		++MakoContainer->Revision;
+	}
+	if (bStorageChanged)
+	{
+		StorageContainer->ItemStacks = MoveTemp(NewStorageStacks);
+		++StorageContainer->Revision;
 	}
 	Result.MakoRevision = MakoContainer->Revision;
-	Result.WarehouseRevision = WarehouseContainer->Revision;
+	Result.StorageRevision = StorageContainer->Revision;
 	AppliedWorkResults.Add(Request.WorkOrderId, Result);
 	RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded,
-		Request.WorkOrderId, MakoContainer->Revision, WarehouseContainer->Revision));
-	BroadcastContainerChanged(*MakoContainer);
-	if (Result.Destination == EAIREInventoryWorkResultDestination::SharedWarehouse)
+		Request.WorkOrderId, MakoContainer->Revision, StorageContainer->Revision));
+	if (bMakoChanged)
 	{
-		BroadcastContainerChanged(*WarehouseContainer);
+		BroadcastContainerChanged(*MakoContainer);
+	}
+	if (bStorageChanged)
+	{
+		BroadcastContainerChanged(*StorageContainer);
 	}
 	return Result;
 }
@@ -1162,9 +1451,9 @@ FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryStoreMakoWorkReward
 		return Result;
 	}
 	FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
-	FAIREContainerState* WarehouseContainer = FindContainer(GetSharedWarehouseContainerId());
-	if (!MakoContainer || !WarehouseContainer) { Result.Code = EAIREInventoryMutationCode::InvalidContainer; return Result; }
-	if (MakoContainer->Revision != Request.ExpectedMakoRevision || WarehouseContainer->Revision != Request.ExpectedWarehouseRevision) { Result.Code = EAIREInventoryMutationCode::RevisionConflict; Result.MakoRevision = MakoContainer->Revision; Result.WarehouseRevision = WarehouseContainer->Revision; return Result; }
+	FAIREContainerState* StorageContainer = FindContainer(GetSharedStorageContainerId());
+	if (!MakoContainer || !StorageContainer) { Result.Code = EAIREInventoryMutationCode::InvalidContainer; return Result; }
+	if (MakoContainer->Revision != Request.ExpectedMakoRevision || StorageContainer->Revision != Request.ExpectedStorageRevision) { Result.Code = EAIREInventoryMutationCode::RevisionConflict; Result.MakoRevision = MakoContainer->Revision; Result.StorageRevision = StorageContainer->Revision; return Result; }
 	if (Request.Reward.ItemId.IsNone() || Request.Reward.Count <= 0) { Result.Code = Request.Reward.ItemId.IsNone() ? EAIREInventoryMutationCode::InvalidItem : EAIREInventoryMutationCode::InvalidQuantity; return Result; }
 	TArray<FAIREInventoryItemStackSnapshot> NewMakoStacks = MakoContainer->ItemStacks;
 	FAIREItemRules MakoRules;
@@ -1176,25 +1465,25 @@ FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryStoreMakoWorkReward
 		++MakoContainer->Revision;
 		Result = MakeWorkResult(EAIREInventoryMutationCode::Succeeded, EAIREInventoryWorkResultDestination::Mako, Request.Reward);
 		Result.MakoRevision = MakoContainer->Revision;
-		Result.WarehouseRevision = WarehouseContainer->Revision;
+		Result.StorageRevision = StorageContainer->Revision;
 		AppliedWorkResults.Add(Request.DeliveryId, Result);
-		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, WarehouseContainer->Revision));
+		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, StorageContainer->Revision));
 		BroadcastContainerChanged(*MakoContainer);
 		return Result;
 	}
-	TArray<FAIREInventoryItemStackSnapshot> NewWarehouseStacks = WarehouseContainer->ItemStacks;
-	FAIREItemRules WarehouseRules;
-	if (ResolveItemRules(Request.Reward.ItemId, false, WarehouseRules)
-		&& TryAddToStacks(NewWarehouseStacks, WarehouseContainer->Capacity, Request.Reward.ItemId, Request.Reward.Count, WarehouseRules.MaxStackSize))
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks = StorageContainer->ItemStacks;
+	FAIREItemRules StorageRules;
+	if (ResolveItemRules(Request.Reward.ItemId, false, StorageRules)
+		&& TryAddToStacks(NewStorageStacks, StorageContainer->Capacity, Request.Reward.ItemId, Request.Reward.Count, StorageRules.MaxStackSize))
 	{
-		WarehouseContainer->ItemStacks = MoveTemp(NewWarehouseStacks);
-		++WarehouseContainer->Revision;
-		Result = MakeWorkResult(EAIREInventoryMutationCode::Succeeded, EAIREInventoryWorkResultDestination::SharedWarehouse, Request.Reward);
+		StorageContainer->ItemStacks = MoveTemp(NewStorageStacks);
+		++StorageContainer->Revision;
+		Result = MakeWorkResult(EAIREInventoryMutationCode::Succeeded, EAIREInventoryWorkResultDestination::SharedStorage, Request.Reward);
 		Result.MakoRevision = MakoContainer->Revision;
-		Result.WarehouseRevision = WarehouseContainer->Revision;
+		Result.StorageRevision = StorageContainer->Revision;
 		AppliedWorkResults.Add(Request.DeliveryId, Result);
-		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, WarehouseContainer->Revision));
-		BroadcastContainerChanged(*WarehouseContainer);
+		RecordAppliedMutation(MakeResult(EAIREInventoryMutationCode::Succeeded, Request.DeliveryId, MakoContainer->Revision, StorageContainer->Revision));
+		BroadcastContainerChanged(*StorageContainer);
 		return Result;
 	}
 	Result = MakeWorkResult(
@@ -1202,7 +1491,7 @@ FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::TryStoreMakoWorkReward
 		EAIREInventoryWorkResultDestination::WorldDrop,
 		Request.Reward);
 	Result.MakoRevision = MakoContainer->Revision;
-	Result.WarehouseRevision = WarehouseContainer->Revision;
+	Result.StorageRevision = StorageContainer->Revision;
 	return Result;
 }
 
@@ -1450,23 +1739,23 @@ void UAIREGameplayInventorySubsystem::CreateEmptyContainers()
 	MakoContainer.Capacity = AIREGameplayInventory::MakoItemSlotCapacity;
 	Containers.Add(MakoContainer.ContainerId, MoveTemp(MakoContainer));
 
-	FAIREContainerState Warehouse;
-	Warehouse.ContainerId = GetSharedWarehouseContainerId();
-	Warehouse.Capacity =
-		AIREGameplayInventory::SharedWarehouseSlotCapacity;
-	Containers.Add(Warehouse.ContainerId, MoveTemp(Warehouse));
+	FAIREContainerState Storage;
+	Storage.ContainerId = GetSharedStorageContainerId();
+	Storage.Capacity =
+		AIREGameplayInventory::SharedStorageSlotCapacity;
+	Containers.Add(Storage.ContainerId, MoveTemp(Storage));
 }
 
 UAIREGameplayInventorySubsystem::FAIREContainerState*
 UAIREGameplayInventorySubsystem::FindContainer(const FName ContainerId)
 {
-	return Containers.Find(ContainerId);
+	return Containers.Find(NormalizeContainerId(ContainerId));
 }
 
 const UAIREGameplayInventorySubsystem::FAIREContainerState*
 UAIREGameplayInventorySubsystem::FindContainer(const FName ContainerId) const
 {
-	return Containers.Find(ContainerId);
+	return Containers.Find(NormalizeContainerId(ContainerId));
 }
 
 bool UAIREGameplayInventorySubsystem::ResolveItemRules(
@@ -1665,11 +1954,11 @@ FAIREInventoryWorkResult UAIREGameplayInventorySubsystem::MakeWorkResult(
 	Result.Destination = Destination;
 	Result.DeliveredItem = DeliveredItem;
 	const FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
-	const FAIREContainerState* WarehouseContainer =
-		FindContainer(GetSharedWarehouseContainerId());
+	const FAIREContainerState* StorageContainer =
+		FindContainer(GetSharedStorageContainerId());
 	Result.MakoRevision = MakoContainer ? MakoContainer->Revision : INDEX_NONE;
-	Result.WarehouseRevision = WarehouseContainer
-		? WarehouseContainer->Revision
+	Result.StorageRevision = StorageContainer
+		? StorageContainer->Revision
 		: INDEX_NONE;
 	return Result;
 }
@@ -2116,11 +2405,11 @@ bool FAIREGameplayInventoryCapacityTest::RunTest(const FString& Parameters)
 			AIREGameplayInventory::MakoItemSlotCapacity,
 			TEXT("AIRE.Test.Unique.Mako")));
 	TestTrue(
-		TEXT("Warehouse fixed 50-slot capacity is enforced"),
+		TEXT("Storage fixed 50-slot capacity is enforced"),
 		FillContainer(
-			UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(),
-			AIREGameplayInventory::SharedWarehouseSlotCapacity,
-			TEXT("AIRE.Test.Unique.Warehouse")));
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			AIREGameplayInventory::SharedStorageSlotCapacity,
+			TEXT("AIRE.Test.Unique.Storage")));
 	return true;
 }
 
@@ -2136,8 +2425,8 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 	(void)Parameters;
 	const FName MakoContainerId =
 		UAIREGameplayInventorySubsystem::GetMakoContainerId();
-	const FName WarehouseContainerId =
-		UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId();
+	const FName StorageContainerId =
+		UAIREGameplayInventorySubsystem::GetSharedStorageContainerId();
 	const FName Stack2ItemId(TEXT("AIRE.Test.Stack2"));
 	const FName Stack4ItemId(TEXT("AIRE.Test.Stack4"));
 	const FName WeaponAItemId(TEXT("AIRE.Test.WeaponA"));
@@ -2159,19 +2448,19 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 	GInventoryAutomationBroadcastCount = 0;
 
 	FAIREInventoryContainerSnapshot MakoSnapshot;
-	FAIREInventoryContainerSnapshot WarehouseSnapshot;
+	FAIREInventoryContainerSnapshot StorageSnapshot;
 	TestTrue(
 		TEXT("MAKO snapshot is available"),
 		Inventory->GetContainerSnapshot(MakoContainerId, MakoSnapshot));
 	TestTrue(
-		TEXT("Warehouse snapshot is available"),
+		TEXT("Storage snapshot is available"),
 		Inventory->GetContainerSnapshot(
-			WarehouseContainerId,
-			WarehouseSnapshot));
+			StorageContainerId,
+			StorageSnapshot));
 	TestEqual(TEXT("MAKO has 20 general slots"), MakoSnapshot.Capacity, 20);
 	TestEqual(
-		TEXT("Warehouse has 50 slots"),
-		WarehouseSnapshot.Capacity,
+		TEXT("Storage has 50 slots"),
+		StorageSnapshot.Capacity,
 		50);
 	TestTrue(
 		TEXT("Equipment slot starts independently empty"),
@@ -2259,14 +2548,14 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 			== EAIREInventoryMutationCode::InvalidSlot);
 
 	Inventory->GetContainerSnapshot(MakoContainerId, MakoSnapshot);
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
 	FAIREInventoryTransferRequest TransferRequest;
 	TransferRequest.SessionId = SessionId;
 	TransferRequest.MutationId = FGuid::NewGuid();
 	TransferRequest.SourceContainerId = MakoContainerId;
-	TransferRequest.DestinationContainerId = WarehouseContainerId;
+	TransferRequest.DestinationContainerId = StorageContainerId;
 	TransferRequest.ExpectedSourceRevision = MakoSnapshot.Revision;
-	TransferRequest.ExpectedDestinationRevision = WarehouseSnapshot.Revision + 1;
+	TransferRequest.ExpectedDestinationRevision = StorageSnapshot.Revision + 1;
 	TransferRequest.SourceSlotIndex = MakoSnapshot.ItemStacks[0].SlotIndex;
 	TransferRequest.Count = 1;
 	const int32 BroadcastsBeforeConflict = GInventoryAutomationBroadcastCount;
@@ -2275,27 +2564,27 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 		Inventory->TryTransferItem(TransferRequest).Code
 			== EAIREInventoryMutationCode::RevisionConflict);
 	FAIREInventoryContainerSnapshot MakoAfterConflict;
-	FAIREInventoryContainerSnapshot WarehouseAfterConflict;
+	FAIREInventoryContainerSnapshot StorageAfterConflict;
 	Inventory->GetContainerSnapshot(MakoContainerId, MakoAfterConflict);
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseAfterConflict);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageAfterConflict);
 	TestEqual(
 		TEXT("Rejected transfer preserves source revision"),
 		MakoAfterConflict.Revision,
 		MakoSnapshot.Revision);
 	TestEqual(
 		TEXT("Rejected transfer preserves destination revision"),
-		WarehouseAfterConflict.Revision,
-		WarehouseSnapshot.Revision);
+		StorageAfterConflict.Revision,
+		StorageSnapshot.Revision);
 	TestEqual(
 		TEXT("Rejected transfer does not broadcast"),
 		GInventoryAutomationBroadcastCount,
 		BroadcastsBeforeConflict);
 
 	TransferRequest.MutationId = FGuid::NewGuid();
-	TransferRequest.ExpectedDestinationRevision = WarehouseSnapshot.Revision;
+	TransferRequest.ExpectedDestinationRevision = StorageSnapshot.Revision;
 	const int32 BroadcastsBeforeTransfer = GInventoryAutomationBroadcastCount;
 	TestTrue(
-		TEXT("MAKO to warehouse transfer succeeds"),
+		TEXT("MAKO to storage transfer succeeds"),
 		Inventory->TryTransferItem(TransferRequest).Code
 			== EAIREInventoryMutationCode::Succeeded);
 	TestEqual(
@@ -2304,28 +2593,28 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 		BroadcastsBeforeTransfer + 2);
 
 	Inventory->GetContainerSnapshot(MakoContainerId, MakoSnapshot);
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
 	FAIREInventoryTransferRequest ReverseTransfer;
 	ReverseTransfer.SessionId = SessionId;
 	ReverseTransfer.MutationId = FGuid::NewGuid();
-	ReverseTransfer.SourceContainerId = WarehouseContainerId;
+	ReverseTransfer.SourceContainerId = StorageContainerId;
 	ReverseTransfer.DestinationContainerId = MakoContainerId;
-	ReverseTransfer.ExpectedSourceRevision = WarehouseSnapshot.Revision;
+	ReverseTransfer.ExpectedSourceRevision = StorageSnapshot.Revision;
 	ReverseTransfer.ExpectedDestinationRevision = MakoSnapshot.Revision;
-	ReverseTransfer.SourceSlotIndex = WarehouseSnapshot.ItemStacks[0].SlotIndex;
+	ReverseTransfer.SourceSlotIndex = StorageSnapshot.ItemStacks[0].SlotIndex;
 	ReverseTransfer.Count = 1;
 	TestTrue(
-		TEXT("Warehouse to MAKO transfer succeeds"),
+		TEXT("Storage to MAKO transfer succeeds"),
 		Inventory->TryTransferItem(ReverseTransfer).Code
 			== EAIREInventoryMutationCode::Succeeded);
 
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
 	FAIREInventoryStartupImportCandidate Candidate;
 	Candidate.CandidateId = TEXT("candidate.good");
 	Candidate.Scope = Scope;
 	Candidate.SessionId = SessionId;
-	Candidate.ContainerId = WarehouseContainerId;
-	Candidate.BaseRevision = WarehouseSnapshot.Revision;
+	Candidate.ContainerId = StorageContainerId;
+	Candidate.BaseRevision = StorageSnapshot.Revision;
 	FAIREInventoryImportOperation ImportAdd;
 	ImportAdd.OperationId = TEXT("operation.good.add");
 	ImportAdd.Type = EAIREInventoryImportOperationType::Add;
@@ -2341,10 +2630,51 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 		Inventory->TryApplyStartupImportCandidate(Candidate).Code
 			== EAIREInventoryMutationCode::AlreadyApplied);
 
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
+	FAIREInventoryStartupImportCandidate LegacyStorageCandidate = Candidate;
+	LegacyStorageCandidate.CandidateId = TEXT("candidate.legacy-storage-id");
+	LegacyStorageCandidate.ContainerId = FName(
+		AIREGameplayInventory::LegacySharedStorageContainerId);
+	LegacyStorageCandidate.BaseRevision = StorageSnapshot.Revision;
+	LegacyStorageCandidate.Operations[0].OperationId =
+		TEXT("operation.legacy-storage-id.add");
+	LegacyStorageCandidate.Operations[0].Count = 1;
+	TestTrue(
+		TEXT("Legacy shared storage ID is accepted"),
+		Inventory->TryApplyStartupImportCandidate(
+			LegacyStorageCandidate).Code
+			== EAIREInventoryMutationCode::Succeeded);
+	FAIREInventoryContainerSnapshot LegacyStorageSnapshot;
+	TestTrue(
+		TEXT("Legacy shared storage ID resolves to a snapshot"),
+		Inventory->GetContainerSnapshot(
+			FName(AIREGameplayInventory::LegacySharedStorageContainerId),
+			LegacyStorageSnapshot));
+	TestEqual(
+		TEXT("Legacy shared storage lookup emits the canonical ID"),
+		LegacyStorageSnapshot.ContainerId,
+		StorageContainerId);
+
+	FAIREInventoryStartupImportCandidate InvalidLegacyStorageCandidate =
+		LegacyStorageCandidate;
+	InvalidLegacyStorageCandidate.CandidateId =
+		TEXT("candidate.invalid-legacy-storage-id");
+	InvalidLegacyStorageCandidate.ContainerId =
+		FName(TEXT("AIRE.Inventory.SharedWarehouse.Invalid"));
+	InvalidLegacyStorageCandidate.BaseRevision =
+		LegacyStorageSnapshot.Revision;
+	InvalidLegacyStorageCandidate.Operations[0].OperationId =
+		TEXT("operation.invalid-legacy-storage-id.add");
+	TestTrue(
+		TEXT("Near-match legacy storage ID is rejected"),
+		Inventory->TryApplyStartupImportCandidate(
+			InvalidLegacyStorageCandidate).Code
+			== EAIREInventoryMutationCode::InvalidContainer);
+
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
 	FAIREInventoryStartupImportCandidate ImportConflictCandidate = Candidate;
 	ImportConflictCandidate.CandidateId = TEXT("candidate.conflict");
-	ImportConflictCandidate.BaseRevision = WarehouseSnapshot.Revision - 1;
+	ImportConflictCandidate.BaseRevision = StorageSnapshot.Revision - 1;
 	ImportConflictCandidate.Operations[0].OperationId =
 		TEXT("operation.conflict.add");
 	TestTrue(
@@ -2355,7 +2685,7 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 
 	FAIREInventoryStartupImportCandidate DuplicateOperationCandidate = Candidate;
 	DuplicateOperationCandidate.CandidateId = TEXT("candidate.duplicate");
-	DuplicateOperationCandidate.BaseRevision = WarehouseSnapshot.Revision;
+	DuplicateOperationCandidate.BaseRevision = StorageSnapshot.Revision;
 	DuplicateOperationCandidate.Operations[0].OperationId =
 		TEXT("operation.duplicate");
 	DuplicateOperationCandidate.Operations.Add(
@@ -2368,7 +2698,7 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 
 	FAIREInventoryStartupImportCandidate RollbackCandidate = Candidate;
 	RollbackCandidate.CandidateId = TEXT("candidate.rollback");
-	RollbackCandidate.BaseRevision = WarehouseSnapshot.Revision;
+	RollbackCandidate.BaseRevision = StorageSnapshot.Revision;
 	RollbackCandidate.Operations.Reset();
 	FAIREInventoryImportOperation RollbackAdd = ImportAdd;
 	RollbackAdd.OperationId = TEXT("operation.rollback.add");
@@ -2380,16 +2710,16 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 	InvalidRemove.ItemId = Stack2ItemId;
 	InvalidRemove.Count = 99;
 	RollbackCandidate.Operations.Add(InvalidRemove);
-	const int64 WarehouseRevisionBeforeRollback = WarehouseSnapshot.Revision;
+	const int64 StorageRevisionBeforeRollback = StorageSnapshot.Revision;
 	TestTrue(
 		TEXT("Invalid import batch is rejected"),
 		Inventory->TryApplyStartupImportCandidate(RollbackCandidate).Code
 			== EAIREInventoryMutationCode::InsufficientQuantity);
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
 	TestEqual(
 		TEXT("Rejected import batch rolls back revision"),
-		WarehouseSnapshot.Revision,
-		WarehouseRevisionBeforeRollback);
+		StorageSnapshot.Revision,
+		StorageRevisionBeforeRollback);
 	FAIREInventoryStartupImportCandidate WrongScopeCandidate = RollbackCandidate;
 	WrongScopeCandidate.CandidateId = TEXT("candidate.scope");
 	WrongScopeCandidate.Scope.ProfileId = TEXT("profile.other");
@@ -2531,100 +2861,100 @@ bool FAIREGameplayInventorySubsystemContractTest::RunTest(
 	PlayerStack.SlotIndex = 0;
 	PlayerStack.ItemId = Stack4ItemId;
 	PlayerStack.Count = 2;
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
-	FAIREPlayerWarehouseTransferRequest PlayerDeposit;
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
+	FAIREPlayerStorageTransferRequest PlayerDeposit;
 	PlayerDeposit.SessionId = NewSessionId;
 	PlayerDeposit.MutationId = FGuid::NewGuid();
 	PlayerDeposit.Direction =
-		EAIREPlayerWarehouseTransferDirection::DepositPlayerToWarehouse;
-	PlayerDeposit.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
+		EAIREPlayerStorageTransferDirection::DepositPlayerToStorage;
+	PlayerDeposit.ExpectedStorageRevision = StorageSnapshot.Revision;
 	PlayerDeposit.SourceSlotIndex = 0;
 	PlayerDeposit.Count = 1;
 	TestTrue(
-		TEXT("Player to warehouse exact transfer succeeds"),
-		Inventory->TryTransferPlayerWarehouse(
+		TEXT("Player to storage exact transfer succeeds"),
+		Inventory->TryTransferPlayerStorage(
 			PlayerInventory.Get(),
 			PlayerDeposit).Code == EAIREInventoryMutationCode::Succeeded);
 	TestEqual(TEXT("Player deposit removes exactly one"), PlayerInventory->Items[0].Count, 1);
-	FAIREInventoryContainerSnapshot WarehouseAfterDeposit;
+	FAIREInventoryContainerSnapshot StorageAfterDeposit;
 	Inventory->GetContainerSnapshot(
-		WarehouseContainerId,
-		WarehouseAfterDeposit);
+		StorageContainerId,
+		StorageAfterDeposit);
 	TestTrue(
 		TEXT("Player transfer replay is idempotent"),
-		Inventory->TryTransferPlayerWarehouse(
+		Inventory->TryTransferPlayerStorage(
 			PlayerInventory.Get(),
 			PlayerDeposit).Code == EAIREInventoryMutationCode::AlreadyApplied);
 	TestEqual(
 		TEXT("Player transfer replay preserves player quantity"),
 		PlayerInventory->Items[0].Count,
 		1);
-	FAIREInventoryContainerSnapshot WarehouseAfterDepositReplay;
+	FAIREInventoryContainerSnapshot StorageAfterDepositReplay;
 	Inventory->GetContainerSnapshot(
-		WarehouseContainerId,
-		WarehouseAfterDepositReplay);
+		StorageContainerId,
+		StorageAfterDepositReplay);
 	TestEqual(
-		TEXT("Player transfer replay preserves warehouse revision"),
-		WarehouseAfterDepositReplay.Revision,
-		WarehouseAfterDeposit.Revision);
+		TEXT("Player transfer replay preserves storage revision"),
+		StorageAfterDepositReplay.Revision,
+		StorageAfterDeposit.Revision);
 
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
-	FAIREPlayerWarehouseTransferRequest PlayerWithdraw;
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
+	FAIREPlayerStorageTransferRequest PlayerWithdraw;
 	PlayerWithdraw.SessionId = NewSessionId;
 	PlayerWithdraw.MutationId = FGuid::NewGuid();
 	PlayerWithdraw.Direction =
-		EAIREPlayerWarehouseTransferDirection::WithdrawWarehouseToPlayer;
-	PlayerWithdraw.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
-	PlayerWithdraw.SourceSlotIndex = WarehouseSnapshot.ItemStacks[0].SlotIndex;
+		EAIREPlayerStorageTransferDirection::WithdrawStorageToPlayer;
+	PlayerWithdraw.ExpectedStorageRevision = StorageSnapshot.Revision;
+	PlayerWithdraw.SourceSlotIndex = StorageSnapshot.ItemStacks[0].SlotIndex;
 	PlayerWithdraw.Count = 1;
 	TestTrue(
-		TEXT("Warehouse to player exact transfer succeeds"),
-		Inventory->TryTransferPlayerWarehouse(
+		TEXT("Storage to player exact transfer succeeds"),
+		Inventory->TryTransferPlayerStorage(
 			PlayerInventory.Get(),
 			PlayerWithdraw).Code == EAIREInventoryMutationCode::Succeeded);
 	TestEqual(TEXT("Player withdrawal restores exact count"), PlayerInventory->Items[0].Count, 2);
 
-	FAIREInventoryMutationRequest WarehouseAdd;
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
-	WarehouseAdd.SessionId = NewSessionId;
-	WarehouseAdd.MutationId = FGuid::NewGuid();
-	WarehouseAdd.ContainerId = WarehouseContainerId;
-	WarehouseAdd.ExpectedRevision = WarehouseSnapshot.Revision;
-	WarehouseAdd.ItemId = Stack2ItemId;
-	WarehouseAdd.Count = 1;
+	FAIREInventoryMutationRequest StorageAdd;
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
+	StorageAdd.SessionId = NewSessionId;
+	StorageAdd.MutationId = FGuid::NewGuid();
+	StorageAdd.ContainerId = StorageContainerId;
+	StorageAdd.ExpectedRevision = StorageSnapshot.Revision;
+	StorageAdd.ItemId = Stack2ItemId;
+	StorageAdd.Count = 1;
 	TestTrue(
-		TEXT("Warehouse source is prepared for atomic rejection"),
-		Inventory->TryAddItem(WarehouseAdd).Code
+		TEXT("Storage source is prepared for atomic rejection"),
+		Inventory->TryAddItem(StorageAdd).Code
 			== EAIREInventoryMutationCode::Succeeded);
 	PlayerInventory->Items[0].Count = 4;
-	Inventory->GetContainerSnapshot(WarehouseContainerId, WarehouseSnapshot);
-	const FAIREInventoryItemStackSnapshot* WarehouseStack2 =
-		WarehouseSnapshot.ItemStacks.FindByPredicate(
+	Inventory->GetContainerSnapshot(StorageContainerId, StorageSnapshot);
+	const FAIREInventoryItemStackSnapshot* StorageStack2 =
+		StorageSnapshot.ItemStacks.FindByPredicate(
 			[Stack2ItemId](const FAIREInventoryItemStackSnapshot& Stack)
 			{
 				return Stack.ItemId == Stack2ItemId;
 			});
-	if (!TestNotNull(TEXT("Warehouse stack-2 item exists"), WarehouseStack2))
+	if (!TestNotNull(TEXT("Storage stack-2 item exists"), StorageStack2))
 	{
 		return false;
 	}
 	PlayerWithdraw.MutationId = FGuid::NewGuid();
-	PlayerWithdraw.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
-	PlayerWithdraw.SourceSlotIndex = WarehouseStack2->SlotIndex;
+	PlayerWithdraw.ExpectedStorageRevision = StorageSnapshot.Revision;
+	PlayerWithdraw.SourceSlotIndex = StorageStack2->SlotIndex;
 	TestTrue(
 		TEXT("Full player inventory rejects the entire withdrawal"),
-		Inventory->TryTransferPlayerWarehouse(
+		Inventory->TryTransferPlayerStorage(
 			PlayerInventory.Get(),
 			PlayerWithdraw).Code
 			== EAIREInventoryMutationCode::CapacityExceeded);
-	FAIREInventoryContainerSnapshot WarehouseAfterRejectedWithdraw;
+	FAIREInventoryContainerSnapshot StorageAfterRejectedWithdraw;
 	Inventory->GetContainerSnapshot(
-		WarehouseContainerId,
-		WarehouseAfterRejectedWithdraw);
+		StorageContainerId,
+		StorageAfterRejectedWithdraw);
 	TestEqual(
-		TEXT("Rejected player withdrawal preserves warehouse revision"),
-		WarehouseAfterRejectedWithdraw.Revision,
-		WarehouseSnapshot.Revision);
+		TEXT("Rejected player withdrawal preserves storage revision"),
+		StorageAfterRejectedWithdraw.Revision,
+		StorageSnapshot.Revision);
 	TestEqual(
 		TEXT("Rejected player withdrawal preserves player quantity"),
 		PlayerInventory->Items[0].Count,
@@ -2645,8 +2975,8 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 	(void)Parameters;
 	const FName MakoContainerId =
 		UAIREGameplayInventorySubsystem::GetMakoContainerId();
-	const FName WarehouseContainerId =
-		UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId();
+	const FName StorageContainerId =
+		UAIREGameplayInventorySubsystem::GetSharedStorageContainerId();
 	const FName IngredientItemId(TEXT("AIRE.Test.Stack4"));
 	const FName ResultItemId(TEXT("AIRE.Test.Stack2"));
 
@@ -2655,14 +2985,14 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		NewObject<UAIREGameplayInventorySubsystem>(TestGameInstance.Get()));
 	const FGuid SessionId = Inventory->ResetInventorySession();
 
-	auto GetSnapshots = [&Inventory, &MakoContainerId, &WarehouseContainerId](
+	auto GetSnapshots = [&Inventory, &MakoContainerId, &StorageContainerId](
 		FAIREInventoryContainerSnapshot& OutMako,
-		FAIREInventoryContainerSnapshot& OutWarehouse)
+		FAIREInventoryContainerSnapshot& OutStorage)
 	{
 		return Inventory->GetContainerSnapshot(MakoContainerId, OutMako)
 			&& Inventory->GetContainerSnapshot(
-				WarehouseContainerId,
-				OutWarehouse);
+				StorageContainerId,
+				OutStorage);
 	};
 	auto CountItem = [](const TArray<FAIREInventoryItemStackSnapshot>& Stacks,
 		const FName ItemId)
@@ -2704,10 +3034,10 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		TEXT("Craft ingredient is prepared"),
 		AddItem(MakoContainerId, IngredientItemId, 4));
 	FAIREInventoryContainerSnapshot MakoBefore;
-	FAIREInventoryContainerSnapshot WarehouseBefore;
+	FAIREInventoryContainerSnapshot StorageBefore;
 	if (!TestTrue(
 			TEXT("Craft work snapshots are available"),
-			GetSnapshots(MakoBefore, WarehouseBefore)))
+			GetSnapshots(MakoBefore, StorageBefore)))
 	{
 		return false;
 	}
@@ -2716,7 +3046,7 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 	CraftRequest.SessionId = SessionId;
 	CraftRequest.WorkOrderId = FGuid::NewGuid();
 	CraftRequest.ExpectedMakoRevision = MakoBefore.Revision;
-	CraftRequest.ExpectedWarehouseRevision = WarehouseBefore.Revision;
+	CraftRequest.ExpectedStorageRevision = StorageBefore.Revision;
 	FAIREInventoryItemQuantity& FirstIngredient =
 		CraftRequest.Ingredients.AddDefaulted_GetRef();
 	FirstIngredient.ItemId = IngredientItemId;
@@ -2744,8 +3074,8 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		CompletionResult.Code == EAIREInventoryMutationCode::Succeeded);
 
 	FAIREInventoryContainerSnapshot MakoAfter;
-	FAIREInventoryContainerSnapshot WarehouseAfter;
-	GetSnapshots(MakoAfter, WarehouseAfter);
+	FAIREInventoryContainerSnapshot StorageAfter;
+	GetSnapshots(MakoAfter, StorageAfter);
 	TestEqual(
 		TEXT("Craft consumes the aggregated ingredient quantity"),
 		CountItem(MakoAfter.ItemStacks, IngredientItemId),
@@ -2759,9 +3089,9 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		MakoAfter.Revision,
 		MakoBefore.Revision + 1);
 	TestEqual(
-		TEXT("MAKO craft does not change warehouse revision"),
-		WarehouseAfter.Revision,
-		WarehouseBefore.Revision);
+		TEXT("MAKO craft does not change storage revision"),
+		StorageAfter.Revision,
+		StorageBefore.Revision);
 
 	const FAIREInventoryWorkResult ReplayResult =
 		Inventory->TryCompleteMakoCraftWork(CraftRequest);
@@ -2770,16 +3100,16 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		ReplayResult.Code == EAIREInventoryMutationCode::AlreadyApplied
 			&& ReplayResult.bAlreadyApplied);
 	FAIREInventoryContainerSnapshot MakoAfterReplay;
-	FAIREInventoryContainerSnapshot WarehouseAfterReplay;
-	GetSnapshots(MakoAfterReplay, WarehouseAfterReplay);
+	FAIREInventoryContainerSnapshot StorageAfterReplay;
+	GetSnapshots(MakoAfterReplay, StorageAfterReplay);
 	TestEqual(
 		TEXT("Craft replay preserves MAKO revision"),
 		MakoAfterReplay.Revision,
 		MakoAfter.Revision);
 	TestEqual(
-		TEXT("Craft replay preserves warehouse revision"),
-		WarehouseAfterReplay.Revision,
-		WarehouseAfter.Revision);
+		TEXT("Craft replay preserves storage revision"),
+		StorageAfterReplay.Revision,
+		StorageAfter.Revision);
 
 	FAIREMakoCraftWorkRequest StaleRequest = CraftRequest;
 	StaleRequest.WorkOrderId = FGuid::NewGuid();
@@ -2790,7 +3120,7 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 	FAIREMakoCraftWorkRequest InsufficientRequest = CraftRequest;
 	InsufficientRequest.WorkOrderId = FGuid::NewGuid();
 	InsufficientRequest.ExpectedMakoRevision = MakoAfter.Revision;
-	InsufficientRequest.ExpectedWarehouseRevision = WarehouseAfter.Revision;
+	InsufficientRequest.ExpectedStorageRevision = StorageAfter.Revision;
 	InsufficientRequest.Ingredients.Reset();
 	FAIREInventoryItemQuantity& InsufficientIngredient =
 		InsufficientRequest.Ingredients.AddDefaulted_GetRef();
@@ -2801,23 +3131,23 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		Inventory->TryCompleteMakoCraftWork(InsufficientRequest).Code
 			== EAIREInventoryMutationCode::InsufficientQuantity);
 	FAIREInventoryContainerSnapshot MakoAfterRejectedRequests;
-	FAIREInventoryContainerSnapshot WarehouseAfterRejectedRequests;
-	GetSnapshots(MakoAfterRejectedRequests, WarehouseAfterRejectedRequests);
+	FAIREInventoryContainerSnapshot StorageAfterRejectedRequests;
+	GetSnapshots(MakoAfterRejectedRequests, StorageAfterRejectedRequests);
 	TestEqual(
 		TEXT("Rejected craft requests preserve MAKO revision"),
 		MakoAfterRejectedRequests.Revision,
 		MakoAfter.Revision);
 	TestEqual(
-		TEXT("Rejected craft requests preserve warehouse revision"),
-		WarehouseAfterRejectedRequests.Revision,
-		WarehouseAfter.Revision);
+		TEXT("Rejected craft requests preserve storage revision"),
+		StorageAfterRejectedRequests.Revision,
+		StorageAfter.Revision);
 	FAIREMakoWorkRewardRequest RewardRequest;
 	RewardRequest.SessionId = SessionId;
 	RewardRequest.DeliveryId = FGuid::NewGuid();
 	RewardRequest.ExpectedMakoRevision =
 		MakoAfterRejectedRequests.Revision;
-	RewardRequest.ExpectedWarehouseRevision =
-		WarehouseAfterRejectedRequests.Revision;
+	RewardRequest.ExpectedStorageRevision =
+		StorageAfterRejectedRequests.Revision;
 	RewardRequest.Reward.ItemId = ResultItemId;
 	RewardRequest.Reward.Count = 1;
 	const FAIREInventoryWorkResult RewardResult =
@@ -2860,13 +3190,13 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		Inventory->ReserveMakoEquipmentSwap(EquipRequest).Code
 			== EAIREInventoryMutationCode::Succeeded);
 	FAIREInventoryContainerSnapshot MakoDuringEquipment;
-	FAIREInventoryContainerSnapshot WarehouseDuringEquipment;
-	GetSnapshots(MakoDuringEquipment, WarehouseDuringEquipment);
+	FAIREInventoryContainerSnapshot StorageDuringEquipment;
+	GetSnapshots(MakoDuringEquipment, StorageDuringEquipment);
 	FAIREMakoCraftWorkRequest EquipmentBusyRequest = CraftRequest;
 	EquipmentBusyRequest.WorkOrderId = FGuid::NewGuid();
 	EquipmentBusyRequest.ExpectedMakoRevision = MakoDuringEquipment.Revision;
-	EquipmentBusyRequest.ExpectedWarehouseRevision =
-		WarehouseDuringEquipment.Revision;
+	EquipmentBusyRequest.ExpectedStorageRevision =
+		StorageDuringEquipment.Revision;
 	EquipmentBusyRequest.Ingredients[0].Count = 1;
 	EquipmentBusyRequest.Ingredients.SetNum(1);
 	TestTrue(
@@ -2927,20 +3257,20 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 			AIREGameplayInventory::MakoItemSlotCapacity - 1,
 			TEXT("AIRE.Test.Unique.FullMako")));
 	TestTrue(
-		TEXT("Full warehouse is prepared"),
+		TEXT("Full storage is prepared"),
 		FillContainer(
-			WarehouseContainerId,
-			AIREGameplayInventory::SharedWarehouseSlotCapacity,
-			TEXT("AIRE.Test.Unique.FullWarehouse")));
+			StorageContainerId,
+			AIREGameplayInventory::SharedStorageSlotCapacity,
+			TEXT("AIRE.Test.Unique.FullStorage")));
 	FAIREInventoryContainerSnapshot FullMako;
-	FAIREInventoryContainerSnapshot FullWarehouse;
+	FAIREInventoryContainerSnapshot FullStorage;
 	FullInventory->GetContainerSnapshot(MakoContainerId, FullMako);
-	FullInventory->GetContainerSnapshot(WarehouseContainerId, FullWarehouse);
+	FullInventory->GetContainerSnapshot(StorageContainerId, FullStorage);
 	FAIREMakoCraftWorkRequest WorldDropRequest;
 	WorldDropRequest.SessionId = FullSessionId;
 	WorldDropRequest.WorkOrderId = FGuid::NewGuid();
 	WorldDropRequest.ExpectedMakoRevision = FullMako.Revision;
-	WorldDropRequest.ExpectedWarehouseRevision = FullWarehouse.Revision;
+	WorldDropRequest.ExpectedStorageRevision = FullStorage.Revision;
 	FAIREInventoryItemQuantity& WorldDropIngredient =
 		WorldDropRequest.Ingredients.AddDefaulted_GetRef();
 	WorldDropIngredient.ItemId = IngredientItemId;
@@ -2962,20 +3292,20 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 			== EAIREInventoryMutationCode::AlreadyApplied);
 
 	FAIREInventoryContainerSnapshot FullMakoAfterCraft;
-	FAIREInventoryContainerSnapshot FullWarehouseAfterCraft;
+	FAIREInventoryContainerSnapshot FullStorageAfterCraft;
 	FullInventory->GetContainerSnapshot(
 		MakoContainerId,
 		FullMakoAfterCraft);
 	FullInventory->GetContainerSnapshot(
-		WarehouseContainerId,
-		FullWarehouseAfterCraft);
+		StorageContainerId,
+		FullStorageAfterCraft);
 	FAIREMakoWorkRewardRequest RetriableHarvestReward;
 	RetriableHarvestReward.SessionId = FullSessionId;
 	RetriableHarvestReward.DeliveryId = FGuid::NewGuid();
 	RetriableHarvestReward.ExpectedMakoRevision =
 		FullMakoAfterCraft.Revision;
-	RetriableHarvestReward.ExpectedWarehouseRevision =
-		FullWarehouseAfterCraft.Revision;
+	RetriableHarvestReward.ExpectedStorageRevision =
+		FullStorageAfterCraft.Revision;
 	RetriableHarvestReward.Reward.ItemId =
 		FName(TEXT("AIRE.Test.Unique.HarvestReward"));
 	RetriableHarvestReward.Reward.Count = 1;
@@ -3023,17 +3353,17 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		FullInventory->TryRemoveItem(FreeMakoSlotRequest).Code
 			== EAIREInventoryMutationCode::Succeeded);
 	FAIREInventoryContainerSnapshot MakoAfterSlotFreed;
-	FAIREInventoryContainerSnapshot WarehouseAfterSlotFreed;
+	FAIREInventoryContainerSnapshot StorageAfterSlotFreed;
 	FullInventory->GetContainerSnapshot(
 		MakoContainerId,
 		MakoAfterSlotFreed);
 	FullInventory->GetContainerSnapshot(
-		WarehouseContainerId,
-		WarehouseAfterSlotFreed);
+		StorageContainerId,
+		StorageAfterSlotFreed);
 	RetriableHarvestReward.ExpectedMakoRevision =
 		MakoAfterSlotFreed.Revision;
-	RetriableHarvestReward.ExpectedWarehouseRevision =
-		WarehouseAfterSlotFreed.Revision;
+	RetriableHarvestReward.ExpectedStorageRevision =
+		StorageAfterSlotFreed.Revision;
 	const FAIREInventoryWorkResult CollectedHarvestReward =
 		FullInventory->TryStoreMakoWorkReward(RetriableHarvestReward);
 	TestTrue(

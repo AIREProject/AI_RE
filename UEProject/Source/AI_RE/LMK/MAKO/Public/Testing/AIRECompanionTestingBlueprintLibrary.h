@@ -11,10 +11,10 @@ class UDataTable;
 UENUM(BlueprintType)
 enum class EAIRECompanionTestingInventoryTransferDirection : uint8
 {
-	MakoToWarehouse,
-	WarehouseToMako,
-	PlayerToWarehouse,
-	WarehouseToPlayer
+	MakoToStorage,
+	StorageToMako,
+	PlayerToStorage,
+	StorageToPlayer
 };
 
 /** Temporary PIE fixture helpers. Replace these with feature-owned inputs as each behavior is implemented. */

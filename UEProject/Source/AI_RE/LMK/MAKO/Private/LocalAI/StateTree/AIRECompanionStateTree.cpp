@@ -15,6 +15,7 @@
 #include "Work/AIRECompanionCraftingWorkRequest.h"
 #include "Work/AIRECompanionHarvestWorkRequest.h"
 #include "AIREGameplayInventorySubsystem.h"
+#include "AIRESharedStorageActor.h"
 #include "AI_RECraftingTypes.h"
 #include "AI_REHarvestableResourceActor.h"
 #include "AI_REHarvestableResourceComponent.h"
@@ -33,6 +34,7 @@
 #include "Navigation/PathFollowingComponent.h"
 #include "StateTreeExecutionContext.h"
 #include "Engine/DataTable.h"
+#include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionStateTree, Log, All);
 
@@ -197,12 +199,12 @@ namespace
 			IsValid(GameInstance)
 				? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
 				: nullptr;
-		FAIREInventoryContainerSnapshot WarehouseSnapshot;
+		FAIREInventoryContainerSnapshot StorageSnapshot;
 		if (!IsValid(GameplayInventory)
 			|| !GameplayInventory->GetContainerSnapshot(
-				UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(),
-				WarehouseSnapshot)
-			|| MakoSnapshot.SessionId != WarehouseSnapshot.SessionId)
+				UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+				StorageSnapshot)
+			|| MakoSnapshot.SessionId != StorageSnapshot.SessionId)
 		{
 			return false;
 		}
@@ -211,7 +213,7 @@ namespace
 		OutRequest.SessionId = MakoSnapshot.SessionId;
 		OutRequest.WorkOrderId = WorkOrderId;
 		OutRequest.ExpectedMakoRevision = MakoSnapshot.Revision;
-		OutRequest.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
+		OutRequest.ExpectedStorageRevision = StorageSnapshot.Revision;
 		OutRequest.Result.ItemId = Recipe.ResultItemId;
 		OutRequest.Result.Count = Recipe.ResultAmount;
 		OutRequest.bCanWorldDrop = bCanWorldDrop;
@@ -240,6 +242,162 @@ namespace
 		return IsValid(ItemSubsystem)
 			? ItemSubsystem->GetItemDataAsset(ItemId)
 			: nullptr;
+	}
+
+	const FAIRECompanionStorageRule* FindStorageRule(
+		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		const FName ItemId)
+	{
+		return CompanionConfig.StorageRules.FindByPredicate(
+			[ItemId](const FAIRECompanionStorageRule& Rule)
+			{
+				return IsValid(Rule.ItemDefinition)
+					&& Rule.ItemDefinition->ItemId == ItemId;
+			});
+	}
+
+	int64 GetMakoCarriedItemCount(
+		const FAIREInventoryContainerSnapshot& MakoSnapshot,
+		const FName ItemId)
+	{
+		int64 TotalCount = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack
+			: MakoSnapshot.ItemStacks)
+		{
+			if (Stack.ItemId == ItemId)
+			{
+				TotalCount += Stack.Count;
+			}
+		}
+		if (MakoSnapshot.Equipment.EquippedItemId == ItemId)
+		{
+			++TotalCount;
+		}
+		return TotalCount;
+	}
+
+	const FAIREInventoryItemStackSnapshot* FindStorageTransferStack(
+		const FAIREInventoryContainerSnapshot& SourceSnapshot,
+		const FName ItemId)
+	{
+		return SourceSnapshot.ItemStacks.FindByPredicate(
+			[ItemId](const FAIREInventoryItemStackSnapshot& Stack)
+			{
+				return Stack.ItemId == ItemId && Stack.Count > 0;
+			});
+	}
+
+	bool BuildStorageTransferRequest(
+		UAIRECompanionInventoryComponent& InventoryComponent,
+		AAIRESharedStorageActor& StorageActor,
+		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		const FAIRECompanionWorkOrderSnapshot& WorkOrderSnapshot,
+		FAIREInventoryTransferRequest& OutRequest)
+	{
+		OutRequest = FAIREInventoryTransferRequest();
+		const FAIRECompanionStorageTransferPayload& Payload =
+			WorkOrderSnapshot.StorageTransfer;
+		if (!Payload.RequestSessionId.IsValid()
+			|| Payload.ItemId.IsNone()
+			|| Payload.Count <= 0)
+		{
+			return false;
+		}
+
+		const FAIRECompanionStorageRule* Rule =
+			FindStorageRule(CompanionConfig, Payload.ItemId);
+		if (Rule == nullptr
+			|| Rule->MinimumCarryCount < 0
+			|| Rule->MaximumCarryCount < Rule->MinimumCarryCount)
+		{
+			return false;
+		}
+
+		FAIREInventoryContainerSnapshot MakoSnapshot;
+		FAIREInventoryContainerSnapshot StorageSnapshot;
+		if (!InventoryComponent.GetInventorySnapshot(MakoSnapshot)
+			|| !StorageActor.GetStorageSnapshot(StorageSnapshot)
+			|| MakoSnapshot.SessionId != Payload.RequestSessionId
+			|| StorageSnapshot.SessionId != Payload.RequestSessionId)
+		{
+			return false;
+		}
+
+		const int64 CarriedCount = GetMakoCarriedItemCount(
+			MakoSnapshot,
+			Payload.ItemId);
+		const FAIREInventoryContainerSnapshot* SourceSnapshot = nullptr;
+		int64 RequiredCount = 0;
+		switch (Payload.Direction)
+		{
+		case EAIRECompanionStorageTransferDirection::
+			DepositMakoToStorage:
+			if (CarriedCount <= Rule->MaximumCarryCount
+				|| MakoSnapshot.Equipment.PendingItemId == Payload.ItemId)
+			{
+				return false;
+			}
+			SourceSnapshot = &MakoSnapshot;
+			RequiredCount =
+				CarriedCount - Rule->MaximumCarryCount;
+			OutRequest.SourceContainerId =
+				UAIREGameplayInventorySubsystem::GetMakoContainerId();
+			OutRequest.DestinationContainerId =
+				UAIREGameplayInventorySubsystem::
+					GetSharedStorageContainerId();
+			OutRequest.ExpectedSourceRevision = MakoSnapshot.Revision;
+			OutRequest.ExpectedDestinationRevision =
+				StorageSnapshot.Revision;
+			break;
+
+		case EAIRECompanionStorageTransferDirection::
+			WithdrawStorageToMako:
+			if (CarriedCount >= Rule->MinimumCarryCount
+				|| MakoSnapshot.Equipment.PendingItemId == Payload.ItemId)
+			{
+				return false;
+			}
+			SourceSnapshot = &StorageSnapshot;
+			RequiredCount =
+				Rule->MinimumCarryCount - CarriedCount;
+			OutRequest.SourceContainerId =
+				UAIREGameplayInventorySubsystem::
+					GetSharedStorageContainerId();
+			OutRequest.DestinationContainerId =
+				UAIREGameplayInventorySubsystem::GetMakoContainerId();
+			OutRequest.ExpectedSourceRevision =
+				StorageSnapshot.Revision;
+			OutRequest.ExpectedDestinationRevision = MakoSnapshot.Revision;
+			break;
+
+		default:
+			return false;
+		}
+
+		const FAIREInventoryItemStackSnapshot* SourceStack =
+			SourceSnapshot != nullptr
+				? FindStorageTransferStack(
+					*SourceSnapshot,
+					Payload.ItemId)
+				: nullptr;
+		if (SourceStack == nullptr)
+		{
+			return false;
+		}
+
+		const int64 TransferCount = FMath::Min<int64>(
+			Payload.Count,
+			FMath::Min<int64>(RequiredCount, SourceStack->Count));
+		if (TransferCount <= 0 || TransferCount > MAX_int32)
+		{
+			return false;
+		}
+
+		OutRequest.SessionId = Payload.RequestSessionId;
+		OutRequest.MutationId = WorkOrderSnapshot.WorkOrderId;
+		OutRequest.SourceSlotIndex = SourceStack->SlotIndex;
+		OutRequest.Count = static_cast<int32>(TransferCount);
+		return true;
 	}
 
 	AAI_REItemActor* SpawnDeferredWorkResult(
@@ -668,8 +826,11 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::EnterState(
 	{
 		InstanceData.ActiveWorkOrderId = Snapshot.WorkOrderId;
 		InstanceData.ElapsedCraftingTime = 0.0f;
+		InstanceData.ElapsedStorageMovementTime = 0.0f;
+		InstanceData.ElapsedStorageWorkTime = 0.0f;
 		InstanceData.RetryTimeRemaining = 0.0f;
 		InstanceData.bMoveRequested = false;
+		InstanceData.ActiveStorageMontage = nullptr;
 	}
 	InstanceData.ActiveTarget = Snapshot.TargetActor;
 
@@ -730,6 +891,12 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 
 	if (InstanceData.bIsCombatRequested)
 	{
+		if (Snapshot.WorkType
+			== EAIRECompanionWorkOrderType::StorageTransfer)
+		{
+			InstanceData.ElapsedStorageMovementTime = 0.0f;
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+		}
 		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving
 			|| Snapshot.State == EAIRECompanionWorkOrderState::Working)
 		{
@@ -1132,6 +1299,186 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 		return EStateTreeRunStatus::Running;
 	}
 
+	if (Snapshot.WorkType
+		== EAIRECompanionWorkOrderType::StorageTransfer)
+	{
+		AAIRESharedStorageActor* StorageActor =
+			Cast<AAIRESharedStorageActor>(TargetActor);
+		const UAIRECompanionConfigDataAsset* CompanionConfig =
+			InstanceData.CompanionCharacter->GetCompanionConfig();
+		if (!IsValid(StorageActor)
+			|| !IsValid(CompanionConfig)
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageAcceptanceRadius)
+			|| CompanionConfig->StorageAcceptanceRadius < 0.0f
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageMovementTimeout)
+			|| CompanionConfig->StorageMovementTimeout <= 0.0f
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageWorkDuration)
+			|| CompanionConfig->StorageWorkDuration < 0.0f)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const FTransform InteractionTransform =
+			StorageActor->GetCompanionInteractionTransform();
+		const FVector InteractionLocation =
+			InteractionTransform.GetLocation();
+		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
+		{
+			InstanceData.ElapsedStorageMovementTime +=
+				FMath::Max(0.0f, DeltaTime);
+			if (InstanceData.ElapsedStorageMovementTime
+				> CompanionConfig->StorageMovementTimeout)
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+
+			if (FVector::Dist2D(
+					CompanionPawn->GetActorLocation(),
+					InteractionLocation)
+				> CompanionConfig->StorageAcceptanceRadius)
+			{
+				if (!InstanceData.bMoveRequested
+					&& InstanceData.RetryTimeRemaining <= 0.0f)
+				{
+					const EPathFollowingRequestResult::Type MoveResult =
+						InstanceData.CompanionController->MoveToLocation(
+							InteractionLocation,
+							CompanionConfig->StorageAcceptanceRadius,
+							false,
+							true,
+							true,
+							true,
+							nullptr,
+							true);
+					InstanceData.bMoveRequested =
+						MoveResult
+							== EPathFollowingRequestResult::
+								RequestSuccessful;
+					if (MoveResult
+						== EPathFollowingRequestResult::Failed)
+					{
+						InstanceData.RetryTimeRemaining =
+							WorkMovementRetryInterval;
+					}
+				}
+				return EStateTreeRunStatus::Running;
+			}
+
+			InstanceData.CompanionController->StopMovement();
+			InstanceData.CompanionController->ClearFocus(
+				EAIFocusPriority::Gameplay);
+			InstanceData.bMoveRequested = false;
+			CompanionPawn->SetActorRotation(
+				FRotator(
+					0.0f,
+					InteractionTransform.Rotator().Yaw,
+					0.0f));
+			if (!InstanceData.WorkOrderComponent->TryStartWorking(
+					Snapshot.WorkOrderId))
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+			Snapshot =
+				InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		}
+
+		if (Snapshot.State != EAIRECompanionWorkOrderState::Working
+			|| FVector::Dist2D(
+				CompanionPawn->GetActorLocation(),
+				InteractionLocation)
+				> CompanionConfig->StorageAcceptanceRadius)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
+		CompanionPawn->SetActorRotation(
+			FRotator(
+				0.0f,
+				InteractionTransform.Rotator().Yaw,
+				0.0f));
+		if (IsValid(CompanionConfig->StorageWorkMontage))
+		{
+			UAnimInstance* AnimInstance =
+				InstanceData.CompanionCharacter->GetMesh()
+					? InstanceData.CompanionCharacter->GetMesh()
+						->GetAnimInstance()
+					: nullptr;
+			if (IsValid(AnimInstance)
+				&& !AnimInstance->Montage_IsPlaying(
+					CompanionConfig->StorageWorkMontage))
+			{
+				AnimInstance->Montage_Play(
+					CompanionConfig->StorageWorkMontage);
+			}
+			InstanceData.ActiveStorageMontage =
+				CompanionConfig->StorageWorkMontage;
+		}
+
+		InstanceData.ElapsedStorageWorkTime +=
+			FMath::Max(0.0f, DeltaTime);
+		if (InstanceData.ElapsedStorageWorkTime
+			< CompanionConfig->StorageWorkDuration)
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		UGameInstance* GameInstance =
+			InstanceData.CompanionCharacter->GetGameInstance();
+		UAIREGameplayInventorySubsystem* GameplayInventory =
+			IsValid(GameInstance)
+				? GameInstance
+					->GetSubsystem<UAIREGameplayInventorySubsystem>()
+				: nullptr;
+		FAIREInventoryTransferRequest TransferRequest;
+		if (!IsValid(GameplayInventory)
+			|| !BuildStorageTransferRequest(
+				*InstanceData.InventoryComponent,
+				*StorageActor,
+				*CompanionConfig,
+				Snapshot,
+				TransferRequest))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const FAIREInventoryMutationResult TransferResult =
+			GameplayInventory->TryTransferItem(TransferRequest);
+		if (!TransferResult.WasApplied()
+			|| !InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
+				Snapshot.WorkOrderId))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Succeeded;
+	}
+
 	InstanceData.WorkOrderComponent->TryFailWorkOrder(Snapshot.WorkOrderId);
 	CancelOwnedRequests(InstanceData);
 	return EStateTreeRunStatus::Failed;
@@ -1147,6 +1494,12 @@ void FAIRECompanionExecuteWorkOrderTask::ExitState(
 	{
 		const FAIRECompanionWorkOrderSnapshot Snapshot =
 			InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		if (Snapshot.WorkType
+			== EAIRECompanionWorkOrderType::StorageTransfer)
+		{
+			InstanceData.ElapsedStorageMovementTime = 0.0f;
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+		}
 		if (Snapshot.WorkOrderId == InstanceData.ActiveWorkOrderId
 			&& (Snapshot.State == EAIRECompanionWorkOrderState::Moving
 				|| Snapshot.State
@@ -1182,6 +1535,22 @@ void FAIRECompanionExecuteWorkOrderTask::CancelOwnedRequests(
 			AnimInstance->Montage_Stop(0.2f, InstanceData.WorkMontage);
 		}
 	}
+	if (IsValid(InstanceData.CompanionCharacter)
+		&& IsValid(InstanceData.ActiveStorageMontage))
+	{
+		UAnimInstance* AnimInstance =
+			InstanceData.CompanionCharacter->GetMesh()
+				? InstanceData.CompanionCharacter->GetMesh()
+					->GetAnimInstance()
+				: nullptr;
+		if (IsValid(AnimInstance))
+		{
+			AnimInstance->Montage_Stop(
+				0.2f,
+				InstanceData.ActiveStorageMontage);
+		}
+	}
+	InstanceData.ActiveStorageMontage = nullptr;
 
 	if (!IsValid(InstanceData.EquipmentComponent)
 		|| !IsValid(InstanceData.AbilitySystemComponent))

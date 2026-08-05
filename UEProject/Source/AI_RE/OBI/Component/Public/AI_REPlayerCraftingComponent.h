@@ -8,7 +8,9 @@
 #include "AI_REPlayerCraftingComponent.generated.h"
 
 class UAI_REPlayerInventoryComponent;
+class UAIREGameplayInventorySubsystem;
 class UDataTable;
+struct FAIREPlayerCraftRequest;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCraftingCompletedSignature, FName, CraftedItemId);
 
@@ -53,13 +55,22 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	bool BuildCraftRequest(
+		const FAI_RECraftingRecipe& Recipe,
+		const FGuid& MutationId,
+		const FGuid& SessionId,
+		FAIREPlayerCraftRequest& OutRequest) const;
+	UAIREGameplayInventorySubsystem* GetInventorySubsystem() const;
 	void CompleteCrafting();
+	void ResetCraftingState();
 
 	UPROPERTY()
 	TObjectPtr<UAI_REPlayerInventoryComponent> CachedInventory;
 
 	bool bIsCrafting = false;
 	FName CurrentRecipeName;
+	FGuid CurrentCraftMutationId;
+	FGuid CurrentCraftSessionId;
 	
 	UPROPERTY()
 	FTimerHandle CraftingTimerHandle;

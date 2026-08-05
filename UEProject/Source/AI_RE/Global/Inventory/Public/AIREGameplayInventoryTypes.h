@@ -6,11 +6,13 @@
 namespace AIREGameplayInventory
 {
 	inline constexpr int32 MakoItemSlotCapacity = 20;
-	inline constexpr int32 SharedWarehouseSlotCapacity = 50;
+	inline constexpr int32 SharedStorageSlotCapacity = 50;
 	inline constexpr int32 LocalImportFormatVersion = 1;
 	inline constexpr int32 MaxStableIdLength = 128;
 	inline constexpr TCHAR MakoContainerId[] = TEXT("AIRE.Inventory.MAKO");
-	inline constexpr TCHAR SharedWarehouseContainerId[] = TEXT("AIRE.Inventory.SharedWarehouse");
+	inline constexpr TCHAR SharedStorageContainerId[] = TEXT("AIRE.Inventory.SharedStorage");
+	inline constexpr TCHAR LegacySharedStorageContainerId[] =
+		TEXT("AIRE.Inventory.SharedWarehouse");
 }
 
 UENUM(BlueprintType)
@@ -42,7 +44,7 @@ enum class EAIREInventoryWorkResultDestination : uint8
 {
 	None,
 	Mako,
-	SharedWarehouse,
+	SharedStorage,
 	WorldDrop
 };
 
@@ -56,10 +58,10 @@ enum class EAIREEquipmentTransitionState : uint8
 };
 
 UENUM(BlueprintType)
-enum class EAIREPlayerWarehouseTransferDirection : uint8
+enum class EAIREPlayerStorageTransferDirection : uint8
 {
-	DepositPlayerToWarehouse,
-	WithdrawWarehouseToPlayer
+	DepositPlayerToStorage,
+	WithdrawStorageToPlayer
 };
 
 USTRUCT(BlueprintType)
@@ -199,7 +201,7 @@ struct AI_RE_API FAIREInventoryTransferRequest
 };
 
 USTRUCT(BlueprintType)
-struct AI_RE_API FAIREPlayerWarehouseTransferRequest
+struct AI_RE_API FAIREPlayerStorageTransferRequest
 {
 	GENERATED_BODY()
 
@@ -210,11 +212,11 @@ struct AI_RE_API FAIREPlayerWarehouseTransferRequest
 	FGuid MutationId;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
-	EAIREPlayerWarehouseTransferDirection Direction =
-		EAIREPlayerWarehouseTransferDirection::DepositPlayerToWarehouse;
+	EAIREPlayerStorageTransferDirection Direction =
+		EAIREPlayerStorageTransferDirection::DepositPlayerToStorage;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
-	int64 ExpectedWarehouseRevision = INDEX_NONE;
+	int64 ExpectedStorageRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
 	int32 SourceSlotIndex = INDEX_NONE;
@@ -279,6 +281,28 @@ struct AI_RE_API FAIREInventoryItemQuantity
 };
 
 USTRUCT(BlueprintType)
+struct AI_RE_API FAIREPlayerCraftRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Crafting")
+	FGuid SessionId;
+
+	/** MutationId makes completion idempotent; preflight never records it. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Crafting")
+	FGuid MutationId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Crafting")
+	int64 ExpectedStorageRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Crafting")
+	TArray<FAIREInventoryItemQuantity> Ingredients;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Crafting")
+	FAIREInventoryItemQuantity Result;
+};
+
+USTRUCT(BlueprintType)
 struct AI_RE_API FAIREMakoCraftWorkRequest
 {
 	GENERATED_BODY()
@@ -294,7 +318,7 @@ struct AI_RE_API FAIREMakoCraftWorkRequest
 	int64 ExpectedMakoRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
-	int64 ExpectedWarehouseRevision = INDEX_NONE;
+	int64 ExpectedStorageRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
 	TArray<FAIREInventoryItemQuantity> Ingredients;
@@ -322,7 +346,7 @@ struct AI_RE_API FAIREMakoWorkRewardRequest
 	int64 ExpectedMakoRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
-	int64 ExpectedWarehouseRevision = INDEX_NONE;
+	int64 ExpectedStorageRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Work")
 	FAIREInventoryItemQuantity Reward;
@@ -351,7 +375,7 @@ struct AI_RE_API FAIREInventoryWorkResult
 	int64 MakoRevision = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Work")
-	int64 WarehouseRevision = INDEX_NONE;
+	int64 StorageRevision = INDEX_NONE;
 };
 
 struct AI_RE_API FAIREInventorySessionScope
