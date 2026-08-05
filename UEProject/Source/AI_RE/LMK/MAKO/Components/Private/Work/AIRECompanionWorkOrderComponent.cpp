@@ -2,6 +2,7 @@
 
 #include "AI_REHarvestableResourceActor.h"
 #include "AI_REWorkBenchBase.h"
+#include "AIRESharedStorageActor.h"
 #include "GameFramework/Actor.h"
 
 UAIRECompanionWorkOrderComponent::UAIRECompanionWorkOrderComponent()
@@ -24,7 +25,19 @@ bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
 		|| (Request.WorkType == EAIRECompanionWorkOrderType::Harvesting
 			&& !IsValid(Request.RecipeTable)
 			&& Request.RecipeRowId.IsNone()
-			&& IsValid(Cast<AAI_REHarvestableResourceActor>(TargetActor)));
+			&& IsValid(Cast<AAI_REHarvestableResourceActor>(TargetActor)))
+		|| (Request.WorkType
+				== EAIRECompanionWorkOrderType::StorageTransfer
+			&& !IsValid(Request.RecipeTable)
+			&& Request.RecipeRowId.IsNone()
+			&& Request.StorageTransfer.RequestSessionId.IsValid()
+			&& !Request.StorageTransfer.ItemId.IsNone()
+			&& Request.StorageTransfer.Count > 0
+			&& (Request.StorageTransfer.Direction
+					== EAIRECompanionStorageTransferDirection::DepositMakoToStorage
+				|| Request.StorageTransfer.Direction
+					== EAIRECompanionStorageTransferDirection::WithdrawStorageToMako)
+			&& IsValid(Cast<AAIRESharedStorageActor>(TargetActor)));
 	if (bIsShuttingDown
 		|| !IsValid(TargetActor)
 		|| TargetActor->IsActorBeingDestroyed()
@@ -50,6 +63,7 @@ bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
 	CurrentWorkOrder.WorkType = Request.WorkType;
 	CurrentWorkOrder.RecipeTable = Request.RecipeTable;
 	CurrentWorkOrder.RecipeRowId = Request.RecipeRowId;
+	CurrentWorkOrder.StorageTransfer = Request.StorageTransfer;
 	CurrentWorkOrder.State = EAIRECompanionWorkOrderState::Requested;
 	BindTargetDestroyed();
 

@@ -2,7 +2,9 @@
 
 #include "Work/AIRECompanionCraftingWorkRequest.h"
 #include "Work/AIRECompanionHarvestWorkRequest.h"
+#include "Work/AIRECompanionStorageWorkRequest.h"
 
+#include "AIRESharedStorageActor.h"
 #include "AI_RECraftingTypes.h"
 #include "AI_REHarvestableResourceActor.h"
 #include "AI_REHarvestableResourceComponent.h"
@@ -50,6 +52,9 @@ namespace
 			&& Snapshot.WorkType == EAIRECompanionWorkOrderType::None
 			&& Snapshot.RecipeTable.Get() == nullptr
 			&& Snapshot.RecipeRowId.IsNone()
+			&& !Snapshot.StorageTransfer.RequestSessionId.IsValid()
+			&& Snapshot.StorageTransfer.ItemId.IsNone()
+			&& Snapshot.StorageTransfer.Count == 0
 			&& Snapshot.State == EAIRECompanionWorkOrderState::None;
 	}
 
@@ -62,6 +67,14 @@ namespace
 			&& Left.WorkType == Right.WorkType
 			&& Left.RecipeTable.Get() == Right.RecipeTable.Get()
 			&& Left.RecipeRowId == Right.RecipeRowId
+			&& Left.StorageTransfer.RequestSessionId
+				== Right.StorageTransfer.RequestSessionId
+			&& Left.StorageTransfer.Direction
+				== Right.StorageTransfer.Direction
+			&& Left.StorageTransfer.ItemId
+				== Right.StorageTransfer.ItemId
+			&& Left.StorageTransfer.Count
+				== Right.StorageTransfer.Count
 			&& Left.State == Right.State;
 	}
 }
@@ -439,6 +452,157 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 	TestFalse(
 		TEXT("Destroyed Harvest target is rejected"),
 		FAIRECompanionHarvestWorkRequest::IsValidRequestInputs(ResourceActor));
+
+	AAIRESharedStorageActor* StorageActor =
+		TestWorld->SpawnActor<AAIRESharedStorageActor>(
+			FVector(1000.0f, 0.0f, 0.0f),
+			FRotator::ZeroRotator,
+			SpawnParameters);
+	if (!TestNotNull(
+			TEXT("Storage test actor is spawned"),
+			StorageActor))
+	{
+		return false;
+	}
+	TStrongObjectPtr<UAIRECompanionWorkOrderComponent> StorageWorkOrder(
+		NewObject<UAIRECompanionWorkOrderComponent>(StorageActor));
+	const FGuid StorageSessionId = FGuid::NewGuid();
+	const FName StorageItemId(TEXT("AIRE.Test.StorageItem"));
+	auto TryStorage = [
+		&StorageWorkOrder,
+		StorageActor,
+		StorageSessionId,
+		StorageItemId](
+		const FGuid SessionId,
+		const EAIRECompanionStorageTransferDirection Direction,
+		const FName ItemId,
+		const int32 Count,
+		FGuid& OutWorkOrderId)
+	{
+		return FAIRECompanionStorageWorkRequest::TryRequest(
+			StorageWorkOrder.Get(),
+			StorageActor,
+			SessionId,
+			Direction,
+			ItemId,
+			Count,
+			OutWorkOrderId);
+	};
+
+	FGuid StorageWorkOrderId;
+	TestFalse(
+		TEXT("Null WorkOrder component rejects Storage request"),
+		FAIRECompanionStorageWorkRequest::TryRequest(
+			nullptr,
+			StorageActor,
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			StorageItemId,
+			1,
+			StorageWorkOrderId));
+	TestFalse(
+		TEXT("Null Storage component request returns no ID"),
+		StorageWorkOrderId.IsValid());
+	TestFalse(
+		TEXT("Null Storage target is rejected"),
+		FAIRECompanionStorageWorkRequest::TryRequest(
+			StorageWorkOrder.Get(),
+			nullptr,
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			StorageItemId,
+			1,
+			StorageWorkOrderId));
+	TestFalse(
+		TEXT("Invalid Storage session is rejected"),
+		TryStorage(
+			FGuid(),
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			StorageItemId,
+			1,
+			StorageWorkOrderId));
+	TestFalse(
+		TEXT("None Storage Item ID is rejected"),
+		TryStorage(
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			NAME_None,
+			1,
+			StorageWorkOrderId));
+	TestFalse(
+		TEXT("Non-positive Storage count is rejected"),
+		TryStorage(
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			StorageItemId,
+			0,
+			StorageWorkOrderId));
+	TestFalse(
+		TEXT("Unsupported Storage direction is rejected"),
+		TryStorage(
+			StorageSessionId,
+			static_cast<EAIRECompanionStorageTransferDirection>(255),
+			StorageItemId,
+			1,
+			StorageWorkOrderId));
+	TestTrue(
+		TEXT("Valid Storage request creates one WorkOrder"),
+		TryStorage(
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				DepositMakoToStorage,
+			StorageItemId,
+			3,
+			StorageWorkOrderId));
+	const FAIRECompanionWorkOrderSnapshot StorageSnapshot =
+		StorageWorkOrder->GetWorkOrderSnapshot();
+	TestTrue(
+		TEXT("Storage WorkOrder snapshot preserves typed payload"),
+		StorageWorkOrderId.IsValid()
+			&& StorageSnapshot.WorkOrderId == StorageWorkOrderId
+			&& StorageSnapshot.WorkType
+				== EAIRECompanionWorkOrderType::StorageTransfer
+			&& StorageSnapshot.TargetActor.Get() == StorageActor
+			&& StorageSnapshot.RecipeTable.Get() == nullptr
+			&& StorageSnapshot.RecipeRowId.IsNone()
+			&& StorageSnapshot.StorageTransfer.RequestSessionId
+				== StorageSessionId
+			&& StorageSnapshot.StorageTransfer.Direction
+				== EAIRECompanionStorageTransferDirection::
+					DepositMakoToStorage
+			&& StorageSnapshot.StorageTransfer.ItemId
+				== StorageItemId
+			&& StorageSnapshot.StorageTransfer.Count == 3
+			&& StorageSnapshot.State
+				== EAIRECompanionWorkOrderState::Requested);
+	FGuid DuplicateStorageId;
+	TestFalse(
+		TEXT("A second active Storage request is rejected"),
+		TryStorage(
+			StorageSessionId,
+			EAIRECompanionStorageTransferDirection::
+				WithdrawStorageToMako,
+			StorageItemId,
+			1,
+			DuplicateStorageId));
+	TestFalse(
+		TEXT("Rejected active Storage request returns no ID"),
+		DuplicateStorageId.IsValid());
+	TestTrue(
+		TEXT("Rejected active Storage request preserves snapshot"),
+		AreSameWorkOrders(
+			StorageSnapshot,
+			StorageWorkOrder->GetWorkOrderSnapshot()));
+	StorageActor->Destroy();
+	TestTrue(
+		TEXT("Destroyed Storage target fails the active WorkOrder"),
+		StorageWorkOrder->GetWorkOrderSnapshot().State
+			== EAIRECompanionWorkOrderState::Failed);
 	return true;
 }
 

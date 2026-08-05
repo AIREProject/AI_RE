@@ -432,10 +432,19 @@ struct FAIRECompanionExecuteWorkOrderTaskInstanceData
 	float ElapsedCraftingTime = 0.0f;
 
 	UPROPERTY(Transient)
+	float ElapsedStorageMovementTime = 0.0f;
+
+	UPROPERTY(Transient)
+	float ElapsedStorageWorkTime = 0.0f;
+
+	UPROPERTY(Transient)
 	float RetryTimeRemaining = 0.0f;
 
 	UPROPERTY(Transient)
 	bool bMoveRequested = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> ActiveStorageMontage;
 };
 
 USTRUCT(meta = (DisplayName = "Execute Companion Work Order", Category = "AIRE|Companion"))

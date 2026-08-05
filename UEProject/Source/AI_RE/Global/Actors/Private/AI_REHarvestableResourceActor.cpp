@@ -59,34 +59,26 @@ void AAI_REHarvestableResourceActor::HandleHarvested(
 	if (GrantedRewardAmount <= 0
 		|| RewardItemAsset == nullptr
 		|| !DeliveryId.IsValid()
-		|| CompletedRewardDeliveries.Contains(DeliveryId))
+		|| SpawnedRewardDeliveries.Contains(DeliveryId))
 	{
 		return;
 	}
 
-	bool bDeliveredToReceiver = false;
-	if (!RewardItemAsset->ItemId.IsNone())
+	if (SpawnHarvestReward(
+			InstigatorActor,
+			RewardItemAsset,
+			GrantedRewardAmount,
+			DeliveryId))
 	{
-		bDeliveredToReceiver =
-			InstigatorActor != nullptr &&
-			InstigatorActor->Implements<UAIREHarvestRewardReceiver>() &&
-			IAIREHarvestRewardReceiver::Execute_TryReceiveHarvestReward(
-				InstigatorActor,
-				DeliveryId,
-				RewardItemAsset->ItemId,
-				GrantedRewardAmount);
-	}
-
-	if (bDeliveredToReceiver
-		|| SpawnHarvestReward(RewardItemAsset, GrantedRewardAmount))
-	{
-		CompletedRewardDeliveries.Add(DeliveryId);
+		SpawnedRewardDeliveries.Add(DeliveryId);
 	}
 }
 
 bool AAI_REHarvestableResourceActor::SpawnHarvestReward(
+	AActor* InstigatorActor,
 	UAI_REItemDataAsset* RewardItemAsset,
-	int32 GrantedRewardAmount)
+	const int32 GrantedRewardAmount,
+	const FGuid& DeliveryId)
 {
 	if (ItemActorClass == nullptr || RewardItemAsset == nullptr || GrantedRewardAmount <= 0)
 	{
@@ -105,6 +97,13 @@ bool AAI_REHarvestableResourceActor::SpawnHarvestReward(
 	{
 		SpawnedItem->ItemAsset = RewardItemAsset;
 		SpawnedItem->ItemCount = GrantedRewardAmount;
+		if (IsValid(InstigatorActor)
+			&& InstigatorActor->Implements<UAIREHarvestRewardReceiver>())
+		{
+			SpawnedItem->InitializeHarvestAutoPickup(
+				DeliveryId,
+				InstigatorActor);
+		}
 		SpawnedItem->FinishSpawning(SpawnTransform);
 		return IsValid(SpawnedItem);
 	}
