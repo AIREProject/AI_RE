@@ -77,11 +77,19 @@ MAKO 제작 완료는 `FAIREMakoCraftWorkRequest`로 재료 전체와 결과를 
 반복하지 않습니다. 결과는 MAKO Inventory, 공유 창고, 허용된 World Drop 순서로
 귀결됩니다.
 
-채집 보상은 보상 발생마다 생성한 `DeliveryId`와 `FAIREMakoWorkRewardRequest`를 사용해
-`TryStoreMakoWorkReward`로 전달합니다. MAKO가 수용하지 못하면 공유 창고를 사용하고,
-두 컨테이너가 모두 수용하지 못하면 호출자가 기존 World Item Actor를 한 번만
-생성합니다. 공유 창고 직접 적재는 Inventory mutation이며, MAKO가 물리적으로 창고까지
-이동하는 자동화는 `M03-E08-T02` 이후 별도 WorkOrder가 소유합니다.
+채집 보상은 보상 발생마다 생성한 `DeliveryId`를 가진 실제 World Item Actor로 먼저
+생성합니다. MAKO가 채집한 Item은 짧은 지연 뒤 지정 반경 안의 해당 MAKO에게 자동 획득을
+시도하고, 성공하면 MAKO 방향으로 흡수되는 표현 뒤 제거됩니다. 획득 시점에
+`FAIREMakoWorkRewardRequest`와 같은 `DeliveryId`로 `TryStoreMakoWorkReward`를 호출하므로
+중복 Overlap이나 재시도가 수량을 반복 지급하지 않습니다.
+
+MAKO Inventory가 수용하지 못하면 공유 창고를 사용합니다. 두 컨테이너가 모두 수용하지
+못한 `WorldDrop` 결과는 applied ledger에 기록하지 않으므로 Item은 바닥에 남고, MAKO가
+범위 안에 있는 동안 공간이 생기면 같은 `DeliveryId`로 다시 획득할 수 있습니다. Player의
+기존 수동 `Interact` 획득은 유지하며 먼저 성공한 경로만 Item을 claim합니다. 이 근접
+자동 획득은 AI Perception이나 이동 명령이 아니며, 먼 Item을 찾아 이동하는 행동은 후속
+WorkOrder가 소유합니다. 공유 창고 직접 적재는 Inventory mutation이며, MAKO가 물리적으로
+창고까지 이동하는 자동화는 `M03-E08-T02` 이후 별도 WorkOrder가 소유합니다.
 
 두 번째 MAKO Weapon 자산이 없으므로 실제 다중 무기 async 교체·복구 검증 전까지
 T01은 `Review`입니다.

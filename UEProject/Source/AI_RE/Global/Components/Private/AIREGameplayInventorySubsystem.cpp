@@ -2960,6 +2960,92 @@ bool FAIREGameplayInventoryMakoCraftWorkTest::RunTest(
 		TEXT("World-drop craft replay is idempotent"),
 		FullInventory->TryCompleteMakoCraftWork(WorldDropRequest).Code
 			== EAIREInventoryMutationCode::AlreadyApplied);
+
+	FAIREInventoryContainerSnapshot FullMakoAfterCraft;
+	FAIREInventoryContainerSnapshot FullWarehouseAfterCraft;
+	FullInventory->GetContainerSnapshot(
+		MakoContainerId,
+		FullMakoAfterCraft);
+	FullInventory->GetContainerSnapshot(
+		WarehouseContainerId,
+		FullWarehouseAfterCraft);
+	FAIREMakoWorkRewardRequest RetriableHarvestReward;
+	RetriableHarvestReward.SessionId = FullSessionId;
+	RetriableHarvestReward.DeliveryId = FGuid::NewGuid();
+	RetriableHarvestReward.ExpectedMakoRevision =
+		FullMakoAfterCraft.Revision;
+	RetriableHarvestReward.ExpectedWarehouseRevision =
+		FullWarehouseAfterCraft.Revision;
+	RetriableHarvestReward.Reward.ItemId =
+		FName(TEXT("AIRE.Test.Unique.HarvestReward"));
+	RetriableHarvestReward.Reward.Count = 1;
+	const FAIREInventoryWorkResult InitialHarvestWorldDrop =
+		FullInventory->TryStoreMakoWorkReward(RetriableHarvestReward);
+	TestTrue(
+		TEXT("Full inventories leave harvest reward in the world"),
+		InitialHarvestWorldDrop.Code
+				== EAIREInventoryMutationCode::Succeeded
+			&& InitialHarvestWorldDrop.Destination
+				== EAIREInventoryWorkResultDestination::WorldDrop
+			&& !InitialHarvestWorldDrop.bAlreadyApplied);
+	const FAIREInventoryWorkResult RepeatedHarvestWorldDrop =
+		FullInventory->TryStoreMakoWorkReward(RetriableHarvestReward);
+	TestTrue(
+		TEXT("World harvest reward remains retriable while inventories are full"),
+		RepeatedHarvestWorldDrop.Code
+				== EAIREInventoryMutationCode::Succeeded
+			&& RepeatedHarvestWorldDrop.Destination
+				== EAIREInventoryWorkResultDestination::WorldDrop
+			&& !RepeatedHarvestWorldDrop.bAlreadyApplied);
+
+	const FAIREInventoryItemStackSnapshot* RemovableFullStack =
+		FullMakoAfterCraft.ItemStacks.FindByPredicate(
+			[](const FAIREInventoryItemStackSnapshot& Stack)
+			{
+				return Stack.ItemId.ToString().StartsWith(
+					TEXT("AIRE.Test.Unique.FullMako."));
+			});
+	if (!TestNotNull(
+			TEXT("A full MAKO stack can be removed for harvest retry"),
+			RemovableFullStack))
+	{
+		return false;
+	}
+	FAIREInventoryMutationRequest FreeMakoSlotRequest;
+	FreeMakoSlotRequest.SessionId = FullSessionId;
+	FreeMakoSlotRequest.MutationId = FGuid::NewGuid();
+	FreeMakoSlotRequest.ContainerId = MakoContainerId;
+	FreeMakoSlotRequest.ExpectedRevision = FullMakoAfterCraft.Revision;
+	FreeMakoSlotRequest.ItemId = RemovableFullStack->ItemId;
+	FreeMakoSlotRequest.Count = RemovableFullStack->Count;
+	TestTrue(
+		TEXT("A MAKO slot is freed for harvest retry"),
+		FullInventory->TryRemoveItem(FreeMakoSlotRequest).Code
+			== EAIREInventoryMutationCode::Succeeded);
+	FAIREInventoryContainerSnapshot MakoAfterSlotFreed;
+	FAIREInventoryContainerSnapshot WarehouseAfterSlotFreed;
+	FullInventory->GetContainerSnapshot(
+		MakoContainerId,
+		MakoAfterSlotFreed);
+	FullInventory->GetContainerSnapshot(
+		WarehouseContainerId,
+		WarehouseAfterSlotFreed);
+	RetriableHarvestReward.ExpectedMakoRevision =
+		MakoAfterSlotFreed.Revision;
+	RetriableHarvestReward.ExpectedWarehouseRevision =
+		WarehouseAfterSlotFreed.Revision;
+	const FAIREInventoryWorkResult CollectedHarvestReward =
+		FullInventory->TryStoreMakoWorkReward(RetriableHarvestReward);
+	TestTrue(
+		TEXT("The same world harvest reward is collected after space is available"),
+		CollectedHarvestReward.Code
+				== EAIREInventoryMutationCode::Succeeded
+			&& CollectedHarvestReward.Destination
+				== EAIREInventoryWorkResultDestination::Mako);
+	TestTrue(
+		TEXT("Collected world harvest reward replay is idempotent"),
+		FullInventory->TryStoreMakoWorkReward(RetriableHarvestReward).Code
+			== EAIREInventoryMutationCode::AlreadyApplied);
 	return true;
 }
 
