@@ -73,6 +73,7 @@ private:
 
 	FTimerHandle FallbackHitTimerHandle;
 	FTimerHandle FallbackRecoveryTimerHandle;
+	FGuid ActiveExecutionId;
 	bool bHitConsumed = false;
 	bool bTransitionStarted = false;
 	bool bIsEnding = false;

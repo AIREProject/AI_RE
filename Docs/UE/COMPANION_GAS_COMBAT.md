@@ -8,12 +8,15 @@ Unreal Editor 설정과 PIE 검증 절차를 정의합니다.
 
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`,
-  `M03-E06-T01`, `M03-E06-T02`
-- 코드 기준일: 2026-08-04
+  `M03-E06-T01`, `M03-E06-T02`, `M03-E09-T01`, `M03-E09-T02`
+- 코드 기준일: 2026-08-06
 - 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬 검증 완료.
   T05C 인벤토리·무기 장착·소모품 회복 구현과 현재 자산으로 가능한 UBT·Editor·PIE
   검증 완료. M03-E08-T01 Gameplay Inventory Subsystem은 Review이며 사용자 UBT·Editor·PIE,
   실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
+
+Player·MAKO·Enemy가 공유하는 피해·스태거 실행과 Boss/Q 어그로 스왑 계약은
+[`COMBAT_DAMAGE_STAGGER_CONTRACT.md`](COMBAT_DAMAGE_STAGGER_CONTRACT.md)를 따릅니다.
 
 ## 2. 현재 코드 구조
 
@@ -70,7 +73,8 @@ UEProject/Source/AI_RE/LMK/MAKO/
 | Equipment Component | 현재 무기, 비동기 자산, Ability Handle과 Anim Layer 수명 |
 | Support Component | 명시적 지원 요청, 회복 Target과 지원 AbilitySet 수명 |
 | Gameplay Ability | 공격·회복 검증, Cooldown Commit, Montage·Timer와 GE 실행 |
-| Gameplay Effect | 공격별 Cooldown, Health 피해와 회복 |
+| Shared Combat Damage | Target 선언형 Health·선택적 스태거 Attribute 검증과 exact-once 피해 실행 |
+| Gameplay Effect | 공격별 Cooldown과 회복, 공용 Combat Damage Execution |
 | AttributeSet | Health·MaxHealth·Stamina·MaxStamina |
 | Companion Item Definition | Consumable 회복 데이터 또는 Weapon Definition 참조 |
 | Weapon Definition | 무기별 전투 수치, AbilitySet과 공격 표현 |
@@ -97,7 +101,7 @@ Companion Character BeginPlay
 → 기본 공격 Cooldown GE를 실행당 한 번 적용
 → Montage Hit·Combo Window Notify 또는 시간 기반 fallback으로 Step Event 전송
 → 다음 Step 직전 Target·거리 재검증 후 Target 방향 재정렬
-→ Damage GE를 Target ASC에 적용
+→ 공용 Combat Damage Request를 Target ASC에 exact-once 적용
 → Health가 0이면 State.Companion.Disabled.Dead 적용
 → Threat 해제, Ability 취소, Return/Follow 복귀
 ```
@@ -142,6 +146,7 @@ deprecated 프로퍼티로 남아 있지만 런타임에서는 사용하지 않�
 | `ComboSteps` | 선택적 Montage Section·Damage 순서; 빈 배열은 기존 단발 계약 |
 | `LinkedAnimLayerClass` | 무기별 Linked Anim Layer |
 | `Damage` | 기본 공격 피해 |
+| `StaggerValue` | 기본 공격이 적 반응 Gauge에 누적하는 값 |
 | `StaminaCost` | 기존 `.uasset` 호환용 deprecated 필드; 런타임에서 사용하지 않음 |
 | `AttackRange` | 충돌 반경을 제외한 유효 표면 거리 |
 | `CooldownDuration` | GAS Cooldown 지속 시간 |
@@ -184,7 +189,7 @@ AbilitySet 항목은 `AbilityClass`와 `AbilityLevel`을 가집니다.
 - 실행당 Cooldown Commit, 공격 Stamina 무비용
 - Montage 재생 또는 fallback
 - Hit Event 한 번 소비
-- Damage GE 적용
+- 공용 Damage/Stagger Request 적용
 - 취소, Target 소실과 늦은 Notify 무효화
 
 Equipment가 무기 해제·교체·사망 시 부여된 Ability Handle을 취소하고 회수합니다.
@@ -210,6 +215,7 @@ StateTree Attack.Request 1회
 ```text
 MontageSection
 Damage
+StaggerValue
 ```
 
 Combo Window는 초 단위 Data Asset 값보다 Montage의 Anim Notify State로 정의합니다.
@@ -243,12 +249,21 @@ Montage가 없거나 로드되지 않으면 기존 `FallbackHitDelay`와
 
 Anim Notify는 실제 명중을 확정하지 않고 Hit 판정을 시도할 타이밍만 전달합니다.
 현재 T05A는 선택된 Threat Target의 생존·적대성·거리를 Ability에서 검증한 뒤
-Damage GE를 적용합니다.
+공용 Combat Damage Subsystem에 Request를 전달합니다.
 
-실제 Weapon Mesh와 Blade Socket 계약이 추가되면 같은 Ability 내부 Hit 판정 경계를
-Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep으로 교체합니다. 이때도
-StateTree, Combo Step, 단계별 Damage와 실행당 Cooldown 계약은 유지하며,
-기본 공격은 현재 선택 Target 하나만 단계당 한 번 피해를 받도록 제한합니다.
+2026-08-06 이동하는 Boss 대상 PIE에서 이 임시 경계가 Move/Attack 진동과 실제 궤적을
+확인하지 않는 피해 판정을 만든다는 결함이 확인됐습니다. M03-E09-T02에서 MAKO와 Boss가
+재사용하는 실제 근접 공간 판정 경계로 교체합니다. Weapon Mesh와 Blade Socket 계약이
+있으면 Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
+placeholder 공격은 Character 전방 Config 기반 Shape Sweep을 사용합니다. 선택 Target,
+Montage 재생과 거리 진입은 명중 증거가 아니며 실제 Sweep이 snapshotted Target을 교차해야
+공용 Damage Request를 commit할 수 있습니다.
+
+이때도 StateTree, Combo Step, 단계별 Damage, 실행당 Cooldown과 `ExecutionId` exact-once
+계약은 유지합니다. 공격 진입 거리와 더 넓은 취소 거리를 분리해 작은 Target 이동으로
+MoveTo와 Attack이 반복 취소되지 않게 하며, 판정 frame에 Shape를 벗어난 공격은 한 번의
+miss recovery로 종료합니다. 기본 공격은 현재 선택 Target 하나만 단계당 한 번 피해를
+받도록 제한합니다.
 
 같은 Combo 실행 규칙을 사용하는 무기는 Combo Ability를 재사용하고 Weapon Definition의
 Montage Section과 Step 수치만 다르게 구성합니다. 두 번째 이상의 시스템에서 Combo Step
@@ -277,7 +292,7 @@ Window에서 처리합니다. 스킬 활성화가 Cooldown·Target·상태 검�
 않고 다음 Step을 보존합니다. 스킬이 정상 종료해 `Skill Ended`를 보내면 보존한 Step부터
 같은 기본 공격 실행을 재개하므로 기본 공격 Cooldown을 다시 적용하지 않습니다.
 
-스킬 Hit는 실행당 최대 한 번만 기존 Damage GE로 적용합니다. Montage가 없으면 스킬
+스킬 Hit는 실행당 최대 한 번만 공용 Damage/Stagger Request로 적용합니다. Montage가 없으면 스킬
 전용 fallback Hit·Recovery Timer를 사용합니다. 취소·Unequip·Disabled·사망·Target
 파괴 시 두 Ability의 Montage Task, Event Task, Timer, Window Tag, 버퍼와 transient
 참조를 정리하고 늦은 Event를 무시합니다.
@@ -432,8 +447,9 @@ StateTree를 Compile한 뒤 Save합니다.
    Compile·Save합니다.
 
 T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
-거리를 Ability가 다시 검증해 피해를 적용하며, 실제 Weapon Socket Trace는
-Weapon Mesh 계약이 추가된 뒤 연결합니다.
+거리만 다시 검증하는 경로는 T01 기준선이며, M03-E09-T02 이후에는 실제 Weapon Socket
+또는 placeholder 전방 Shape Sweep이 Target을 교차해야 피해를 적용합니다. Notify와
+시간 fallback은 같은 판정 seam을 호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
 
 ### 8.4 전투 스킬 설정
 
@@ -701,16 +717,17 @@ Target을 Reset한 뒤 반복합니다.
 
 1. UBT 빌드와 관련 Blueprint·StateTree Compile 성공
 2. Weapon Definition의 Range·Cooldown 변경이 런타임에 반영
-3. 공격 Stamina 불변·GAS Cooldown·Damage GE 회귀 통과
+3. 공격 Stamina 불변·GAS Cooldown·공용 Damage/Stagger 회귀 통과
 4. 취소·사망·무기 교체·Target 소실 수명주기 통과
 5. Idle·Follow·Combat·Return 로컬 루프 회귀 통과
 6. 인벤토리 원자성, 지원 취소 무소비, 과회복 방지와 무기 실패 복구 통과
 7. 로컬 정책의 거리·우선순위·취소 수명주기와 Policy WBP 입력 경로 통과
+8. Player·MAKO 공격이 같은 Damage/Stagger 계약으로 Boss Health와 반응 Gauge에 적용
 
 검증 후 별도 정리 Task에서 deprecated `CombatDistance`·`CombatCooldown` 프로퍼티와
-기존 StateTree Binding 호환 필드를 제거할 수 있습니다. 실제 적 연동 전에는 현재
-Damage GE가 `UAIRECompanionAttributeSet::Health`에 결합된 점을 해결하고 공용 Combat
-Attribute 또는 Target 피해 계약을 확정해야 합니다.
+기존 StateTree Binding 호환 필드를 제거할 수 있습니다. `M03-E09-T01`에서 기존
+MAKO Health 전용 Damage GE 결합은 Target 선언형 공용 Combat Damage Execution으로
+교체되었습니다. 이후 공격 타입·방어·저항도 이 Target 계약을 확장합니다.
 
 T05C는 실제 플레이어가 ASC·GAS Health·회복 대상 인터페이스를 제공하고 사용자
 UBT·Editor·PIE 검증이 끝날 때까지 `Review`로 유지합니다. 인벤토리 UI,

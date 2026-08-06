@@ -26,7 +26,8 @@
 ### Unreal Engine
 
 - [Companion GAS Combat Architecture and Verification](UE/COMPANION_GAS_COMBAT.md) — MAKO GAS 전투 책임, 무기별 Data Asset, 콤보·신규 무기 확장과 Editor/PIE 검증 절차
-- [Gameplay Inventory and Shared Warehouse](UE/GAMEPLAY_INVENTORY.md) — MAKO 20칸·Equipment 1칸, 공유 창고 50칸과 원자적 로컬 mutation 계약
+- [Shared Combat Damage, Enemy Reaction, and Aggro Swap](UE/COMBAT_DAMAGE_STAGGER_CONTRACT.md) — Player·MAKO·Enemy 공용 피해/스태거 실행, Boss AI와 Q 어그로 스왑 계약
+- [Gameplay Inventory and Shared Storage](UE/GAMEPLAY_INVENTORY.md) — MAKO 20칸·Equipment 1칸, 공유 보관함 50칸과 원자적 로컬 mutation 계약
 
 ## 문서 원칙
 

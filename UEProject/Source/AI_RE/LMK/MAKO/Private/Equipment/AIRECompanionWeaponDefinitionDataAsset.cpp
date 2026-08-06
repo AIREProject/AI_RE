@@ -46,6 +46,24 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			"Damage must be finite and non-negative.");
 		return false;
 	}
+	if (!FMath::IsFinite(StaggerValue)
+		|| StaggerValue < 0.0f
+		|| (Damage <= 0.0f && StaggerValue <= 0.0f))
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidStagger",
+			"Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
+		return false;
+	}
+	if (TargetingMode != EAIRECombatTargetingMode::SingleTarget)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"UnsupportedTargetingMode",
+			"Current companion damage execution supports SingleTarget attacks only.");
+		return false;
+	}
 
 	TSet<FName> ComboMontageSections;
 	for (int32 StepIndex = 0; StepIndex < ComboSteps.Num(); ++StepIndex)
@@ -82,6 +100,30 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 					"AIRECompanionWeaponDefinition",
 					"InvalidComboDamage",
 					"Combo Step {0} Damage must be finite and non-negative."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+		if (!FMath::IsFinite(ComboStep.StaggerValue)
+			|| ComboStep.StaggerValue < 0.0f
+			|| (ComboStep.Damage <= 0.0f
+				&& ComboStep.StaggerValue <= 0.0f))
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboStagger",
+					"Combo Step {0} Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+		if (ComboStep.TargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"UnsupportedComboTargetingMode",
+					"Combo Step {0} must use SingleTarget until area damage fan-out is implemented."),
 				FText::AsNumber(StepIndex));
 			return false;
 		}
@@ -132,6 +174,26 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				"AIRECompanionWeaponDefinition",
 				"InvalidCombatSkillDamage",
 				"Combat Skill Damage must be finite and non-negative.");
+			return false;
+		}
+		if (!FMath::IsFinite(CombatSkill.StaggerValue)
+			|| CombatSkill.StaggerValue < 0.0f
+			|| (CombatSkill.Damage <= 0.0f
+				&& CombatSkill.StaggerValue <= 0.0f))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillStagger",
+				"Combat Skill Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
+			return false;
+		}
+		if (CombatSkill.TargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"UnsupportedCombatSkillTargetingMode",
+				"Current companion combat skills support SingleTarget only.");
 			return false;
 		}
 

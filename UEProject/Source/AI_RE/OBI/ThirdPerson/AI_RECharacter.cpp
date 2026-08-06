@@ -24,6 +24,7 @@
 #include "AI_RECraftingUI.h"
 #include "Engine/Engine.h"
 #include "AI_REInteractableInterface.h"
+#include "AIRECombatEvadeComponent.h"
 #include "Engine/OverlapResult.h"
 
 AAI_RECharacter::AAI_RECharacter()
@@ -64,6 +65,7 @@ AAI_RECharacter::AAI_RECharacter()
 	InventoryComponent = CreateDefaultSubobject<UAI_REPlayerInventoryComponent>(TEXT("InventoryComponent"));
 	CraftingComponent = CreateDefaultSubobject<UAI_REPlayerCraftingComponent>(TEXT("CraftingComponent"));
 	CombatComponent = CreateDefaultSubobject<UAI_REPlayerCombatComponent>(TEXT("CombatComponent"));
+	CombatEvadeComponent = CreateDefaultSubobject<UAIRECombatEvadeComponent>(TEXT("CombatEvade"));
 	
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)

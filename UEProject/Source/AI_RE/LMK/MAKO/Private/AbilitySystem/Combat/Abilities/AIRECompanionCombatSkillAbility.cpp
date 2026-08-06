@@ -1,12 +1,11 @@
 #include "AbilitySystem/Combat/Abilities/AIRECompanionCombatSkillAbility.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/Combat/Effects/AIRECompanionCombatSkillCooldownGameplayEffect.h"
-#include "AbilitySystem/Combat/Effects/AIRECompanionDamageGameplayEffect.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatDamageSubsystem.h"
 #include "Animation/AnimMontage.h"
 #include "Core/AIRECompanionAIController.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
@@ -83,6 +82,7 @@ void UAIRECompanionCombatSkillAbility::ActivateAbility(
 	bIsEnding = false;
 	bHitConsumed = false;
 	bTransitionStarted = false;
+	ActiveExecutionId = FGuid::NewGuid();
 	ActiveWeaponDefinition = GetWeaponDefinition(Handle, ActorInfo);
 
 	AActor* TargetActor = TriggerEventData
@@ -192,6 +192,7 @@ void UAIRECompanionCombatSkillAbility::EndAbility(
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
 	ActiveWeaponDefinition = nullptr;
+	ActiveExecutionId.Invalidate();
 	bHitConsumed = false;
 
 	Super::EndAbility(
@@ -326,41 +327,31 @@ bool UAIRECompanionCombatSkillAbility::ResolveSkillHit()
 	AActor* TargetActor = GetEventTarget();
 	if (!IsActiveExecutionValid()
 		|| !IsTargetValidForSkill(TargetActor)
-		|| !IsTargetInRange(TargetActor))
+		|| !IsTargetInRange(TargetActor)
+		|| ActiveWeaponDefinition->CombatSkill.TargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
 	{
 		return false;
 	}
 
-	UAbilitySystemComponent* SourceAbilitySystem =
-		GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetAbilitySystem =
-		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(
-			TargetActor,
-			true);
-	if (!IsValid(SourceAbilitySystem) || !IsValid(TargetAbilitySystem))
+	UWorld* World = GetWorld();
+	UAIRECombatDamageSubsystem* DamageSubsystem = IsValid(World)
+		? World->GetSubsystem<UAIRECombatDamageSubsystem>()
+		: nullptr;
+	if (!IsValid(DamageSubsystem))
 	{
 		return false;
 	}
 
-	FGameplayEffectContextHandle EffectContext =
-		SourceAbilitySystem->MakeEffectContext();
-	EffectContext.AddSourceObject(ActiveWeaponDefinition);
-	FGameplayEffectSpecHandle DamageSpec =
-		SourceAbilitySystem->MakeOutgoingSpec(
-			UAIRECompanionDamageGameplayEffect::StaticClass(),
-			1.0f,
-			EffectContext);
-	if (!DamageSpec.IsValid())
-	{
-		return false;
-	}
-
-	DamageSpec.Data->SetSetByCallerMagnitude(
-		AIRECompanionGameplayTags::DataDamage,
-		-ActiveWeaponDefinition->CombatSkill.Damage);
-	return SourceAbilitySystem->ApplyGameplayEffectSpecToTarget(
-		*DamageSpec.Data.Get(),
-		TargetAbilitySystem).WasSuccessfullyApplied();
+	FAIRECombatDamageRequest DamageRequest;
+	DamageRequest.Source = GetAvatarActorFromActorInfo();
+	DamageRequest.Target = TargetActor;
+	DamageRequest.Damage = ActiveWeaponDefinition->CombatSkill.Damage;
+	DamageRequest.StaggerValue =
+		ActiveWeaponDefinition->CombatSkill.StaggerValue;
+	DamageRequest.ExecutionId = ActiveExecutionId;
+	return DamageSubsystem->ApplyDamageRequest(DamageRequest)
+		== EAIRECombatDamageResult::Applied;
 }
 
 void UAIRECompanionCombatSkillAbility::StartHitEventWait()

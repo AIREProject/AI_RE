@@ -44,7 +44,11 @@ private:
 	UFUNCTION()
 	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount, FGuid DeliveryId);
 
-	bool SpawnHarvestReward(class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount);
+	bool SpawnHarvestReward(
+		AActor* InstigatorActor,
+		class UAI_REItemDataAsset* RewardItemAsset,
+		int32 GrantedRewardAmount,
+		const FGuid& DeliveryId);
 
-	TSet<FGuid> CompletedRewardDeliveries;
+	TSet<FGuid> SpawnedRewardDeliveries;
 };

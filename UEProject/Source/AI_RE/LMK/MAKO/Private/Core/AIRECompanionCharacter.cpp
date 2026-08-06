@@ -7,11 +7,15 @@
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Interaction/AIRECompanionInventoryInteractionComponent.h"
 #include "AIREGameplayInventorySubsystem.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
+#include "Work/AIRECompanionStorageAutomationComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatEvadeComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -53,6 +57,12 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 	InventoryComponent = CreateDefaultSubobject<UAIRECompanionInventoryComponent>(TEXT("Inventory"));
 	check(InventoryComponent);
 
+	InventoryInteractionComponent =
+		CreateDefaultSubobject<UAIRECompanionInventoryInteractionComponent>(
+			TEXT("InventoryInteraction"));
+	check(InventoryInteractionComponent);
+	InventoryInteractionComponent->SetupAttachment(GetCapsuleComponent());
+
 	SupportComponent = CreateDefaultSubobject<UAIRECompanionSupportComponent>(TEXT("Support"));
 	check(SupportComponent);
 
@@ -61,11 +71,30 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 
 	WorkOrderComponent = CreateDefaultSubobject<UAIRECompanionWorkOrderComponent>(TEXT("WorkOrder"));
 	check(WorkOrderComponent);
+
+	StorageAutomationComponent =
+		CreateDefaultSubobject<UAIRECompanionStorageAutomationComponent>(
+			TEXT("StorageAutomation"));
+	check(StorageAutomationComponent);
+
+	CombatEvadeComponent =
+		CreateDefaultSubobject<UAIRECombatEvadeComponent>(TEXT("CombatEvade"));
+	check(CombatEvadeComponent);
 }
 
 UAbilitySystemComponent* AAIRECompanionCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+FGameplayAttribute AAIRECompanionCharacter::GetCombatHealthAttribute() const
+{
+	return UAIRECompanionAttributeSet::GetHealthAttribute();
+}
+
+EAIRECombatAffiliation AAIRECompanionCharacter::GetCombatAffiliation() const
+{
+	return EAIRECombatAffiliation::PlayerParty;
 }
 
 bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
@@ -79,7 +108,7 @@ bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
 		IsValid(GameInstance)
 			? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
 			: nullptr;
-	FAIREInventoryContainerSnapshot WarehouseSnapshot;
+	FAIREInventoryContainerSnapshot StorageSnapshot;
 	if (!IsValid(InventoryComponent)
 		|| !DeliveryId.IsValid()
 		|| ItemId.IsNone()
@@ -87,9 +116,9 @@ bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
 		|| !InventoryComponent->GetInventorySnapshot(MakoSnapshot)
 		|| !IsValid(GameplayInventory)
 		|| !GameplayInventory->GetContainerSnapshot(
-			UAIREGameplayInventorySubsystem::GetSharedWarehouseContainerId(),
-			WarehouseSnapshot)
-		|| MakoSnapshot.SessionId != WarehouseSnapshot.SessionId)
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			StorageSnapshot)
+		|| MakoSnapshot.SessionId != StorageSnapshot.SessionId)
 	{
 		return false;
 	}
@@ -98,7 +127,7 @@ bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
 	Request.SessionId = MakoSnapshot.SessionId;
 	Request.DeliveryId = DeliveryId;
 	Request.ExpectedMakoRevision = MakoSnapshot.Revision;
-	Request.ExpectedWarehouseRevision = WarehouseSnapshot.Revision;
+	Request.ExpectedStorageRevision = StorageSnapshot.Revision;
 	Request.Reward.ItemId = ItemId;
 	Request.Reward.Count = Count;
 	const FAIREInventoryWorkResult Result =
@@ -110,6 +139,16 @@ bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
 	return Result.Code == EAIREInventoryMutationCode::Succeeded
 		&& Result.Destination
 			!= EAIREInventoryWorkResultDestination::WorldDrop;
+}
+
+void AAIRECompanionCharacter::Interact_Implementation(AActor* Interactor)
+{
+	if (IsValid(InventoryInteractionComponent))
+	{
+		IAI_REInteractableInterface::Execute_Interact(
+			InventoryInteractionComponent,
+			Interactor);
+	}
 }
 
 const UAIRECompanionAttributeSet* AAIRECompanionCharacter::GetCompanionAttributeSet() const
@@ -134,6 +173,12 @@ AAIRECompanionCharacter::GetInventoryComponent() const
 	return InventoryComponent;
 }
 
+UAIRECompanionInventoryInteractionComponent*
+AAIRECompanionCharacter::GetInventoryInteractionComponent() const
+{
+	return InventoryInteractionComponent;
+}
+
 UAIRECompanionSupportComponent*
 AAIRECompanionCharacter::GetSupportComponent() const
 {
@@ -155,6 +200,18 @@ UAIRECompanionWorkOrderComponent*
 AAIRECompanionCharacter::GetWorkOrderComponent() const
 {
 	return WorkOrderComponent;
+}
+
+UAIRECompanionStorageAutomationComponent*
+AAIRECompanionCharacter::GetStorageAutomationComponent() const
+{
+	return StorageAutomationComponent;
+}
+
+UAIRECombatEvadeComponent*
+AAIRECompanionCharacter::GetCombatEvadeComponent() const
+{
+	return CombatEvadeComponent;
 }
 
 FString AAIRECompanionCharacter::GetCompanionId() const
@@ -224,6 +281,13 @@ void AAIRECompanionCharacter::BeginPlay()
 			TEXT("Companion support initialization failed. Companion=%s"),
 			*GetNameSafe(this));
 	}
+	if (bInventoryInitialized && IsValid(StorageAutomationComponent))
+	{
+		StorageAutomationComponent->InitializeAutomation(
+			InventoryComponent,
+			WorkOrderComponent,
+			CompanionConfigData);
+	}
 	HealthChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UAIRECompanionAttributeSet::GetHealthAttribute())
 		.AddUObject(this, &AAIRECompanionCharacter::HandleHealthChanged);
@@ -249,6 +313,11 @@ void AAIRECompanionCharacter::BeginPlay()
 
 void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(StorageAutomationComponent))
+	{
+		StorageAutomationComponent->ShutdownAutomation();
+	}
+
 	if (IsValid(WorkOrderComponent))
 	{
 		WorkOrderComponent->ShutdownWorkOrder();

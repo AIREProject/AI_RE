@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "AIRECombatDamageTargetInterface.h"
 #include "AI_RECharacterBase.generated.h"
 
 class UAI_REStatusComponent;
@@ -14,7 +15,10 @@ class UAI_RESkillComponent;
  * Base character class that provides common functionality for all characters (Player, NPC, Monster)
  */
 UCLASS(abstract)
-class AI_RE_API AAI_RECharacterBase : public ACharacter, public IAbilitySystemInterface
+class AI_RE_API AAI_RECharacterBase
+	: public ACharacter
+	, public IAbilitySystemInterface
+	, public IAIRECombatDamageTargetInterface
 {
 	GENERATED_BODY()
 
@@ -22,6 +26,8 @@ public:
 	AAI_RECharacterBase();
 
 	virtual class UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual FGameplayAttribute GetCombatHealthAttribute() const override;
+	virtual EAIRECombatAffiliation GetCombatAffiliation() const override;
 	virtual void PossessedBy(AController* NewController) override;
 
 protected:

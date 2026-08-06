@@ -7,6 +7,7 @@
 
 class UAI_REAbilitySetDataAsset;
 class UAIRECompanionItemDefinitionDataAsset;
+class UAnimMontage;
 
 USTRUCT(BlueprintType)
 struct FAIRECompanionInitialInventoryEntry
@@ -18,6 +19,21 @@ struct FAIRECompanionInitialInventoryEntry
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "1", UIMin = "1"))
 	int32 Count = 1;
+};
+
+USTRUCT(BlueprintType)
+struct FAIRECompanionStorageRule
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage")
+	TObjectPtr<UAIRECompanionItemDefinitionDataAsset> ItemDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "0", UIMin = "0"))
+	int32 MinimumCarryCount = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Storage", meta = (ClampMin = "0", UIMin = "0"))
+	int32 MaximumCarryCount = 0;
 };
 
 UCLASS(BlueprintType)
@@ -110,6 +126,22 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Inventory")
 	FName DefaultEquippedWeaponItemId;
+
+	/** Ordered rules used by physical MAKO storage work. An empty list disables automation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Storage")
+	TArray<FAIRECompanionStorageRule> StorageRules;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Storage")
+	TObjectPtr<UAnimMontage> StorageWorkMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Storage", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float StorageWorkDuration = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Storage", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float StorageAcceptanceRadius = 75.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Storage", meta = (ClampMin = "0.1", UIMin = "0.1", Units = "s"))
+	float StorageMovementTimeout = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
 	FName DefaultHealingItemId;

@@ -33,7 +33,7 @@ public:
 	static FName GetMakoContainerId();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory")
-	static FName GetSharedWarehouseContainerId();
+	static FName GetSharedStorageContainerId();
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
 	bool GetContainerSnapshot(
@@ -57,9 +57,19 @@ public:
 		const FAIREInventoryTransferRequest& Request);
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
-	FAIREInventoryMutationResult TryTransferPlayerWarehouse(
+	FAIREInventoryMutationResult TryTransferPlayerStorage(
 		UAI_REPlayerInventoryComponent* PlayerInventory,
-		const FAIREPlayerWarehouseTransferRequest& Request);
+		const FAIREPlayerStorageTransferRequest& Request);
+
+	/** Validates Player + SharedStorage craft settlement without mutation. */
+	bool CanCompletePlayerCraft(
+		const UAI_REPlayerInventoryComponent* PlayerInventory,
+		const FAIREPlayerCraftRequest& Request,
+		FAIREInventoryMutationResult& OutResult) const;
+
+	FAIREInventoryMutationResult TryCompletePlayerCraft(
+		UAI_REPlayerInventoryComponent* PlayerInventory,
+		const FAIREPlayerCraftRequest& Request);
 
 	/** Validates a craft completion without changing containers or mutation ledgers. */
 	bool CanCompleteMakoCraftWork(
@@ -70,7 +80,7 @@ public:
 		const FAIREMakoCraftWorkRequest& Request);
 
 	/**
-	 * Stores a reward in MAKO or the shared warehouse. WorldDrop is a routing
+	 * Stores a reward in MAKO or the shared storage. WorldDrop is a routing
 	 * decision only; the harvest actor owns spawn success and duplicate suppression.
 	 */
 	FAIREInventoryWorkResult TryStoreMakoWorkReward(

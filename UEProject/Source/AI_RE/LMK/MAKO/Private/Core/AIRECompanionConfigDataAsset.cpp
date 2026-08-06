@@ -122,6 +122,54 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!FMath::IsFinite(StorageWorkDuration)
+		|| StorageWorkDuration < 0.0f
+		|| !FMath::IsFinite(StorageAcceptanceRadius)
+		|| StorageAcceptanceRadius < 0.0f
+		|| !FMath::IsFinite(StorageMovementTimeout)
+		|| StorageMovementTimeout <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidStorageWorkSettings",
+			"Storage work duration and acceptance radius must be finite and non-negative, and movement timeout must be finite and greater than zero.");
+		return false;
+	}
+
+	TSet<FName> StorageRuleItemIds;
+	for (const FAIRECompanionStorageRule& Rule
+		: StorageRules)
+	{
+		if (!IsValid(Rule.ItemDefinition)
+			|| Rule.MinimumCarryCount < 0
+			|| Rule.MaximumCarryCount < Rule.MinimumCarryCount)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidStorageRule",
+				"Every storage rule must specify a valid Companion Item Definition and satisfy 0 <= Minimum Carry Count <= Maximum Carry Count.");
+			return false;
+		}
+
+		FText ItemValidationError;
+		if (!Rule.ItemDefinition->IsCompanionItemDefinitionValid(
+				ItemValidationError))
+		{
+			OutValidationError = ItemValidationError;
+			return false;
+		}
+
+		if (StorageRuleItemIds.Contains(Rule.ItemDefinition->ItemId))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"DuplicateStorageRule",
+				"Storage rules must not list the same Item ID more than once.");
+			return false;
+		}
+		StorageRuleItemIds.Add(Rule.ItemDefinition->ItemId);
+	}
+
 	int32 RequiredSlots = 0;
 	TSet<FName> InitialItemIds;
 	for (const FAIRECompanionInitialInventoryEntry& Entry : InitialInventory)

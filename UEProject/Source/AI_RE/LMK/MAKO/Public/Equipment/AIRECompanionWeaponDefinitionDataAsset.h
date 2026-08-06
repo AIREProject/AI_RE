@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
+#include "AIRECombatDamageTypes.h"
 #include "AIRECompanionWeaponDefinitionDataAsset.generated.h"
 
 class UAI_REAbilitySetDataAsset;
@@ -19,6 +20,13 @@ struct AI_RE_API FAIREWeaponComboStepDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float Damage = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float StaggerValue = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
+	EAIRECombatTargetingMode TargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 
 	UPROPERTY(
 		EditAnywhere,
@@ -41,6 +49,13 @@ struct AI_RE_API FAIREWeaponCombatSkillDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Skill", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float Damage = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Skill", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float StaggerValue = 75.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Skill")
+	EAIRECombatTargetingMode TargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat Skill", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float CooldownDuration = 4.0f;
@@ -92,6 +107,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float Damage = 25.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float StaggerValue = 25.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
+	EAIRECombatTargetingMode TargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 
 	UPROPERTY(
 		EditDefaultsOnly,

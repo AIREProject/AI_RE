@@ -21,8 +21,10 @@ public class AIREStateTreeMCPToolset : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AssetTools",
 				"BlueprintGraph",
 				"AnimationBlueprintLibrary",
+				"GameplayStateTreeModule",
 				"InputCore",
 				"MovieScene",
 				"MovieSceneTracks",
