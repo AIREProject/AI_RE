@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
-#include "AIRECompanionAbilitySetDataAsset.generated.h"
+#include "AI_REAbilitySetDataAsset.generated.h"
 
 class UGameplayAbility;
 
@@ -19,7 +19,7 @@ struct FAIRECompanionAbilitySetEntry
 };
 
 UCLASS(BlueprintType)
-class AI_RE_API UAIRECompanionAbilitySetDataAsset : public UDataAsset
+class AI_RE_API UAI_REAbilitySetDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 

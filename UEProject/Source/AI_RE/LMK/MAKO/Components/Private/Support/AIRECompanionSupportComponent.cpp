@@ -4,7 +4,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "LocalAI/Support/AIREHealingTargetInterface.h"

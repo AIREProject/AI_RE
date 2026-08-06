@@ -11,6 +11,7 @@
 #include "AI_REHarvestDamageTarget.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REWeaponItemDataAsset.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 
 UAI_REPlayerMeleeAttackAbility::UAI_REPlayerMeleeAttackAbility()
@@ -30,6 +31,10 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 		return;
 	}
 
+	CurrentComboIndex = 1;
+	bIsComboWindowOpen = false;
+	bHasComboInput = false;
+
 	// Wait for Gameplay Event from AnimNotify
 	HitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
 		this,
@@ -42,6 +47,27 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 	{
 		HitEventTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleHitEvent);
 		HitEventTask->ReadyForActivation();
+	}
+
+	ComboWindowOpenTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboWindowOpen")), nullptr, false, false);
+	if (ComboWindowOpenTask)
+	{
+		ComboWindowOpenTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen);
+		ComboWindowOpenTask->ReadyForActivation();
+	}
+
+	ComboWindowCloseTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboWindowClose")), nullptr, false, false);
+	if (ComboWindowCloseTask)
+	{
+		ComboWindowCloseTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose);
+		ComboWindowCloseTask->ReadyForActivation();
+	}
+
+	ComboInputTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboInput")), nullptr, false, false);
+	if (ComboInputTask)
+	{
+		ComboInputTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleComboInput);
+		ComboInputTask->ReadyForActivation();
 	}
 
 	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
@@ -65,8 +91,9 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 			TEXT("PlayerMeleeMontage"),
 			MontageToPlay,
 			1.0f,
-			NAME_None,
+			FName("Combo1"),
 			true,
+			1.0f,
 			0.0f);
 
 		if (MontageTask)
@@ -94,6 +121,9 @@ void UAI_REPlayerMeleeAttackAbility::EndAbility(
 {
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
+	ComboWindowOpenTask = nullptr;
+	ComboWindowCloseTask = nullptr;
+	ComboInputTask = nullptr;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -111,6 +141,38 @@ void UAI_REPlayerMeleeAttackAbility::HandleMontageInterrupted()
 void UAI_REPlayerMeleeAttackAbility::HandleHitEvent(FGameplayEventData Payload)
 {
 	PerformTraceHit();
+}
+
+void UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen(FGameplayEventData Payload)
+{
+	bIsComboWindowOpen = true;
+	bHasComboInput = false;
+}
+
+void UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose(FGameplayEventData Payload)
+{
+	bIsComboWindowOpen = false;
+}
+
+void UAI_REPlayerMeleeAttackAbility::HandleComboInput(FGameplayEventData Payload)
+{
+	if (bIsComboWindowOpen && !bHasComboInput)
+	{
+		bHasComboInput = true;
+		
+		ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+		if (Character && Character->GetMesh() && Character->GetMesh()->GetAnimInstance())
+		{
+			UAnimInstance* AnimInst = Character->GetMesh()->GetAnimInstance();
+			CurrentMontage = AnimInst->GetCurrentActiveMontage();
+			
+			FString CurrentSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex);
+			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex + 1);
+			
+			AnimInst->Montage_SetNextSection(FName(*CurrentSectionStr), FName(*NextSectionStr), CurrentMontage);
+			CurrentComboIndex++;
+		}
+	}
 }
 
 void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()

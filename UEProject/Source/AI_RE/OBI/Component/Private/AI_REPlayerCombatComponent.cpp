@@ -31,7 +31,13 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
 			{
 				FGameplayTag AttackTag = FGameplayTag::RequestGameplayTag(FName("Event.Combat.MeleeAttack"));
-				ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(AttackTag));
+				bool bActivated = ASC->TryActivateAbilitiesByTag(FGameplayTagContainer(AttackTag));
+				if (!bActivated)
+				{
+					FGameplayEventData Payload;
+					Payload.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboInput"));
+					ASC->HandleGameplayEvent(Payload.EventTag, &Payload);
+				}
 			}
 		}
 	}

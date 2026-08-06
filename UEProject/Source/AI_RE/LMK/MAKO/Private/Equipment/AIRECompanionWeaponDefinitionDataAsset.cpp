@@ -1,6 +1,6 @@
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "GameplayTagsManager.h"
 #include "Misc/DataValidation.h"

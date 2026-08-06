@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Abilities/GameplayAbility.h"
+#include "AI_REPlayerGameplayAbility.h"
 #include "AI_REPlayerMeleeAttackAbility.generated.h"
 
 class UAnimMontage;
@@ -9,7 +9,7 @@ class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitGameplayEvent;
 
 UCLASS()
-class AI_RE_API UAI_REPlayerMeleeAttackAbility : public UGameplayAbility
+class AI_RE_API UAI_REPlayerMeleeAttackAbility : public UAI_REPlayerGameplayAbility
 {
 	GENERATED_BODY()
 
@@ -52,11 +52,33 @@ private:
 	UFUNCTION()
 	void HandleHitEvent(FGameplayEventData Payload);
 
+	UFUNCTION()
+	void HandleComboWindowOpen(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleComboWindowClose(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleComboInput(FGameplayEventData Payload);
+
 	void PerformTraceHit();
+
+	int32 CurrentComboIndex = 1;
+	bool bIsComboWindowOpen = false;
+	bool bHasComboInput = false;
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitEventTask;
+
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboWindowOpenTask;
+
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboWindowCloseTask;
+
+	UPROPERTY()
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboInputTask;
 };
