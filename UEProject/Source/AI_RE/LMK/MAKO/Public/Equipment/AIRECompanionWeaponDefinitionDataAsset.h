@@ -6,7 +6,7 @@
 #include "AIRECombatDamageTypes.h"
 #include "AIRECompanionWeaponDefinitionDataAsset.generated.h"
 
-class UAIRECompanionAbilitySetDataAsset;
+class UAI_REAbilitySetDataAsset;
 class UAnimInstance;
 class UAnimMontage;
 
@@ -90,7 +90,7 @@ public:
 	FGameplayTag WeaponTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
-	TSoftObjectPtr<UAIRECompanionAbilitySetDataAsset> AbilitySet;
+	TSoftObjectPtr<UAI_REAbilitySetDataAsset> AbilitySet;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack")
 	TSoftObjectPtr<UAnimMontage> AttackMontage;

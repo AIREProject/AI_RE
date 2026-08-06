@@ -3,7 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
 #include "Animation/AnimInstance.h"
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -248,7 +248,7 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 	PendingWeaponDefinition = nullptr;
 
 	FText ValidationError;
-	UAIRECompanionAbilitySetDataAsset* AbilitySet =
+	UAI_REAbilitySetDataAsset* AbilitySet =
 		WeaponDefinition->AbilitySet.Get();
 	if (!IsValid(AbilitySet) || !AbilitySet->IsAbilitySetValid(ValidationError))
 	{

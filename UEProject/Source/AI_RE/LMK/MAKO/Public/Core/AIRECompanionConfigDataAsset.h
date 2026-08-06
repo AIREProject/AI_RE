@@ -5,7 +5,7 @@
 #include "LocalAI/Policy/AIRECompanionLocalBehaviorPolicy.h"
 #include "AIRECompanionConfigDataAsset.generated.h"
 
-class UAIRECompanionAbilitySetDataAsset;
+class UAI_REAbilitySetDataAsset;
 class UAIRECompanionItemDefinitionDataAsset;
 class UAnimMontage;
 
@@ -147,5 +147,5 @@ public:
 	FName DefaultHealingItemId;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
-	TObjectPtr<UAIRECompanionAbilitySetDataAsset> SupportAbilitySet;
+	TObjectPtr<UAI_REAbilitySetDataAsset> SupportAbilitySet;
 };

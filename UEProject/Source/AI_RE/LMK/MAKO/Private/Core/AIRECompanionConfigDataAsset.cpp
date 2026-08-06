@@ -2,7 +2,7 @@
 
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "AIREGameplayInventoryTypes.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
