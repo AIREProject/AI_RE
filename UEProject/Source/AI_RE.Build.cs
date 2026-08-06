@@ -46,6 +46,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/OBI/ThirdPerson/Variant_Combat/Gameplay",
 			"AI_RE/OBI/ThirdPerson/Variant_Combat/Interfaces",
 			"AI_RE/OBI/Component/Public",
+			"AI_RE/OBI/Abilities/Public",
 			"AI_RE/OBI/UI/Public",
 			"AI_RE/Global/Components/Public",
 			"AI_RE/Global/Inventory/Public",
