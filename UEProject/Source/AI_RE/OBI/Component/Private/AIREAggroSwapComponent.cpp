@@ -1,6 +1,5 @@
 #include "AIREAggroSwapComponent.h"
 
-#include "AI_REPlayerCombatComponent.h"
 #include "AIRECombatDamageTargetInterface.h"
 #include "AIRECombatEvadeComponent.h"
 #include "AIREEnemyAggroComponent.h"
@@ -80,21 +79,16 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 	AActor* CurrentTarget = Attack.Target.Get();
 	AActor* NewTarget = nullptr;
 	UAIRECombatEvadeComponent* Evade = nullptr;
-	UAI_REPlayerCombatComponent* PlayerCombatToStop = nullptr;
 	if (CurrentTarget == PlayerPawn)
 	{
 		NewTarget = OtherPartyActor;
 		Evade = PlayerPawn->FindComponentByClass<UAIRECombatEvadeComponent>();
-		PlayerCombatToStop =
-			PlayerPawn->FindComponentByClass<UAI_REPlayerCombatComponent>();
 	}
 	else if (CurrentTarget == OtherPartyActor)
 	{
 		NewTarget = PlayerPawn;
 		Evade = OtherPartyActor->FindComponentByClass<
 			UAIRECombatEvadeComponent>();
-		PlayerCombatToStop = OtherPartyActor->FindComponentByClass<
-			UAI_REPlayerCombatComponent>();
 	}
 	if (!IsValid(Aggro)
 		|| !FMath::IsFinite(CooldownDuration)
@@ -121,10 +115,7 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 		return EAIREAggroSwapResult::CommitRejected;
 	}
 	BossController->ClearFocus(EAIFocusPriority::Gameplay);
-	if (IsValid(PlayerCombatToStop))
-	{
-		PlayerCombatToStop->CancelPrimaryActionForEvade();
-	}
+	// The evade component owns movement and active GAS ability cancellation.
 	if (!Evade->TryStartLateralDash(Enemy.Get()))
 	{
 		return EAIREAggroSwapResult::EvadeRejected;
