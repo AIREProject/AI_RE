@@ -7,7 +7,9 @@
 #include "AI_REPlayerController.generated.h"
 
 class UInputMappingContext;
+class UInputAction;
 class UUserWidget;
+class UAIREAggroSwapComponent;
 
 /**
  *  Basic PlayerController class for a third person game
@@ -17,6 +19,12 @@ UCLASS(abstract)
 class AAI_REPlayerController : public APlayerController
 {
 	GENERATED_BODY()
+
+public:
+	AAI_REPlayerController();
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Aggro Swap")
+	UAIREAggroSwapComponent* GetAggroSwapComponent() const;
 	
 protected:
 
@@ -27,6 +35,10 @@ protected:
 	/** Input Mapping Contexts */
 	UPROPERTY(EditAnywhere, Category="Input|Input Mappings")
 	TArray<UInputMappingContext*> MobileExcludedMappingContexts;
+
+	/** Assign IA_AIREAggroSwap and map it to Q in an existing input mapping context. */
+	UPROPERTY(EditDefaultsOnly, Category = "Input|Combat")
+	TObjectPtr<UInputAction> AggroSwapAction;
 
 	/** Mobile controls widget to spawn */
 	UPROPERTY(EditAnywhere, Category="Input|Touch Controls")
@@ -48,5 +60,10 @@ protected:
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+
+	void HandleAggroSwapInput();
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAIREAggroSwapComponent> AggroSwapComponent;
 
 };

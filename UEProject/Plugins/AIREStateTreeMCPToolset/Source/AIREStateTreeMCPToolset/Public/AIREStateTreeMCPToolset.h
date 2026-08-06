@@ -66,6 +66,9 @@ struct FAIREStateTreeMutationResult
 	TObjectPtr<UStateTreeState> State = nullptr;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|StateTree")
+	TObjectPtr<UStateTree> StateTree = nullptr;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|StateTree")
 	FGuid NodeID;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|StateTree")
@@ -157,6 +160,12 @@ class AIRESTATETREEMCPTOOLSET_API UAIREStateTreeMCPToolset : public UToolsetDefi
 	GENERATED_BODY()
 
 public:
+	/** Creates an unsaved Enemy AI StateTree under the project-owned LMK root. */
+	UFUNCTION(meta = (AICallable), Category = "AIRE|StateTree|Lifecycle")
+	static FAIREStateTreeMutationResult CreateEnemyStateTree(
+		const FString& FolderPath,
+		FName AssetName);
+
 	/** Lists exact loaded UScriptStruct paths accepted by node creation tools. */
 	UFUNCTION(meta = (AICallable), Category = "AIRE|StateTree|Query")
 	static TArray<FAIREStateTreeNodeTypeInfo> ListNodeTypes(EAIREStateTreeNodeKind NodeKind, const FString& NameFilter = TEXT(""));

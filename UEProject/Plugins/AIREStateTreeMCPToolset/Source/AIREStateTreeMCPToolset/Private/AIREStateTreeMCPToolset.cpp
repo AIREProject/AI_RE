@@ -1,6 +1,10 @@
 #include "AIREStateTreeMCPToolset.h"
 
+#include "AIREEnemyStateTree.h"
+#include "AssetToolsModule.h"
 #include "Editor.h"
+#include "Misc/PackageName.h"
+#include "Modules/ModuleManager.h"
 #include "ScopedTransaction.h"
 #include "PropertyBindingPath.h"
 #include "StateTree.h"
@@ -13,6 +17,7 @@
 #include "StateTreePropertyBindings.h"
 #include "StateTreeState.h"
 #include "StateTreeTaskBase.h"
+#include "StateTreeFactory.h"
 #include "Subsystems/EditorAssetSubsystem.h"
 #include "UObject/UObjectIterator.h"
 
@@ -415,6 +420,66 @@ namespace
 			return EStateTreeTransitionPriority::Normal;
 		}
 	}
+}
+
+FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::CreateEnemyStateTree(
+	const FString& FolderPath,
+	const FName AssetName)
+{
+	if (!FolderPath.StartsWith(AllowedAssetRoot))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("Folder '%s' is outside the allowed root '%s'."),
+			*FolderPath,
+			AllowedAssetRoot));
+	}
+	if (AssetName.IsNone()
+		|| AssetName.ToString().Contains(TEXT("/")))
+	{
+		return MakeFailure(TEXT("AssetName must be a non-empty object name."));
+	}
+
+	const FString PackageName = FolderPath / AssetName.ToString();
+	if (!FPackageName::IsValidLongPackageName(PackageName))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("'%s' is not a valid Unreal package path."),
+			*PackageName));
+	}
+
+	UEditorAssetSubsystem* AssetSubsystem = GEditor != nullptr
+		? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>()
+		: nullptr;
+	if (!IsValid(AssetSubsystem))
+	{
+		return MakeFailure(TEXT("Editor Asset Subsystem is unavailable."));
+	}
+	if (AssetSubsystem->DoesAssetExist(PackageName))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("Asset '%s' already exists."),
+			*PackageName));
+	}
+
+	UStateTreeFactory* Factory = NewObject<UStateTreeFactory>();
+	Factory->SetSchemaClass(UAIREEnemyStateTreeSchema::StaticClass());
+	FAssetToolsModule& AssetToolsModule =
+		FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+	UStateTree* NewStateTree = Cast<UStateTree>(
+		AssetToolsModule.Get().CreateAsset(
+			AssetName.ToString(),
+			FolderPath,
+			UStateTree::StaticClass(),
+			Factory));
+	if (!IsValid(NewStateTree))
+	{
+		return MakeFailure(TEXT("StateTree factory could not create the asset."));
+	}
+
+	FAIREStateTreeMutationResult Result = MakeSuccess(
+		TEXT("Enemy AI StateTree created in memory. Configure, compile, and save explicitly."));
+	Result.StateTree = NewStateTree;
+	return Result;
 }
 
 TArray<FAIREStateTreeNodeTypeInfo> UAIREStateTreeMCPToolset::ListNodeTypes(

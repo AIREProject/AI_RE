@@ -9,6 +9,8 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "AI_REHarvestDamageTarget.h"
+#include "AIRECombatDamageSubsystem.h"
+#include "AIRECombatDamageTargetInterface.h"
 #include "AI_RECharacterBase.h"
 #include "AI_REStatusComponent.h"
 #include "AbilitySystemComponent.h"
@@ -27,6 +29,19 @@ UAI_REPlayerCombatComponent::UAI_REPlayerCombatComponent()
 void UAI_REPlayerCombatComponent::BeginPlay()
 {
 	Super::BeginPlay();
+}
+
+void UAI_REPlayerCombatComponent::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
+{
+	TryStopPrimaryAction();
+	if (MontageLoadHandle.IsValid())
+	{
+		MontageLoadHandle->CancelHandle();
+		MontageLoadHandle.Reset();
+	}
+	CachedAttackMontage = nullptr;
+	Super::EndPlay(EndPlayReason);
 }
 
 void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
@@ -53,6 +68,7 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 	}
 
 	bIsActionActive = true;
+	ActiveExecutionId = FGuid::NewGuid();
 
 	// Play async loaded montage if available
 	if (CachedAttackMontage && OwnerChar)
@@ -74,10 +90,22 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 void UAI_REPlayerCombatComponent::TryStopPrimaryAction()
 {
 	bIsActionActive = false;
+	ActiveExecutionId.Invalidate();
 	
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
+	}
+}
+
+void UAI_REPlayerCombatComponent::CancelPrimaryActionForEvade()
+{
+	TryStopPrimaryAction();
+	if (AAI_RECharacterBase* OwnerCharacter =
+		Cast<AAI_RECharacterBase>(GetOwner());
+		IsValid(OwnerCharacter) && IsValid(CachedAttackMontage))
+	{
+		OwnerCharacter->StopAnimMontage(CachedAttackMontage);
 	}
 }
 
@@ -155,6 +183,9 @@ void UAI_REPlayerCombatComponent::PerformTraceHit()
 
 	float TraceDist = 150.f; // Fallback
 	float BaseDmg = 10.f;    // Fallback
+	float StaggerValue = AttackStaggerValue;
+	EAIRECombatTargetingMode TargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 
 	if (EquippedWeapon)
 	{
@@ -164,6 +195,9 @@ void UAI_REPlayerCombatComponent::PerformTraceHit()
 			{
 				TraceDist = WeaponItem->WeaponDefinition->AttackRange;
 				BaseDmg = WeaponItem->WeaponDefinition->Damage;
+				StaggerValue = WeaponItem->WeaponDefinition->StaggerValue;
+				TargetingMode =
+					WeaponItem->WeaponDefinition->TargetingMode;
 			}
 		}
 	}
@@ -184,8 +218,25 @@ void UAI_REPlayerCombatComponent::PerformTraceHit()
 			DrawDebugLine(GetWorld(), TraceStart, HitResult.ImpactPoint, FColor::Red, false, 2.0f);
 			DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 10.0f, FColor::Green, false, 2.0f);
 
-			// Apply harvest damage
-			if (HitActor->Implements<UAI_REHarvestDamageTarget>())
+			if (HitActor->Implements<UAIRECombatDamageTargetInterface>()
+				&& TargetingMode
+					== EAIRECombatTargetingMode::SingleTarget)
+			{
+				if (UAIRECombatDamageSubsystem* DamageSubsystem =
+					GetWorld()->GetSubsystem<UAIRECombatDamageSubsystem>())
+				{
+					FAIRECombatDamageRequest DamageRequest;
+					DamageRequest.Source = OwnerPawn;
+					DamageRequest.Target = HitActor;
+					DamageRequest.Damage = BaseDmg;
+					DamageRequest.StaggerValue = StaggerValue;
+					DamageRequest.ExecutionId = ActiveExecutionId;
+					DamageRequest.bHasHitResult = true;
+					DamageRequest.HitResult = HitResult;
+					DamageSubsystem->ApplyDamageRequest(DamageRequest);
+				}
+			}
+			else if (HitActor->Implements<UAI_REHarvestDamageTarget>())
 			{
 				IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(HitActor, BaseDmg, OwnerPawn);
 			}

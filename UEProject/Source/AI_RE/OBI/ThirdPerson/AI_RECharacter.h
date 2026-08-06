@@ -15,6 +15,7 @@ class UAI_REMainUI;
 class UAI_REPlayerCombatComponent;
 class UAI_REPlayerInventoryComponent;
 class UAI_REPlayerCraftingComponent;
+class UAIRECombatEvadeComponent;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
@@ -175,6 +176,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components") 
 	TObjectPtr<UAI_REPlayerCombatComponent> CombatComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
+	TObjectPtr<UAIRECombatEvadeComponent> CombatEvadeComponent;
+
 	virtual void BeginPlay() override;
 	
 public:
@@ -189,6 +193,7 @@ public:
 	// FOCEINLINE -> Function Call 방식이 아니라 사용 위치에서 코드를 받아 붙여넣어(inline) 실행
 	FORCEINLINE TObjectPtr<UAI_REPlayerInventoryComponent> GetInventoryComponent() const { return InventoryComponent; }
 	FORCEINLINE TObjectPtr<UAI_REPlayerCombatComponent> GetCombatComponent() const { return CombatComponent; }
+	FORCEINLINE UAIRECombatEvadeComponent* GetCombatEvadeComponent() const { return CombatEvadeComponent; }
 	
 };
 

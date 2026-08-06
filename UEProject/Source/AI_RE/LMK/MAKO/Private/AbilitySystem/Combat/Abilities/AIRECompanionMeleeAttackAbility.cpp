@@ -1,12 +1,11 @@
 #include "AbilitySystem/Combat/Abilities/AIRECompanionMeleeAttackAbility.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/Combat/Effects/AIRECompanionAttackCooldownGameplayEffect.h"
-#include "AbilitySystem/Combat/Effects/AIRECompanionDamageGameplayEffect.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatDamageSubsystem.h"
 #include "Animation/AnimMontage.h"
 #include "Core/AIRECompanionAIController.h"
 #include "Core/AIRECompanionCharacter.h"
@@ -231,6 +230,32 @@ FName UAIRECompanionMeleeAttackAbility::GetAttackStepMontageSection(const int32 
 	}
 
 	return ActiveWeaponDefinition->ComboSteps[StepIndex].MontageSection;
+}
+
+float UAIRECompanionMeleeAttackAbility::GetAttackStepStaggerValue(
+	const int32 StepIndex) const
+{
+	if (!IsAttackStepIndexValid(StepIndex))
+	{
+		return 0.0f;
+	}
+
+	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
+		? ActiveWeaponDefinition->StaggerValue
+		: ActiveWeaponDefinition->ComboSteps[StepIndex].StaggerValue;
+}
+
+EAIRECombatTargetingMode
+UAIRECompanionMeleeAttackAbility::GetAttackStepTargetingMode(
+	const int32 StepIndex) const
+{
+	if (!IsAttackStepIndexValid(StepIndex))
+	{
+		return EAIRECombatTargetingMode::Area;
+	}
+	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
+		? ActiveWeaponDefinition->TargetingMode
+		: ActiveWeaponDefinition->ComboSteps[StepIndex].TargetingMode;
 }
 
 UAIRECompanionMeleeAttackAbility::EExecutionMode
@@ -598,13 +623,17 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 	}
 
 	const float StepDamage = GetAttackStepDamage(CurrentStepIndex);
-	if (!FMath::IsFinite(StepDamage) || StepDamage <= 0.0f)
+	if (!FMath::IsFinite(StepDamage) || StepDamage < 0.0f)
 	{
 		return false;
 	}
 
 	if (ActiveExecutionMode == EExecutionMode::Harvest)
 	{
+		if (StepDamage <= 0.0f)
+		{
+			return false;
+		}
 		const bool bAppliedHarvestDamage =
 			IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(
 				TargetActor,
@@ -624,33 +653,34 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 		return bAppliedHarvestDamage;
 	}
 
-	UAbilitySystemComponent* SourceAbilitySystem = GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetAbilitySystem =
-		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor, true);
-	if (!IsValid(SourceAbilitySystem) || !IsValid(TargetAbilitySystem))
+	const float StepStagger = GetAttackStepStaggerValue(CurrentStepIndex);
+	if (!FMath::IsFinite(StepStagger) || StepStagger < 0.0f)
+	{
+		return false;
+	}
+	if (GetAttackStepTargetingMode(CurrentStepIndex)
+		!= EAIRECombatTargetingMode::SingleTarget)
 	{
 		return false;
 	}
 
-	FGameplayEffectContextHandle EffectContext = SourceAbilitySystem->MakeEffectContext();
-	EffectContext.AddSourceObject(GetAvatarActorFromActorInfo());
-	FGameplayEffectSpecHandle DamageSpec = SourceAbilitySystem->MakeOutgoingSpec(
-		UAIRECompanionDamageGameplayEffect::StaticClass(),
-		1.0f,
-		EffectContext);
-	if (!DamageSpec.IsValid())
+	UWorld* World = GetWorld();
+	UAIRECombatDamageSubsystem* DamageSubsystem = IsValid(World)
+		? World->GetSubsystem<UAIRECombatDamageSubsystem>()
+		: nullptr;
+	if (!IsValid(DamageSubsystem))
 	{
 		return false;
 	}
 
-	DamageSpec.Data->SetSetByCallerMagnitude(
-		AIRECompanionGameplayTags::DataDamage,
-		-StepDamage);
-	const FActiveGameplayEffectHandle AppliedDamage =
-		SourceAbilitySystem->ApplyGameplayEffectSpecToTarget(
-			*DamageSpec.Data.Get(),
-			TargetAbilitySystem);
-	if (!AppliedDamage.WasSuccessfullyApplied())
+	FAIRECombatDamageRequest DamageRequest;
+	DamageRequest.Source = GetAvatarActorFromActorInfo();
+	DamageRequest.Target = TargetActor;
+	DamageRequest.Damage = StepDamage;
+	DamageRequest.StaggerValue = StepStagger;
+	DamageRequest.ExecutionId = CurrentStepExecutionId;
+	if (DamageSubsystem->ApplyDamageRequest(DamageRequest)
+		!= EAIRECombatDamageResult::Applied)
 	{
 		return false;
 	}
@@ -668,6 +698,7 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 
 void UAIRECompanionMeleeAttackAbility::ResetCurrentStepState()
 {
+	CurrentStepExecutionId = FGuid::NewGuid();
 	bCurrentStepHitConsumed = false;
 	bComboWindowOpen = false;
 	bNextStepQueued = false;
