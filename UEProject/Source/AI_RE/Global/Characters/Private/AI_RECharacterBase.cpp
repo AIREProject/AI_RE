@@ -30,6 +30,16 @@ UAbilitySystemComponent* AAI_RECharacterBase::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+FGameplayAttribute AAI_RECharacterBase::GetCombatHealthAttribute() const
+{
+	return UAI_REAttributeSet::GetHPAttribute();
+}
+
+EAIRECombatAffiliation AAI_RECharacterBase::GetCombatAffiliation() const
+{
+	return EAIRECombatAffiliation::PlayerParty;
+}
+
 void AAI_RECharacterBase::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);

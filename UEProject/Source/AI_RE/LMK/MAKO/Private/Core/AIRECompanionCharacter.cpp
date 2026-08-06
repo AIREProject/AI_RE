@@ -14,6 +14,7 @@
 #include "Work/AIRECompanionStorageAutomationComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatEvadeComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -75,11 +76,25 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 		CreateDefaultSubobject<UAIRECompanionStorageAutomationComponent>(
 			TEXT("StorageAutomation"));
 	check(StorageAutomationComponent);
+
+	CombatEvadeComponent =
+		CreateDefaultSubobject<UAIRECombatEvadeComponent>(TEXT("CombatEvade"));
+	check(CombatEvadeComponent);
 }
 
 UAbilitySystemComponent* AAIRECompanionCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+FGameplayAttribute AAIRECompanionCharacter::GetCombatHealthAttribute() const
+{
+	return UAIRECompanionAttributeSet::GetHealthAttribute();
+}
+
+EAIRECombatAffiliation AAIRECompanionCharacter::GetCombatAffiliation() const
+{
+	return EAIRECombatAffiliation::PlayerParty;
 }
 
 bool AAIRECompanionCharacter::TryReceiveHarvestReward_Implementation(
@@ -191,6 +206,12 @@ UAIRECompanionStorageAutomationComponent*
 AAIRECompanionCharacter::GetStorageAutomationComponent() const
 {
 	return StorageAutomationComponent;
+}
+
+UAIRECombatEvadeComponent*
+AAIRECompanionCharacter::GetCombatEvadeComponent() const
+{
+	return CombatEvadeComponent;
 }
 
 FString AAIRECompanionCharacter::GetCompanionId() const

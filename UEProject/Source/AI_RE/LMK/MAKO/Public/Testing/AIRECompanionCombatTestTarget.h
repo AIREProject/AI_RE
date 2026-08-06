@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "AIRECombatDamageTargetInterface.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
 #include "LocalAI/Support/AIREHealingTargetInterface.h"
 #include "GameFramework/Actor.h"
@@ -17,6 +18,7 @@ UCLASS(Blueprintable)
 class AI_RE_API AAIRECompanionCombatTestTarget
 	: public AActor
 	, public IAbilitySystemInterface
+	, public IAIRECombatDamageTargetInterface
 	, public IAIREThreatTargetInterface
 	, public IAIREHealingTargetInterface
 {
@@ -26,6 +28,8 @@ public:
 	AAIRECompanionCombatTestTarget();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual FGameplayAttribute GetCombatHealthAttribute() const override;
+	virtual EAIRECombatAffiliation GetCombatAffiliation() const override;
 	virtual bool IsHostileThreatFor_Implementation(const AActor* Observer) const override;
 	virtual bool IsAliveThreatTarget_Implementation() const override;
 	virtual FGameplayAttribute GetHealingHealthAttribute() const override;
@@ -34,6 +38,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Testing")
 	const UAIRECompanionAttributeSet* GetTestAttributeSet() const;
+
+	void SetHostileForTesting(bool bInIsHostile);
 
 protected:
 	virtual void BeginPlay() override;

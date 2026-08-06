@@ -3,11 +3,13 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "AIREHarvestRewardReceiver.h"
+#include "AIRECombatDamageTargetInterface.h"
 #include "AI_REInteractableInterface.h"
 #include "GameFramework/Character.h"
 #include "AIRECompanionCharacter.generated.h"
 
 class UAIRECompanionConfigDataAsset;
+class UAIRECombatEvadeComponent;
 class UAIRECompanionAttributeSet;
 class UAIRECompanionChatComponent;
 class UAIRECompanionEquipmentComponent;
@@ -24,6 +26,7 @@ UCLASS(Blueprintable)
 class AI_RE_API AAIRECompanionCharacter
 	: public ACharacter
 	, public IAbilitySystemInterface
+	, public IAIRECombatDamageTargetInterface
 	, public IAIREHarvestRewardReceiver
 	, public IAI_REInteractableInterface
 {
@@ -33,6 +36,8 @@ public:
 	AAIRECompanionCharacter();
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	virtual FGameplayAttribute GetCombatHealthAttribute() const override;
+	virtual EAIRECombatAffiliation GetCombatAffiliation() const override;
 	virtual bool TryReceiveHarvestReward_Implementation(
 		FGuid DeliveryId,
 		FName ItemId,
@@ -71,6 +76,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Storage")
 	UAIRECompanionStorageAutomationComponent*
 		GetStorageAutomationComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Combat")
+	UAIRECombatEvadeComponent* GetCombatEvadeComponent() const;
 
 	bool ResetAttributesToConfiguredDefaults();
 
@@ -120,6 +128,9 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Storage", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionStorageAutomationComponent>
 		StorageAutomationComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Combat", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECombatEvadeComponent> CombatEvadeComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Configuration", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig;

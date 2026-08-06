@@ -30,6 +30,20 @@ AAIRECompanionCombatTestTarget::GetAbilitySystemComponent() const
 	return AbilitySystemComponent;
 }
 
+FGameplayAttribute
+AAIRECompanionCombatTestTarget::GetCombatHealthAttribute() const
+{
+	return UAIRECompanionAttributeSet::GetHealthAttribute();
+}
+
+EAIRECombatAffiliation
+AAIRECompanionCombatTestTarget::GetCombatAffiliation() const
+{
+	return bIsHostile
+		? EAIRECombatAffiliation::Enemy
+		: EAIRECombatAffiliation::PlayerParty;
+}
+
 bool AAIRECompanionCombatTestTarget::IsHostileThreatFor_Implementation(
 	const AActor* Observer) const
 {
@@ -68,6 +82,12 @@ const UAIRECompanionAttributeSet*
 AAIRECompanionCombatTestTarget::GetTestAttributeSet() const
 {
 	return AttributeSet;
+}
+
+void AAIRECompanionCombatTestTarget::SetHostileForTesting(
+	const bool bInIsHostile)
+{
+	bIsHostile = bInIsHostile;
 }
 
 void AAIRECompanionCombatTestTarget::BeginPlay()

@@ -1,0 +1,12 @@
+#pragma once
+
+#include "NativeGameplayTags.h"
+
+namespace AIRECombatGameplayTags
+{
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(DataDamage);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(DataStagger);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(StateDead);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(StateFlinching);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(StateStunned);
+}

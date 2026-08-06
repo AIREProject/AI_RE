@@ -51,6 +51,8 @@ public class AI_RE : ModuleRules
 			"AI_RE/Global/Inventory/Public",
 			"AI_RE/Global/Actors/Public",
 			"AI_RE/Global/Interfaces/Public",
+			"AI_RE/Global/Combat/Public",
+			"AI_RE/Global/AI/Public",
 			"AI_RE/Global/Abilities/Attributes/Public",
 			"AI_RE/Global/Characters/Public",
 			"AI_RE/Global/Tags/Public",

@@ -24,6 +24,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TryStopPrimaryAction();
 
+	/** Stops only this component's active attack presentation for a forced evade. */
+	void CancelPrimaryActionForEvade();
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
 	void EquipWeapon(UAI_REItemDataAsset* WeaponData);
 
@@ -40,12 +43,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat")
 	float AttackStaminaCost = 15.f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "0.0", UIMin = "0.0"))
+	float AttackStaggerValue = 25.0f;
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void PerformTraceHit();
 
 	bool bIsActionActive = false;
+	FGuid ActiveExecutionId;
 
 	UPROPERTY()
 	FTimerHandle ActionTimerHandle;
