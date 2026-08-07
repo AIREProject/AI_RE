@@ -16,6 +16,9 @@ Editor-only UE 5.8 MCP tools for project-owned StateTree, UMG, and animation ass
 - UMG mutations reject assets outside `/Game/Work/LMK/`.
 - Combo montage mutations validate one indexed hit notify per section, add only
   missing combo window states, and reject assets outside `/Game/Work/LMK/`.
+- Control Rig hierarchy sync accepts only project assets under `/Game/Work/LMK/`,
+  replaces and removes bone hierarchy entries from the selected Skeletal Mesh,
+  leaves curves and sockets untouched, and does not compile or save the asset.
 
 ## Workflow
 
@@ -47,3 +50,14 @@ Named state and node creation is retry-safe: a matching sibling state or a match
 4. Use `ConfigureBasicAttackComboWindows` to add missing window states from each
    hit notify to the padded end of its section.
 5. Inspect the result and save the montage with `AssetTools.save_assets`.
+
+## Control Rig hierarchy workflow
+
+1. Duplicate the source Control Rig under `/Game/Work/LMK/` and assign the target
+   Skeletal Mesh as its preview mesh.
+2. Call `SyncControlRigBoneHierarchy` with the duplicated Control Rig Blueprint
+   and target Skeletal Mesh.
+3. Require `DiscrepancyCountAfter` to be zero before compiling the dependent
+   Animation Blueprint.
+4. Compile and save the Control Rig explicitly, then compile and save the
+   dependent Animation Blueprint.

@@ -252,12 +252,14 @@ Anim Notify는 실제 명중을 확정하지 않고 Hit 판정을 시도할 타�
 공용 Combat Damage Subsystem에 Request를 전달합니다.
 
 2026-08-06 이동하는 Boss 대상 PIE에서 이 임시 경계가 Move/Attack 진동과 실제 궤적을
-확인하지 않는 피해 판정을 만든다는 결함이 확인됐습니다. M03-E09-T02에서 MAKO와 Boss가
-재사용하는 실제 근접 공간 판정 경계로 교체합니다. Weapon Mesh와 Blade Socket 계약이
-있으면 Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
+확인하지 않는 피해 판정을 만든다는 결함이 확인됐습니다. M03-E09-T02A는 Boss에서 실제
+근접 공간 판정 경계를 먼저 확립합니다. MAKO 경로는 모델, Skeleton, AnimBP, Weapon Mesh와
+Blade Socket 계약이 확정된 뒤 M03-E09-T02B에서 같은 경계를 채택합니다. Socket 계약이
+있으면 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
 placeholder 공격은 Character 전방 Config 기반 Shape Sweep을 사용합니다. 선택 Target,
 Montage 재생과 거리 진입은 명중 증거가 아니며 실제 Sweep이 snapshotted Target을 교차해야
-공용 Damage Request를 commit할 수 있습니다.
+공용 Damage Request를 commit할 수 있습니다. T02A는 MAKO source와 binary asset을 수정하지
+않습니다.
 
 이때도 StateTree, Combo Step, 단계별 Damage, 실행당 Cooldown과 `ExecutionId` exact-once
 계약은 유지합니다. 공격 진입 거리와 더 넓은 취소 거리를 분리해 작은 Target 이동으로
@@ -447,9 +449,10 @@ StateTree를 Compile한 뒤 Save합니다.
    Compile·Save합니다.
 
 T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
-거리만 다시 검증하는 경로는 T01 기준선이며, M03-E09-T02 이후에는 실제 Weapon Socket
-또는 placeholder 전방 Shape Sweep이 Target을 교차해야 피해를 적용합니다. Notify와
-시간 fallback은 같은 판정 seam을 호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
+거리만 다시 검증하는 경로는 T01 기준선입니다. Boss가 T02A에서 실제 공간 판정 seam을
+검증한 뒤, MAKO는 모델·Socket 계약이 고정되는 T02B에서 실제 Weapon Socket 또는
+placeholder 전방 Shape Sweep을 채택합니다. Notify와 시간 fallback은 같은 판정 seam을
+호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
 
 ### 8.4 전투 스킬 설정
 

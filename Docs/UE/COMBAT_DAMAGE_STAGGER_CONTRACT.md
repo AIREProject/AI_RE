@@ -144,11 +144,14 @@ loss, reaction, return, death, interruption, and EndPlay cancel timers/delegates
 The current T01 baseline is not a physical melee trace. Both MAKO and Boss validate
 the selected/snapshotted target's life, hostility, and surface range before committing
 damage; neither path currently proves that a weapon or forward shape intersected the
-target. An AnimNotify is timing evidence, not hit evidence. `M03-E09-T02` owns the
-shared spatial-resolution seam: a previous/current weapon-socket sweep when sockets
-exist, or a short config-driven forward shape sweep for a placeholder attacker.
-Single-target damage may commit only when that sweep intersects the snapshotted
-target, while the existing execution-ID ledger remains the exact-once authority.
+target. An AnimNotify is timing evidence, not hit evidence. `M03-E09-T02A` first
+establishes this spatial-resolution seam on Boss: a previous/current weapon-socket
+sweep when sockets exist, or a short config-driven forward shape sweep for a
+placeholder attacker. Single-target damage may commit only when that sweep intersects
+the snapshotted target, while the existing execution-ID ledger remains the exact-once
+authority. `M03-E09-T02B` adopts the proven seam for MAKO after its model, Skeleton,
+AnimBP, weapon mesh, and trace-socket contract are fixed; T02A does not modify MAKO
+source or binary assets.
 
 Attack entry and cancellation also require separate ranges in T02. Once an attack is
 active, small target movement must not cause StateTree MoveTo and attack cancellation
@@ -200,10 +203,12 @@ The StateTree must continue to report only non-terminal awareness states through
 `ReportStateTreeAwarenessState`. `Flinching`, `Stunned`, and `Dead` remain runtime
 vitality/reaction states.
 
-`M03-E09-T02` owns Boss attack/flinch/stun/death presentation, MAKO attack validation,
-the in-place MAKO evade montage, physical melee sweeps, moving-target stability, and
-the remaining non-input PIE gates. Root motion stays disabled for the evade montage
-because `UAIRECombatEvadeComponent` owns the swept capsule movement.
+`M03-E09-T02A` owns Boss attack/flinch/stun/death presentation, Boss physical melee
+sweeps, and the remaining Boss-only non-input PIE and lifecycle gates. `M03-E09-T02B`
+owns MAKO moving-target attack stability, adoption of the physical sweep, and the
+in-place MAKO evade montage after the MAKO asset contract is fixed. Root motion stays
+disabled for the evade montage because `UAIRECombatEvadeComponent` owns the swept
+capsule movement.
 
 `M03-E09-T03` owns `IA_AIREAggroSwap`, the active Player IMC Q mapping,
 PlayerController assignment, Player evade presentation, and the physical two-way

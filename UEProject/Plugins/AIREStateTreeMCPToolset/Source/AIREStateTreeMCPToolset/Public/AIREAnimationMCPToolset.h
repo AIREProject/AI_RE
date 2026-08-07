@@ -5,6 +5,8 @@
 #include "AIREAnimationMCPToolset.generated.h"
 
 class UAnimMontage;
+class UControlRigBlueprint;
+class USkeletalMesh;
 
 USTRUCT(BlueprintType)
 struct FAIREAnimationComboMontageResult
@@ -33,7 +35,31 @@ struct FAIREAnimationComboMontageResult
 	TArray<FString> Entries;
 };
 
-/** Project-scoped MCP tools for inspecting and configuring Companion combo montages. */
+USTRUCT(BlueprintType)
+struct FAIREControlRigHierarchySyncResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	int32 SyncedBoneCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	int32 DiscrepancyCountBefore = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	int32 DiscrepancyCountAfter = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	TArray<FString> Entries;
+};
+
+/** Project-scoped MCP tools for inspecting and configuring Companion animation assets. */
 UCLASS(BlueprintType)
 class AIRESTATETREEMCPTOOLSET_API UAIREAnimationMCPToolset : public UToolsetDefinition
 {
@@ -55,4 +81,9 @@ public:
 		FName NotifyTrackName,
 		float WindowStartOffsetAfterHit,
 		float SectionEndPadding);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|ControlRig|Mutation")
+	static FAIREControlRigHierarchySyncResult SyncControlRigBoneHierarchy(
+		UControlRigBlueprint* ControlRigBlueprint,
+		USkeletalMesh* SkeletalMesh);
 };

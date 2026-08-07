@@ -4,6 +4,10 @@
 #include "Animation/AIRECompanionComboWindowAnimNotifyState.h"
 #include "Animation/AnimMontage.h"
 #include "AnimationBlueprintLibrary.h"
+#include "ControlRigBlueprintLegacy.h"
+#include "Engine/SkeletalMesh.h"
+#include "Rigs/RigHierarchy.h"
+#include "Rigs/RigHierarchyController.h"
 #include "ScopedTransaction.h"
 
 #define LOCTEXT_NAMESPACE "AIREAnimationMCPToolset"
@@ -25,6 +29,54 @@ namespace
 		FAIREAnimationComboMontageResult Result;
 		Result.Message = Message;
 		return Result;
+	}
+
+	FAIREControlRigHierarchySyncResult MakeControlRigHierarchyFailure(
+		const FString& Message)
+	{
+		FAIREControlRigHierarchySyncResult Result;
+		Result.Message = Message;
+		return Result;
+	}
+
+	bool IsAllowedAnimationAsset(const UObject* Asset)
+	{
+		return IsValid(Asset) &&
+			Asset->GetOutermost()->GetName().StartsWith(AllowedAnimationAssetRoot);
+	}
+
+	void GatherHierarchyDiscrepancies(
+		const URigHierarchy& Hierarchy,
+		const USkeletalMesh& SkeletalMesh,
+		TArray<FString>& OutEntries)
+	{
+		const TArray<FMeshBoneInfo>& BoneInfos =
+			SkeletalMesh.GetRefSkeleton().GetRefBoneInfo();
+		for (const FMeshBoneInfo& BoneInfo : BoneInfos)
+		{
+			const FRigElementKey BoneKey(BoneInfo.Name, ERigElementType::Bone);
+			if (!Hierarchy.Contains(BoneKey))
+			{
+				continue;
+			}
+
+			const FName RigParentName = Hierarchy.GetFirstParent(BoneKey).Name;
+			FName MeshParentName = NAME_None;
+			if (BoneInfo.ParentIndex != INDEX_NONE)
+			{
+				MeshParentName = BoneInfos[BoneInfo.ParentIndex].Name;
+			}
+
+			if (RigParentName != MeshParentName)
+			{
+				OutEntries.Add(
+					FString::Printf(
+						TEXT("%s: ControlRig parent=%s, SkeletalMesh parent=%s"),
+						*BoneInfo.Name.ToString(),
+						*RigParentName.ToString(),
+						*MeshParentName.ToString()));
+			}
+		}
 	}
 
 	bool ValidateMontage(const UAnimMontage* Montage, FString& OutError)
@@ -513,6 +565,99 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	Result.Message = PendingWindows.IsEmpty()
 		? TEXT("All required combo windows already exist; no changes were made.")
 		: FString::Printf(TEXT("Added %d combo windows."), PendingWindows.Num());
+	return Result;
+}
+
+FAIREControlRigHierarchySyncResult UAIREAnimationMCPToolset::SyncControlRigBoneHierarchy(
+	UControlRigBlueprint* ControlRigBlueprint,
+	USkeletalMesh* SkeletalMesh)
+{
+	if (!IsAllowedAnimationAsset(ControlRigBlueprint))
+	{
+		return MakeControlRigHierarchyFailure(
+			FString::Printf(
+				TEXT("A valid Control Rig Blueprint under %s is required."),
+				*AllowedAnimationAssetRoot));
+	}
+	if (!IsAllowedAnimationAsset(SkeletalMesh))
+	{
+		return MakeControlRigHierarchyFailure(
+			FString::Printf(
+				TEXT("A valid Skeletal Mesh under %s is required."),
+				*AllowedAnimationAssetRoot));
+	}
+	if (!IsValid(SkeletalMesh->GetSkeleton()))
+	{
+		return MakeControlRigHierarchyFailure(
+			TEXT("The Skeletal Mesh has no assigned Skeleton."));
+	}
+
+	URigHierarchy* Hierarchy = ControlRigBlueprint->GetHierarchy();
+	URigHierarchyController* HierarchyController =
+		ControlRigBlueprint->GetHierarchyController();
+	if (!IsValid(Hierarchy) || !IsValid(HierarchyController))
+	{
+		return MakeControlRigHierarchyFailure(
+			TEXT("The Control Rig Blueprint has no editable hierarchy."));
+	}
+
+	FAIREControlRigHierarchySyncResult Result;
+	TArray<FString> DiscrepanciesBefore;
+	GatherHierarchyDiscrepancies(
+		*Hierarchy,
+		*SkeletalMesh,
+		DiscrepanciesBefore);
+	Result.DiscrepancyCountBefore = DiscrepanciesBefore.Num();
+
+	const FScopedTransaction Transaction(
+		LOCTEXT("SyncControlRigBoneHierarchy", "Sync Control Rig Bone Hierarchy"));
+	ControlRigBlueprint->UObject::Modify();
+	Hierarchy->Modify();
+
+	{
+		TGuardValue<bool> SuspendHierarchyNotifications(
+			HierarchyController->GetSuspendNotificationsFlag(),
+			true);
+		HierarchyController->ImportBonesFromSkeletalMesh(
+			SkeletalMesh,
+			NAME_None,
+			true,
+			true,
+			false,
+			true,
+			false);
+	}
+
+	ControlRigBlueprint->PropagateHierarchyFromBPToInstances();
+	ControlRigBlueprint->GetRigVMAssetInterface()->MarkAssetAsModified();
+	ControlRigBlueprint->GetRigVMAssetInterface()->BroadcastRefreshEditor();
+	ControlRigBlueprint->MarkPackageDirty();
+
+	Result.SyncedBoneCount =
+		Hierarchy->GetAllKeys(false, ERigElementType::Bone).Num();
+	GatherHierarchyDiscrepancies(
+		*Hierarchy,
+		*SkeletalMesh,
+		Result.Entries);
+	Result.DiscrepancyCountAfter = Result.Entries.Num();
+	Result.bSuccess =
+		Result.SyncedBoneCount > 0 && Result.DiscrepancyCountAfter == 0;
+	if (Result.bSuccess)
+	{
+		Result.Message = FString::Printf(
+			TEXT("Synchronized %d Control Rig bones. Compile and save the Control Rig explicitly."),
+			Result.SyncedBoneCount);
+	}
+	else if (Result.SyncedBoneCount == 0)
+	{
+		Result.Message = TEXT("Hierarchy sync produced no Control Rig bones.");
+	}
+	else
+	{
+		Result.Message = FString::Printf(
+			TEXT("Hierarchy sync completed, but %d parent discrepancies remain."),
+			Result.DiscrepancyCountAfter);
+	}
 	return Result;
 }
 
