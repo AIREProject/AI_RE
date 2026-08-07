@@ -6,6 +6,10 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
 
+#if !UE_BUILD_SHIPPING
+DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAggro, Log, All);
+#endif
+
 UAIREEnemyAggroComponent::UAIREEnemyAggroComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -232,6 +236,18 @@ void UAIREEnemyAggroComponent::HandleTargetPerceptionUpdated(
 		Entry.LastKnownLocation = Stimulus.StimulusLocation;
 	}
 	RefreshSelection();
+#if !UE_BUILD_SHIPPING
+	UE_LOG(
+		LogAIREEnemyAggro,
+		Log,
+		TEXT("Perception update Candidate=%s SelectedTarget=%s Sensed=%d StimulusAge=%.3f StimulusLocation=%s TargetRevision=%lld"),
+		*GetNameSafe(Actor),
+		*GetNameSafe(SelectedTarget.Get()),
+		Stimulus.WasSuccessfullySensed(),
+		Stimulus.GetAge(),
+		*Stimulus.StimulusLocation.ToCompactString(),
+		TargetRevision);
+#endif
 }
 
 void UAIREEnemyAggroComponent::HandleCandidateDestroyed(

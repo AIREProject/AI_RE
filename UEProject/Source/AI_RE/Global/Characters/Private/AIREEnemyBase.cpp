@@ -176,7 +176,8 @@ void AAIREEnemyBase::ApplyEnemyConfig()
 		Config->AttackStaggerValue,
 		Config->AttackCooldownDuration,
 		Config->AttackFallbackHitDelay,
-		Config->AttackFallbackRecoveryDuration);
+		Config->AttackFallbackRecoveryDuration,
+		Config->MeleeTrace);
 }
 
 void AAIREEnemyBase::EndPlay(

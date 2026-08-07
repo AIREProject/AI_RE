@@ -10,6 +10,41 @@
 #include "Engine/World.h"
 #include "Navigation/PathFollowingComponent.h"
 
+#if !UE_BUILD_SHIPPING
+DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAI, Log, All);
+
+namespace
+{
+const TCHAR* GetAwarenessStateName(
+	const EAIREEnemyAwarenessState State)
+{
+	switch (State)
+	{
+	case EAIREEnemyAwarenessState::IdleUnaware:
+		return TEXT("IdleUnaware");
+	case EAIREEnemyAwarenessState::Alerted:
+		return TEXT("Alerted");
+	case EAIREEnemyAwarenessState::EngagedChase:
+		return TEXT("EngagedChase");
+	case EAIREEnemyAwarenessState::EngagedAttack:
+		return TEXT("EngagedAttack");
+	case EAIREEnemyAwarenessState::Searching:
+		return TEXT("Searching");
+	case EAIREEnemyAwarenessState::Returning:
+		return TEXT("Returning");
+	case EAIREEnemyAwarenessState::Flinching:
+		return TEXT("Flinching");
+	case EAIREEnemyAwarenessState::Stunned:
+		return TEXT("Stunned");
+	case EAIREEnemyAwarenessState::Dead:
+		return TEXT("Dead");
+	default:
+		return TEXT("Unknown");
+	}
+}
+}
+#endif
+
 AAIREEnemyAIController::AAIREEnemyAIController()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -116,7 +151,7 @@ bool AAIREEnemyAIController::ReportStateTreeAwarenessState(
 		return false;
 	}
 
-	SetAwarenessState(NewState);
+	SetAwarenessState(NewState, TEXT("StateTree report"));
 	return true;
 }
 
@@ -158,7 +193,7 @@ void AAIREEnemyAIController::HandleEnemyDeath()
 	}
 	ClearFocus(EAIFocusPriority::Gameplay);
 	bReturnRequested = false;
-	SetAwarenessState(EAIREEnemyAwarenessState::Dead);
+	SetAwarenessState(EAIREEnemyAwarenessState::Dead, TEXT("Enemy death"));
 	SetActorTickEnabled(false);
 }
 
@@ -182,7 +217,8 @@ void AAIREEnemyAIController::HandleEnemyReactionChanged(
 	SetAwarenessState(
 		ReactionState == EAIREEnemyReactionState::Stunned
 			? EAIREEnemyAwarenessState::Stunned
-			: EAIREEnemyAwarenessState::Flinching);
+			: EAIREEnemyAwarenessState::Flinching,
+		TEXT("Reaction started"));
 }
 
 void AAIREEnemyAIController::OnPossess(APawn* InPawn)
@@ -275,7 +311,9 @@ void AAIREEnemyAIController::UpdateAwareness()
 			BeginReturning();
 			return;
 		}
-		SetAwarenessState(EAIREEnemyAwarenessState::EngagedChase);
+		SetAwarenessState(
+			EAIREEnemyAwarenessState::EngagedChase,
+			TEXT("Reaction recovered"));
 	}
 	if (AwarenessState == EAIREEnemyAwarenessState::Returning)
 	{
@@ -313,7 +351,9 @@ void AAIREEnemyAIController::UpdateAwareness()
 		}
 		if (AIRECombatDamageTarget::IsAlive(AttackSnapshot.Target.Get()))
 		{
-			SetAwarenessState(EAIREEnemyAwarenessState::EngagedAttack);
+			SetAwarenessState(
+				EAIREEnemyAwarenessState::EngagedAttack,
+				TEXT("Active attack remains valid"));
 			return;
 		}
 		Attack->CancelCurrentAttack();
@@ -355,12 +395,16 @@ void AAIREEnemyAIController::UpdateAwareness()
 		{
 			if (bDamageOnlyEngagement)
 			{
-				SetAwarenessState(EAIREEnemyAwarenessState::EngagedChase);
+				SetAwarenessState(
+					EAIREEnemyAwarenessState::EngagedChase,
+					TEXT("Damage evidence engagement"));
 			}
 			else
 			{
 				StateDeadline = GetWorld()->GetTimeSeconds() + AlertDuration;
-				SetAwarenessState(EAIREEnemyAwarenessState::Alerted);
+				SetAwarenessState(
+					EAIREEnemyAwarenessState::Alerted,
+					TEXT("Sight target acquired"));
 				StopMovement();
 				return;
 			}
@@ -371,7 +415,9 @@ void AAIREEnemyAIController::UpdateAwareness()
 			{
 				return;
 			}
-			SetAwarenessState(EAIREEnemyAwarenessState::EngagedChase);
+			SetAwarenessState(
+				EAIREEnemyAwarenessState::EngagedChase,
+				TEXT("Alert duration elapsed"));
 		}
 		UpdateEngagement(Target);
 		return;
@@ -410,13 +456,17 @@ void AAIREEnemyAIController::UpdateEngagement(AActor* Target)
 		StopMovement();
 		if (Attack->TryStartMeleeAttack(Target))
 		{
-			SetFocus(Target);
-			SetAwarenessState(EAIREEnemyAwarenessState::EngagedAttack);
+			ClearFocus(EAIFocusPriority::Gameplay);
+			SetAwarenessState(
+				EAIREEnemyAwarenessState::EngagedAttack,
+				TEXT("Melee attack started"));
 		}
 		else
 		{
 			ClearFocus(EAIFocusPriority::Gameplay);
-			SetAwarenessState(EAIREEnemyAwarenessState::EngagedChase);
+			SetAwarenessState(
+				EAIREEnemyAwarenessState::EngagedChase,
+				TEXT("Melee attack start rejected"));
 		}
 		return;
 	}
@@ -427,7 +477,9 @@ void AAIREEnemyAIController::UpdateEngagement(AActor* Target)
 		BeginSearching();
 		return;
 	}
-	SetAwarenessState(EAIREEnemyAwarenessState::EngagedChase);
+	SetAwarenessState(
+		EAIREEnemyAwarenessState::EngagedChase,
+		TEXT("Move to attack range requested"));
 }
 
 void AAIREEnemyAIController::BeginSearching()
@@ -440,7 +492,7 @@ void AAIREEnemyAIController::BeginSearching()
 	ClearFocus(EAIFocusPriority::Gameplay);
 	SearchLocation = AggroComponent->GetSelectedTargetLastKnownLocation();
 	StateDeadline = GetWorld()->GetTimeSeconds() + SearchDuration;
-	SetAwarenessState(EAIREEnemyAwarenessState::Searching);
+	SetAwarenessState(EAIREEnemyAwarenessState::Searching, TEXT("Target lost"));
 }
 
 void AAIREEnemyAIController::BeginReturning()
@@ -459,7 +511,7 @@ void AAIREEnemyAIController::BeginReturning()
 		Enemy->GetEnemyAttackComponent()->CancelCurrentAttack();
 	}
 	AggroComponent->StopAggroTracking();
-	SetAwarenessState(EAIREEnemyAwarenessState::Returning);
+	SetAwarenessState(EAIREEnemyAwarenessState::Returning, TEXT("Return requested"));
 	if (MoveToLocation(HomeLocation, HomeAcceptanceRadius)
 		== EPathFollowingRequestResult::Failed)
 	{
@@ -477,11 +529,14 @@ void AAIREEnemyAIController::CompleteReturnHome()
 		AggroComponent->StartAggroTracking(Enemy.Get());
 	}
 	bReturnRequested = false;
-	SetAwarenessState(EAIREEnemyAwarenessState::IdleUnaware);
+	SetAwarenessState(
+		EAIREEnemyAwarenessState::IdleUnaware,
+		TEXT("Return home complete"));
 }
 
 void AAIREEnemyAIController::SetAwarenessState(
-	const EAIREEnemyAwarenessState NewState)
+	const EAIREEnemyAwarenessState NewState,
+	const TCHAR* const Reason)
 {
 	if (AwarenessState == NewState)
 	{
@@ -489,6 +544,25 @@ void AAIREEnemyAIController::SetAwarenessState(
 	}
 	const EAIREEnemyAwarenessState PreviousState = AwarenessState;
 	AwarenessState = NewState;
+#if !UE_BUILD_SHIPPING
+	const FAIREEnemyAggroSnapshot AggroSnapshot = IsValid(AggroComponent)
+		? AggroComponent->GetAggroSnapshot()
+		: FAIREEnemyAggroSnapshot();
+	UE_LOG(
+		LogAIREEnemyAI,
+		Log,
+		TEXT("Awareness transition Boss=%s Target=%s Revision=%lld Visible=%d RecentDamage=%d %s -> %s Reason=%s"),
+		*GetNameSafe(Enemy.Get()),
+		*GetNameSafe(AggroSnapshot.SelectedTarget.Get()),
+		AggroSnapshot.TargetRevision,
+		IsValid(AggroComponent) && AggroComponent->IsSelectedTargetVisible(),
+		IsValid(AggroComponent) && AggroComponent->SelectedTargetHasRecentDamageEvidence(),
+		GetAwarenessStateName(PreviousState),
+		GetAwarenessStateName(AwarenessState),
+		Reason);
+#else
+	(void)Reason;
+#endif
 	OnAwarenessStateChanged.Broadcast(PreviousState, AwarenessState);
 }
 

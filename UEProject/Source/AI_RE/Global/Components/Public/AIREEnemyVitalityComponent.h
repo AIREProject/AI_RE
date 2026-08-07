@@ -4,7 +4,9 @@
 #include "Components/ActorComponent.h"
 #include "AIREEnemyVitalityComponent.generated.h"
 
+class ACharacter;
 class UAbilitySystemComponent;
+class UAnimMontage;
 struct FOnAttributeChangeData;
 
 USTRUCT(BlueprintType)
@@ -63,6 +65,8 @@ protected:
 private:
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void SynchronizeDeath(float CurrentHealth);
+	void PlayDeathMontage();
+	void StopDeathMontage();
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Vitality", meta = (ClampMin = "1.0", UIMin = "1.0"))
 	float MaxHealth = 500.0f;
@@ -70,7 +74,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Vitality", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float InitialHealth = 500.0f;
 
+	/** Optional in-place presentation. EnemyBase continues to own removal timing. */
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Vitality|Presentation")
+	TObjectPtr<UAnimMontage> DeathMontage;
+
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
+	TWeakObjectPtr<ACharacter> OwnerCharacter;
 	FDelegateHandle HealthChangedDelegateHandle;
 	bool bDead = false;
 };

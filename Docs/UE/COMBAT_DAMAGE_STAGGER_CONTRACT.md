@@ -8,12 +8,12 @@ It covers Player/MAKO damage delivery, enemy Health and stagger reactions, the d
 swap. Backend, replication, boss phases, wild animals, inventory, storage, and
 `ST_AIRECompanion_Local` changes are outside this task.
 
-- Code baseline: 2026-08-06
-- Task status: `Review`
-- Completed locally: C++ implementation, static diff checks, Boss/Controller/Config/StateTree
-  assets, and one partial fallback PIE session
-- Still required: Automation, physical-hit integration, animation assets, moving-target
-  stability, physical Q input integration, and the remaining PIE/lifecycle gates
+- Code baseline: 2026-08-07
+- Task status: `Review` (`M03-E09-T01`) / implementation in progress (`M03-E09-T02A`)
+- Completed locally: T01 C++ baseline and assets, one partial fallback PIE session, and
+  T02A Boss physical-trace source plus static checks
+- Still required: Unreal build, automation execution, Boss animation assets and assignment,
+  moving-target/AI stability, physical Q input integration, and the remaining PIE/lifecycle gates
 
 ## 2. Runtime ownership
 
@@ -136,22 +136,29 @@ their last known location for a three-second search. Returning clears aggro and
 ignores new aggro selection. Reaction gauges are reset only when return-home
 completion is confirmed; the home leash defaults to 2500 cm.
 
-An attack snapshots its target and execution ID for the full windup/recovery. Later
-aggro changes affect the next attack and do not curve the active attack. An AnimNotify
-may call `CommitActiveMeleeHit`; the time fallback calls the same function. Target
-loss, reaction, return, death, interruption, and EndPlay cancel timers/delegates.
+An attack snapshots its target, execution ID, attack axis, and melee-trace settings for
+the full windup/recovery. Later aggro changes affect the next attack and do not curve
+the active attack. On a successfully played montage,
+`UAIREEnemyMeleeTraceAnimNotifyState` opens, updates, and closes the trace window; the
+montage end itself never applies damage. A montage that never opens the window is a
+miss and emits a non-shipping diagnostic. If no montage plays, the timed fallback runs
+one forward sphere sweep instead. The deprecated `CommitActiveMeleeHit` seam also runs
+a spatial fallback sample and cannot commit from target identity or distance alone.
 
-The current T01 baseline is not a physical melee trace. Both MAKO and Boss validate
-the selected/snapshotted target's life, hostility, and surface range before committing
-damage; neither path currently proves that a weapon or forward shape intersected the
-target. An AnimNotify is timing evidence, not hit evidence. `M03-E09-T02A` first
-establishes this spatial-resolution seam on Boss: a previous/current weapon-socket
-sweep when sockets exist, or a short config-driven forward shape sweep for a
-placeholder attacker. Single-target damage may commit only when that sweep intersects
-the snapshotted target, while the existing execution-ID ledger remains the exact-once
-authority. `M03-E09-T02B` adopts the proven seam for MAKO after its model, Skeleton,
-AnimBP, weapon mesh, and trace-socket contract are fixed; T02A does not modify MAKO
-source or binary assets.
+Boss physical resolution is now implemented in T02A source. A configured bone/socket
+pair sweeps the previous and current limb segments with a config-driven sphere. Missing
+or invalid bones/sockets fall back to the snapshotted forward axis. Both paths use the
+same collision channel, accept only the snapshotted target as hit evidence, attach the
+resulting `FHitResult` to `FAIRECombatDamageRequest`, and retain the execution-ID ledger
+as the exact-once authority. Target loss, reaction, return, death, interruption, and
+EndPlay close the trace window and clear timers/delegates. The default fallback radius,
+reach from the capsule surface, and channel are 35 cm, 180 cm, and `ECC_Pawn`.
+
+This source state is not yet runtime evidence: it still requires the Unreal build,
+automation execution, project-owned Crunch animation assets, component assignments,
+and PIE verification. `M03-E09-T02B` adopts the proven seam for MAKO only after its
+model, Skeleton, AnimBP, weapon mesh, and trace-socket contract are fixed; T02A does
+not modify MAKO source or binary assets.
 
 Attack entry and cancellation also require separate ranges in T02. Once an attack is
 active, small target movement must not cause StateTree MoveTo and attack cancellation
@@ -210,6 +217,12 @@ in-place MAKO evade montage after the MAKO asset contract is fixed. Root motion 
 disabled for the evade montage because `UAIRECombatEvadeComponent` owns the swept
 capsule movement.
 
+The selected T02A source assets are Paragon Crunch's mesh and `Crunch_Skeleton`, with
+`Ability_Combo_01_Montage`, `HitReact_Front`, `Stunned_Start`/`Stunned_Loop`, and
+`Death_A` as project-owned montage sources. The vendor assets remain untouched. The
+project-owned `ABP_AIRE_Boss` and Attack/Flinch/Stun/Death montage copies still need to
+be authored, compiled, saved, and assigned after the C++ build succeeds.
+
 `M03-E09-T03` owns `IA_AIREAggroSwap`, the active Player IMC Q mapping,
 PlayerController assignment, Player evade presentation, and the physical two-way
 Player/MAKO swap gate. Existing Player mapping assets must remain unchanged until
@@ -219,11 +232,14 @@ Only the Boss derivative participates in this gate. WildAnimal remains out of sc
 
 ## 7. Verification gate
 
-Run the narrow automation test `AIRE.Combat.Damage.SharedPipeline`. It uses the
-existing PlayerParty combat fixture plus two real Boss instances to cover shared
-Health selection, Boss Health/stagger, validation, exact-once, and death edges; it
-does not instantiate the production Player or MAKO classes. Verify those adapters
-and all presentation/AI behavior in PIE:
+Run the narrow automation tests `AIRE.Combat.Damage.SharedPipeline` and
+`AIRE.Combat.Enemy.Attack.FallbackTrace`. The first uses the existing PlayerParty
+combat fixture plus two real Boss instances to cover shared Health selection, Boss
+Health/stagger, validation, exact-once, and death edges. The second covers Boss
+fallback forward hit, rear/side miss, WorldStatic occlusion, cancellation, target
+destruction, and repeated resolution. Neither test instantiates the production Player
+or MAKO classes. Verify those adapters and all montage, socket-sweep, and AI behavior
+in PIE:
 
 ### 7.1 Partial PIE evidence recorded on 2026-08-06
 

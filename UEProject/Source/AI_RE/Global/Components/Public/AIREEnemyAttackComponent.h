@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "AIRECombatDamageTypes.h"
+#include "AIREEnemyConfigDataAsset.h"
 #include "Components/ActorComponent.h"
 #include "AIREEnemyAttackComponent.generated.h"
 
 class ACharacter;
+class UAnimInstance;
 class UAnimMontage;
+class USkeletalMeshComponent;
 
 USTRUCT(BlueprintType)
 struct AI_RE_API FAIREEnemyAttackSnapshot
@@ -69,14 +72,19 @@ public:
 		float InStaggerValue,
 		float InCooldownDuration,
 		float InFallbackHitDelay,
-		float InFallbackRecoveryDuration);
+		float InFallbackRecoveryDuration,
+		const FAIREEnemyMeleeTraceSettings& InMeleeTraceSettings);
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Enemy|Attack")
 	bool TryStartMeleeAttack(AActor* Target);
 
-	/** Call from an attack AnimNotify. The fallback timer calls the same seam. */
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Enemy|Attack")
+	/** Deprecated point-notify seam. It performs a spatial sample and never commits by target alone. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Enemy|Attack", meta = (DeprecatedFunction, DeprecationMessage = "Use AIREEnemyMeleeTraceAnimNotifyState for a swept trace window."))
 	bool CommitActiveMeleeHit();
+
+	void BeginMeleeTraceWindow(const FGuid& ExecutionId);
+	void UpdateMeleeTraceWindow(const FGuid& ExecutionId);
+	void EndMeleeTraceWindow(const FGuid& ExecutionId);
 
 	bool TryCancelDamageForAggroSwap(const FGuid& ExecutionId);
 	void CancelCurrentAttack();
@@ -102,11 +110,37 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	enum class ETraceSampleResult : uint8
+	{
+		NoHit,
+		TargetHit,
+		Blocked
+	};
+
 	UFUNCTION()
 	void HandleTargetDestroyed(AActor* DestroyedActor);
 
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	void HandleFallbackHit();
+	void HandleRecoveryExpired();
+	bool IsTraceCallbackCurrent(const FGuid& ExecutionId) const;
+	bool CanResolveActiveHit() const;
+	bool CommitResolvedHit(const FHitResult& HitResult);
+	ETraceSampleResult PerformSocketTraceSample(
+		USkeletalMeshComponent* MeshComponent,
+		FHitResult& OutTargetHit);
+	ETraceSampleResult PerformFallbackTraceSample(FHitResult& OutTargetHit) const;
+	ETraceSampleResult SweepTraceSegments(
+		const TArray<TPair<FVector, FVector>>& Segments,
+		FHitResult& OutTargetHit) const;
+	bool SweepTraceSegment(
+		const FVector& Start,
+		const FVector& End,
+		FHitResult& OutHit) const;
+	void ResolveTraceSample(ETraceSampleResult Result, const FHitResult& TargetHit);
+	void CloseTraceWindow();
+	void ResetTraceState();
+	void ClearMontageEndDelegate();
 	void CloseOpportunity();
 	void FinishAttack();
 
@@ -137,9 +171,17 @@ private:
 
 	TWeakObjectPtr<ACharacter> OwnerCharacter;
 	TWeakObjectPtr<AActor> AttackTarget;
+	TWeakObjectPtr<USkeletalMeshComponent> ActiveTraceMesh;
+	TWeakObjectPtr<UAnimInstance> BoundAnimInstance;
 	FTimerHandle HitTimerHandle;
 	FTimerHandle RecoveryTimerHandle;
 	FGuid ActiveExecutionId;
+	FGuid TraceWindowExecutionId;
+	FAIREEnemyMeleeTraceSettings MeleeTraceSettings;
+	FAIREEnemyMeleeTraceSettings ActiveMeleeTraceSettings;
+	FVector AttackForward = FVector::ForwardVector;
+	FVector PreviousTraceStart = FVector::ZeroVector;
+	FVector PreviousTraceEnd = FVector::ZeroVector;
 	double NextAllowedAttackTime = 0.0;
 	bool bAttackActive = false;
 	bool bOpportunityOpen = false;
@@ -147,4 +189,8 @@ private:
 	bool bDamageApplied = false;
 	bool bDamageCancelled = false;
 	bool bFinishing = false;
+	bool bMontagePlayed = false;
+	bool bTraceWindowOpen = false;
+	bool bTraceWindowEverOpened = false;
+	bool bUseSocketTrace = false;
 };

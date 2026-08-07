@@ -98,7 +98,9 @@ private:
 	void BeginSearching();
 	void BeginReturning();
 	void CompleteReturnHome();
-	void SetAwarenessState(EAIREEnemyAwarenessState NewState);
+	void SetAwarenessState(
+		EAIREEnemyAwarenessState NewState,
+		const TCHAR* Reason);
 	bool HasReachedHome() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI", meta = (AllowPrivateAccess = "true"))

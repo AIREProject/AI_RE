@@ -6,6 +6,10 @@ bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
 	FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
+	const bool bHasTraceStartSocket = !MeleeTrace.TraceStartSocket.IsNone();
+	const bool bHasTraceEndSocket = !MeleeTrace.TraceEndSocket.IsNone();
+	const bool bHasCompleteSocketPair =
+		bHasTraceStartSocket == bHasTraceEndSocket;
 	const bool bValid = FMath::IsFinite(MovementSpeed)
 		&& MovementSpeed > 0.0f
 		&& FMath::IsFinite(MaxHealth)
@@ -35,7 +39,14 @@ bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
 		&& FMath::IsFinite(AttackFallbackHitDelay)
 		&& AttackFallbackHitDelay > 0.0f
 		&& FMath::IsFinite(AttackFallbackRecoveryDuration)
-		&& AttackFallbackRecoveryDuration > 0.0f;
+		&& AttackFallbackRecoveryDuration > 0.0f
+		&& bHasCompleteSocketPair
+		&& FMath::IsFinite(MeleeTrace.TraceRadius)
+		&& MeleeTrace.TraceRadius > 0.0f
+		&& FMath::IsFinite(MeleeTrace.FallbackTraceDistance)
+		&& MeleeTrace.FallbackTraceDistance >= MeleeTrace.TraceRadius
+		&& MeleeTrace.TraceChannel.GetValue() >= ECC_WorldStatic
+		&& MeleeTrace.TraceChannel.GetValue() < ECC_MAX;
 	if (!bValid)
 	{
 		OutValidationError = NSLOCTEXT(

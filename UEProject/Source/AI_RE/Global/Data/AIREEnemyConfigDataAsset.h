@@ -4,6 +4,30 @@
 #include "Engine/DataAsset.h"
 #include "AIREEnemyConfigDataAsset.generated.h"
 
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREEnemyMeleeTraceSettings
+{
+	GENERATED_BODY()
+
+	/** Bone or socket nearest the striking limb's base. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack|Trace")
+	FName TraceStartSocket = NAME_None;
+
+	/** Bone or socket nearest the striking limb's tip. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack|Trace")
+	FName TraceEndSocket = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
+	float TraceRadius = 35.0f;
+
+	/** Maximum reach measured forward from the owner's capsule surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
+	float FallbackTraceDistance = 180.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack|Trace")
+	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Pawn;
+};
+
 UCLASS(BlueprintType)
 class AI_RE_API UAIREEnemyConfigDataAsset : public UDataAsset
 {
@@ -58,4 +82,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
 	float AttackFallbackRecoveryDuration = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|Attack")
+	FAIREEnemyMeleeTraceSettings MeleeTrace;
 };

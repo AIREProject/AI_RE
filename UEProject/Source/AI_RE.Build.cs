@@ -49,6 +49,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/OBI/Abilities/Public",
 			"AI_RE/OBI/Animation/Public",
 			"AI_RE/OBI/UI/Public",
+			"AI_RE/Global/Animation/Public",
 			"AI_RE/Global/Components/Public",
 			"AI_RE/Global/Inventory/Public",
 			"AI_RE/Global/Abilities/Set/Public",
