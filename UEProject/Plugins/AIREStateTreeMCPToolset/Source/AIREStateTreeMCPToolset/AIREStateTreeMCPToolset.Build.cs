@@ -24,7 +24,6 @@ public class AIREStateTreeMCPToolset : ModuleRules
 				"AssetTools",
 				"BlueprintGraph",
 				"AnimationBlueprintLibrary",
-				"GameplayStateTreeModule",
 				"InputCore",
 				"MovieScene",
 				"MovieSceneTracks",
