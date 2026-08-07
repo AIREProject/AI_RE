@@ -86,7 +86,7 @@ public:
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity", meta = (Categories = "Weapon.Companion"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity", meta = (Categories = "Weapon"))
 	FGameplayTag WeaponTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Abilities")
