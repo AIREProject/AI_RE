@@ -178,6 +178,7 @@ void AAIREEnemyBase::ApplyEnemyConfig()
 		Config->AttackFallbackHitDelay,
 		Config->AttackFallbackRecoveryDuration,
 		Config->MeleeTrace);
+	EnemyAttackComponent->ConfigureAttackPatterns(Config->AttackPatterns);
 }
 
 void AAIREEnemyBase::EndPlay(

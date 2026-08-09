@@ -2,13 +2,75 @@
 
 #include "AIRECombatDamageSubsystem.h"
 #include "AIRECombatDamageTargetInterface.h"
+#include "AIREEnemyVitalityComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/RootMotionSource.h"
 #include "TimerManager.h"
+
+#if ENABLE_DRAW_DEBUG
+#include "DrawDebugHelpers.h"
+#include "HAL/IConsoleManager.h"
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarAIREEnemyMeleeTraceDebug(
+		TEXT("aire.Enemy.MeleeTrace.Debug"),
+		0,
+		TEXT("Draw enemy melee sphere sweeps.\n")
+		TEXT("0: Disabled\n")
+		TEXT("1: Enabled"),
+		ECVF_Cheat);
+
+	void DrawEnemyMeleeTraceSweep(
+		const UWorld* World,
+		const FVector& Start,
+		const FVector& End,
+		const float Radius,
+		const FColor& Color)
+	{
+		constexpr float DebugLifetime = 1.0f;
+		constexpr float DebugThickness = 1.5f;
+		const FVector SweepDelta = End - Start;
+		if (SweepDelta.IsNearlyZero())
+		{
+			DrawDebugSphere(
+				World,
+				Start,
+				Radius,
+				16,
+				Color,
+				false,
+				DebugLifetime,
+				0,
+				DebugThickness);
+			return;
+		}
+
+		const FVector SweepCenter = (Start + End) * 0.5f;
+		const float HalfHeight = (SweepDelta.Size() * 0.5f) + Radius;
+		const FQuat SweepRotation = FQuat::FindBetweenNormals(
+			FVector::UpVector,
+			SweepDelta.GetSafeNormal());
+		DrawDebugCapsule(
+			World,
+			SweepCenter,
+			HalfHeight,
+			Radius,
+			SweepRotation,
+			Color,
+			false,
+			DebugLifetime,
+			0,
+			DebugThickness);
+	}
+}
+#endif
 
 #if !UE_BUILD_SHIPPING
 DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAttack, Log, All);
@@ -41,6 +103,8 @@ void UAIREEnemyAttackComponent::ShutdownAttack()
 	}
 	ClearMontageEndDelegate();
 	ResetTraceState();
+	PatternNextAllowedTimes.Reset();
+	ResetAttackSequence();
 	OwnerCharacter.Reset();
 	OnAttackStarted.Clear();
 	OnOpportunityClosed.Clear();
@@ -100,6 +164,25 @@ void UAIREEnemyAttackComponent::ConfigureDefaults(
 	}
 }
 
+void UAIREEnemyAttackComponent::ConfigureAttackPatterns(
+	const TArray<FAIREEnemyAttackPattern>& InAttackPatterns)
+{
+	AttackPatterns = InAttackPatterns;
+	PatternNextAllowedTimes.Reset();
+	ResetAttackSequence();
+}
+
+void UAIREEnemyAttackComponent::ResetAttackSequence()
+{
+	RecentPatternIds.Reset();
+	bRequiresNonGapCloserFollowUp = false;
+}
+
+bool UAIREEnemyAttackComponent::RequiresNonGapCloserFollowUp() const
+{
+	return bRequiresNonGapCloserFollowUp;
+}
+
 bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 {
 	UWorld* World = GetWorld();
@@ -112,6 +195,14 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 		|| (Damage <= 0.0f && StaggerValue <= 0.0f)
 		|| !IsTargetWithinAttackRange(Target)
 		|| !AIRECombatDamageTarget::IsAlive(Target))
+	{
+		return false;
+	}
+
+	const float TargetDistance = GetSurfaceDistanceToTarget(Target);
+	const FAIREEnemyAttackPattern* SelectedPattern =
+		SelectAttackPattern(Target);
+	if (!SelectedPattern && TargetDistance > AttackRange)
 	{
 		return false;
 	}
@@ -130,7 +221,55 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 	}
 
 	ResetTraceState();
-	ActiveMeleeTraceSettings = MeleeTraceSettings;
+	ActiveAttackTraceSettings = MeleeTraceSettings;
+	ActiveMeleeTraceSettings = ActiveAttackTraceSettings;
+	ActiveAttackMontage = SelectedPattern
+		? SelectedPattern->Montage
+		: AttackMontage;
+	ActivePatternId = SelectedPattern
+		? SelectedPattern->PatternId
+		: NAME_None;
+	ActivePlayRate = SelectedPattern
+		? FMath::FRandRange(
+			SelectedPattern->MinPlayRate,
+			SelectedPattern->MaxPlayRate)
+		: 1.0f;
+	ActivePatternDamageScale = SelectedPattern
+		? SelectedPattern->DamageScale
+		: 1.0f;
+	ActivePatternStaggerScale = SelectedPattern
+		? SelectedPattern->StaggerScale
+		: 1.0f;
+	ActiveCooldownScale = SelectedPattern
+		? SelectedPattern->CooldownScale
+		: 1.0f;
+	const float MaximumForwardMoveDistance = SelectedPattern
+		? SelectedPattern->ForwardMoveDistance
+		: 0.0f;
+	const float ForwardMoveStopDistance = SelectedPattern
+		? SelectedPattern->ForwardMoveStopDistance
+		: 0.0f;
+	ActiveForwardMoveDistance = MaximumForwardMoveDistance;
+	if (ForwardMoveStopDistance > 0.0f)
+	{
+		ActiveForwardMoveDistance = FMath::Min(
+			MaximumForwardMoveDistance,
+			FMath::Max(0.0f, TargetDistance - ForwardMoveStopDistance));
+	}
+	if (SelectedPattern)
+	{
+		RecentPatternIds.Add(SelectedPattern->PatternId);
+		if (RecentPatternIds.Num() > 2)
+		{
+			RecentPatternIds.RemoveAt(0, RecentPatternIds.Num() - 2);
+		}
+		if (SelectedPattern->ReuseCooldown > 0.0f)
+		{
+			PatternNextAllowedTimes.Add(
+				SelectedPattern->PatternId,
+				World->GetTimeSeconds() + SelectedPattern->ReuseCooldown);
+		}
+	}
 	bAttackActive = true;
 	bOpportunityOpen =
 		TargetingMode == EAIRECombatTargetingMode::SingleTarget;
@@ -145,9 +284,11 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 		&UAIREEnemyAttackComponent::HandleTargetDestroyed);
 
 	float PresentationDuration = 0.0f;
-	if (IsValid(AttackMontage))
+	if (IsValid(ActiveAttackMontage))
 	{
-		PresentationDuration = OwnerCharacter->PlayAnimMontage(AttackMontage);
+		PresentationDuration = OwnerCharacter->PlayAnimMontage(
+			ActiveAttackMontage,
+			ActivePlayRate);
 		bMontagePlayed = PresentationDuration > 0.0f;
 		if (bMontagePlayed)
 		{
@@ -161,7 +302,7 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 					&UAIREEnemyAttackComponent::HandleMontageEnded);
 				AnimInstance->Montage_SetEndDelegate(
 					EndDelegate,
-					AttackMontage);
+					ActiveAttackMontage);
 			}
 		}
 	}
@@ -184,12 +325,30 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 		&UAIREEnemyAttackComponent::HandleRecoveryExpired,
 		RecoveryDuration,
 		false);
+	const bool bStartedGapCloser =
+		ActiveForwardMoveDistance > UE_SMALL_NUMBER;
+	bRequiresNonGapCloserFollowUp = bStartedGapCloser;
+#if !UE_BUILD_SHIPPING
+	UE_LOG(
+		LogAIREEnemyAttack,
+		Log,
+		TEXT("Attack started Enemy=%s Target=%s Pattern=%s Distance=%.1f PlayRate=%.2f Cooldown=%.2f ForwardMove=%.1f Montage=%s"),
+		*GetNameSafe(OwnerCharacter.Get()),
+		*GetNameSafe(Target),
+		*ActivePatternId.ToString(),
+		TargetDistance,
+		ActivePlayRate,
+		CooldownDuration * ActiveCooldownScale,
+		ActiveForwardMoveDistance,
+		*GetNameSafe(ActiveAttackMontage));
+#endif
 	OnAttackStarted.Broadcast(Target, ActiveExecutionId);
 	return true;
 }
 
 bool UAIREEnemyAttackComponent::CommitActiveMeleeHit()
 {
+	PrepareFallbackStrike();
 	if (!CanResolveActiveHit())
 	{
 		if (bAttackActive)
@@ -211,13 +370,25 @@ bool UAIREEnemyAttackComponent::CommitActiveMeleeHit()
 }
 
 void UAIREEnemyAttackComponent::BeginMeleeTraceWindow(
-	const FGuid& ExecutionId)
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex,
+	const float DamageScale,
+	const float StaggerScale,
+	const FName TraceStartSocket,
+	const FName TraceEndSocket,
+	const float TraceWindowDuration)
 {
 	if (!bAttackActive
 		|| bDamageCancelled
-		|| bHitCommitted
 		|| !ExecutionId.IsValid()
 		|| ExecutionId != ActiveExecutionId
+		|| StrikeIndex < 0
+		|| CommittedStrikeIndices.Contains(StrikeIndex)
+		|| !FMath::IsFinite(DamageScale)
+		|| DamageScale < 0.0f
+		|| !FMath::IsFinite(StaggerScale)
+		|| StaggerScale < 0.0f
+		|| (DamageScale <= 0.0f && StaggerScale <= 0.0f)
 		|| !OwnerCharacter.IsValid())
 	{
 		return;
@@ -227,6 +398,15 @@ void UAIREEnemyAttackComponent::BeginMeleeTraceWindow(
 	bTraceWindowOpen = true;
 	bTraceWindowEverOpened = true;
 	TraceWindowExecutionId = ExecutionId;
+	ActiveStrikeIndex = StrikeIndex;
+	ActiveStrikeDamageScale = DamageScale;
+	ActiveStrikeStaggerScale = StaggerScale;
+	ActiveMeleeTraceSettings = ActiveAttackTraceSettings;
+	if (!TraceStartSocket.IsNone() && !TraceEndSocket.IsNone())
+	{
+		ActiveMeleeTraceSettings.TraceStartSocket = TraceStartSocket;
+		ActiveMeleeTraceSettings.TraceEndSocket = TraceEndSocket;
+	}
 	ActiveTraceMesh = OwnerCharacter->GetMesh();
 	USkeletalMeshComponent* MeshComponent = ActiveTraceMesh.Get();
 	const bool bHasConfiguredSockets =
@@ -258,19 +438,23 @@ void UAIREEnemyAttackComponent::BeginMeleeTraceWindow(
 			*ExecutionId.ToString());
 	}
 #endif
+	if (!bAttackMovementWindowEverOpened)
+	{
+		StartAttackMovement(TraceWindowDuration);
+	}
 }
 
 void UAIREEnemyAttackComponent::UpdateMeleeTraceWindow(
-	const FGuid& ExecutionId)
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex)
 {
-	if (!IsTraceCallbackCurrent(ExecutionId))
+	if (!IsTraceCallbackCurrent(ExecutionId, StrikeIndex))
 	{
 		return;
 	}
 	if (!CanResolveActiveHit())
 	{
 		CloseTraceWindow();
-		CloseOpportunity();
 		return;
 	}
 
@@ -282,14 +466,43 @@ void UAIREEnemyAttackComponent::UpdateMeleeTraceWindow(
 }
 
 void UAIREEnemyAttackComponent::EndMeleeTraceWindow(
-	const FGuid& ExecutionId)
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex)
 {
-	if (!IsTraceCallbackCurrent(ExecutionId))
+	if (!IsTraceCallbackCurrent(ExecutionId, StrikeIndex))
 	{
 		return;
 	}
 	CloseTraceWindow();
-	CloseOpportunity();
+}
+
+void UAIREEnemyAttackComponent::BeginAttackMovementWindow(
+	const FGuid& ExecutionId,
+	const float MovementWindowDuration)
+{
+	if (!bAttackActive
+		|| !ExecutionId.IsValid()
+		|| ExecutionId != ActiveExecutionId
+		|| !FMath::IsFinite(MovementWindowDuration)
+		|| MovementWindowDuration <= 0.0f)
+	{
+		return;
+	}
+
+	bAttackMovementWindowEverOpened = true;
+	StartAttackMovement(MovementWindowDuration);
+}
+
+void UAIREEnemyAttackComponent::EndAttackMovementWindow(
+	const FGuid& ExecutionId)
+{
+	if (!bAttackActive
+		|| !ExecutionId.IsValid()
+		|| ExecutionId != ActiveExecutionId)
+	{
+		return;
+	}
+	StopAttackMovement();
 }
 
 bool UAIREEnemyAttackComponent::TryCancelDamageForAggroSwap(
@@ -327,9 +540,9 @@ void UAIREEnemyAttackComponent::CancelCurrentAttack()
 	{
 		World->GetTimerManager().ClearTimer(HitTimerHandle);
 	}
-	if (OwnerCharacter.IsValid() && IsValid(AttackMontage))
+	if (OwnerCharacter.IsValid() && IsValid(ActiveAttackMontage))
 	{
-		OwnerCharacter->StopAnimMontage(AttackMontage);
+		OwnerCharacter->StopAnimMontage(ActiveAttackMontage);
 	}
 	if (bAttackActive)
 	{
@@ -348,12 +561,27 @@ UAIREEnemyAttackComponent::GetAttackSnapshot() const
 	Snapshot.TargetingMode = TargetingMode;
 	Snapshot.Target = AttackTarget.Get();
 	Snapshot.ExecutionId = ActiveExecutionId;
+	Snapshot.PatternId = ActivePatternId;
+	Snapshot.PlayRate = ActivePlayRate;
+	Snapshot.bGapCloser = ActiveForwardMoveDistance > UE_SMALL_NUMBER;
+	Snapshot.CommittedStrikeCount = CommittedStrikeIndices.Num();
 	return Snapshot;
 }
 
 float UAIREEnemyAttackComponent::GetAttackRange() const
 {
-	return AttackRange;
+	float MaximumRange = AttackRange;
+	const float HealthRatio = GetOwnerHealthRatio();
+	for (const FAIREEnemyAttackPattern& Pattern : AttackPatterns)
+	{
+		if (IsValid(Pattern.Montage)
+			&& HealthRatio >= Pattern.MinHealthRatio
+			&& HealthRatio <= Pattern.MaxHealthRatio)
+		{
+			MaximumRange = FMath::Max(MaximumRange, Pattern.MaxRange);
+		}
+	}
+	return MaximumRange;
 }
 
 bool UAIREEnemyAttackComponent::IsTargetWithinAttackRange(
@@ -366,15 +594,7 @@ bool UAIREEnemyAttackComponent::IsTargetWithinAttackRange(
 		return false;
 	}
 
-	const float OwnerRadius = OwnerCharacter->GetCapsuleComponent()
-		? OwnerCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius()
-		: 0.0f;
-	const float TargetRadius = Target->GetSimpleCollisionRadius();
-	const float CenterDistance = FVector::Dist2D(
-		OwnerCharacter->GetActorLocation(),
-		Target->GetActorLocation());
-	return FMath::Max(0.0f, CenterDistance - OwnerRadius - TargetRadius)
-		<= AttackRange;
+	return GetSurfaceDistanceToTarget(Target) <= GetAttackRange();
 }
 
 void UAIREEnemyAttackComponent::EndPlay(
@@ -396,7 +616,7 @@ void UAIREEnemyAttackComponent::HandleMontageEnded(
 	UAnimMontage* Montage,
 	const bool bInterrupted)
 {
-	if (Montage != AttackMontage || !bAttackActive)
+	if (Montage != ActiveAttackMontage || !bAttackActive)
 	{
 		return;
 	}
@@ -413,7 +633,7 @@ void UAIREEnemyAttackComponent::HandleMontageEnded(
 			Warning,
 			TEXT("Enemy %s completed attack montage %s without opening a melee trace window. Execution %s is a miss."),
 			*GetNameSafe(GetOwner()),
-			*GetNameSafe(AttackMontage),
+			*GetNameSafe(ActiveAttackMontage),
 			*ActiveExecutionId.ToString());
 	}
 #endif
@@ -424,6 +644,7 @@ void UAIREEnemyAttackComponent::HandleMontageEnded(
 
 void UAIREEnemyAttackComponent::HandleFallbackHit()
 {
+	PrepareFallbackStrike();
 	if (!CanResolveActiveHit())
 	{
 		CloseOpportunity();
@@ -457,19 +678,43 @@ void UAIREEnemyAttackComponent::HandleRecoveryExpired()
 }
 
 bool UAIREEnemyAttackComponent::IsTraceCallbackCurrent(
-	const FGuid& ExecutionId) const
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex) const
 {
 	return bTraceWindowOpen
 		&& ExecutionId.IsValid()
 		&& ExecutionId == TraceWindowExecutionId
-		&& ExecutionId == ActiveExecutionId;
+		&& ExecutionId == ActiveExecutionId
+		&& StrikeIndex == ActiveStrikeIndex;
+}
+
+float UAIREEnemyAttackComponent::GetPreferredAttackRange() const
+{
+	return AttackRange;
+}
+
+float UAIREEnemyAttackComponent::GetRemainingAttackCooldown() const
+{
+	const UWorld* World = GetWorld();
+	return IsValid(World)
+		? static_cast<float>(FMath::Max(
+			0.0,
+			NextAllowedAttackTime - World->GetTimeSeconds()))
+		: 0.0f;
+}
+
+float UAIREEnemyAttackComponent::GetTargetSurfaceDistance(
+	const AActor* Target) const
+{
+	return GetSurfaceDistanceToTarget(Target);
 }
 
 bool UAIREEnemyAttackComponent::CanResolveActiveHit() const
 {
 	return bAttackActive
-		&& !bHitCommitted
 		&& !bDamageCancelled
+		&& ActiveStrikeIndex >= 0
+		&& !CommittedStrikeIndices.Contains(ActiveStrikeIndex)
 		&& TargetingMode == EAIRECombatTargetingMode::SingleTarget
 		&& OwnerCharacter.IsValid()
 		&& AttackTarget.IsValid()
@@ -485,6 +730,16 @@ bool UAIREEnemyAttackComponent::CommitResolvedHit(
 		return false;
 	}
 
+	const int32 CommittedStrikeIndex = ActiveStrikeIndex;
+	const float StrikeDamageScale = ActiveStrikeDamageScale;
+	const float StrikeStaggerScale = ActiveStrikeStaggerScale;
+	FGuid& StrikeExecutionId = StrikeExecutionIds.FindOrAdd(
+		CommittedStrikeIndex);
+	if (!StrikeExecutionId.IsValid())
+	{
+		StrikeExecutionId = FGuid::NewGuid();
+	}
+	CommittedStrikeIndices.Add(CommittedStrikeIndex);
 	bHitCommitted = true;
 	CloseTraceWindow();
 	CloseOpportunity();
@@ -499,14 +754,20 @@ bool UAIREEnemyAttackComponent::CommitResolvedHit(
 	FAIRECombatDamageRequest Request;
 	Request.Source = OwnerCharacter.Get();
 	Request.Target = AttackTarget.Get();
-	Request.Damage = Damage;
-	Request.StaggerValue = StaggerValue;
-	Request.ExecutionId = ActiveExecutionId;
+	Request.Damage = Damage
+		* ActivePatternDamageScale
+		* StrikeDamageScale;
+	Request.StaggerValue = StaggerValue
+		* ActivePatternStaggerScale
+		* StrikeStaggerScale;
+	Request.ExecutionId = StrikeExecutionId;
 	Request.bHasHitResult = true;
 	Request.HitResult = HitResult;
-	bDamageApplied = DamageSubsystem->ApplyDamageRequest(Request)
+	const bool bStrikeDamageApplied =
+		DamageSubsystem->ApplyDamageRequest(Request)
 		== EAIRECombatDamageResult::Applied;
-	return bDamageApplied;
+	bDamageApplied = bDamageApplied || bStrikeDamageApplied;
+	return bStrikeDamageApplied;
 }
 
 UAIREEnemyAttackComponent::ETraceSampleResult
@@ -638,7 +899,7 @@ bool UAIREEnemyAttackComponent::SweepTraceSegment(
 	TArray<AActor*> AttachedActors;
 	OwnerCharacter->GetAttachedActors(AttachedActors, true, true);
 	QueryParams.AddIgnoredActors(AttachedActors);
-	return World->SweepSingleByChannel(
+	const bool bHit = World->SweepSingleByChannel(
 		OutHit,
 		Start,
 		End,
@@ -646,6 +907,35 @@ bool UAIREEnemyAttackComponent::SweepTraceSegment(
 		ActiveMeleeTraceSettings.TraceChannel.GetValue(),
 		FCollisionShape::MakeSphere(ActiveMeleeTraceSettings.TraceRadius),
 		QueryParams);
+
+#if ENABLE_DRAW_DEBUG
+	if (CVarAIREEnemyMeleeTraceDebug.GetValueOnGameThread() > 0)
+	{
+		const FColor DebugColor = !bHit
+			? FColor::Cyan
+			: OutHit.GetActor() == AttackTarget.Get()
+				? FColor::Green
+				: FColor::Red;
+		DrawEnemyMeleeTraceSweep(
+			World,
+			Start,
+			End,
+			ActiveMeleeTraceSettings.TraceRadius,
+			DebugColor);
+		if (bHit)
+		{
+			DrawDebugPoint(
+				World,
+				OutHit.ImpactPoint,
+				12.0f,
+				DebugColor,
+				false,
+				1.0f);
+		}
+	}
+#endif
+
+	return bHit;
 }
 
 void UAIREEnemyAttackComponent::ResolveTraceSample(
@@ -663,11 +953,220 @@ void UAIREEnemyAttackComponent::ResolveTraceSample(
 	}
 }
 
+void UAIREEnemyAttackComponent::PrepareFallbackStrike()
+{
+	if (!bAttackActive || ActiveStrikeIndex >= 0)
+	{
+		return;
+	}
+	ActiveStrikeIndex = 0;
+	ActiveStrikeDamageScale = 1.0f;
+	ActiveStrikeStaggerScale = 1.0f;
+	ActiveMeleeTraceSettings = ActiveAttackTraceSettings;
+}
+
+const FAIREEnemyAttackPattern*
+UAIREEnemyAttackComponent::SelectAttackPattern(const AActor* Target) const
+{
+	const float TargetDistance = GetSurfaceDistanceToTarget(Target);
+	const float HealthRatio = GetOwnerHealthRatio();
+	const UWorld* World = GetWorld();
+	const double CurrentTime = IsValid(World)
+		? World->GetTimeSeconds()
+		: 0.0;
+	TArray<const FAIREEnemyAttackPattern*> EligiblePatterns;
+	TArray<const FAIREEnemyAttackPattern*> NonRecentPatterns;
+	TArray<const FAIREEnemyAttackPattern*> NonImmediateRepeatPatterns;
+	for (const FAIREEnemyAttackPattern& Pattern : AttackPatterns)
+	{
+		const double* PatternNextAllowedTime =
+			PatternNextAllowedTimes.Find(Pattern.PatternId);
+		if (!IsValid(Pattern.Montage)
+			|| (bRequiresNonGapCloserFollowUp
+				&& Pattern.ForwardMoveDistance > UE_SMALL_NUMBER)
+			|| TargetDistance < Pattern.MinRange
+			|| TargetDistance > Pattern.MaxRange
+			|| HealthRatio < Pattern.MinHealthRatio
+			|| HealthRatio > Pattern.MaxHealthRatio
+			|| !FMath::IsFinite(Pattern.Weight)
+			|| Pattern.Weight <= 0.0f
+			|| (PatternNextAllowedTime
+				&& CurrentTime < *PatternNextAllowedTime))
+		{
+			continue;
+		}
+		EligiblePatterns.Add(&Pattern);
+		if (!RecentPatternIds.Contains(Pattern.PatternId))
+		{
+			NonRecentPatterns.Add(&Pattern);
+		}
+		if (RecentPatternIds.IsEmpty()
+			|| Pattern.PatternId != RecentPatternIds.Last())
+		{
+			NonImmediateRepeatPatterns.Add(&Pattern);
+		}
+	}
+
+	const TArray<const FAIREEnemyAttackPattern*>* SelectionPool =
+		&EligiblePatterns;
+	if (!NonRecentPatterns.IsEmpty())
+	{
+		SelectionPool = &NonRecentPatterns;
+	}
+	else if (!NonImmediateRepeatPatterns.IsEmpty())
+	{
+		SelectionPool = &NonImmediateRepeatPatterns;
+	}
+	float TotalWeight = 0.0f;
+	for (const FAIREEnemyAttackPattern* Pattern : *SelectionPool)
+	{
+		TotalWeight += Pattern->Weight;
+	}
+	if (SelectionPool->IsEmpty() || TotalWeight <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	float RemainingWeight = FMath::FRandRange(0.0f, TotalWeight);
+	for (const FAIREEnemyAttackPattern* Pattern : *SelectionPool)
+	{
+		RemainingWeight -= Pattern->Weight;
+		if (RemainingWeight <= 0.0f)
+		{
+			return Pattern;
+		}
+	}
+	return SelectionPool->Last();
+}
+
+float UAIREEnemyAttackComponent::GetSurfaceDistanceToTarget(
+	const AActor* Target) const
+{
+	if (!OwnerCharacter.IsValid() || !IsValid(Target))
+	{
+		return TNumericLimits<float>::Max();
+	}
+	const UCapsuleComponent* OwnerCapsule =
+		OwnerCharacter->GetCapsuleComponent();
+	const float OwnerRadius = IsValid(OwnerCapsule)
+		? OwnerCapsule->GetScaledCapsuleRadius()
+		: 0.0f;
+	const float TargetRadius = Target->GetSimpleCollisionRadius();
+	const float CenterDistance = FVector::Dist2D(
+		OwnerCharacter->GetActorLocation(),
+		Target->GetActorLocation());
+	return FMath::Max(
+		0.0f,
+		CenterDistance - OwnerRadius - TargetRadius);
+}
+
+float UAIREEnemyAttackComponent::GetOwnerHealthRatio() const
+{
+	const UAIREEnemyVitalityComponent* Vitality = OwnerCharacter.IsValid()
+		? OwnerCharacter->FindComponentByClass<UAIREEnemyVitalityComponent>()
+		: nullptr;
+	if (!IsValid(Vitality))
+	{
+		return 1.0f;
+	}
+	const FAIREEnemyVitalitySnapshot Snapshot =
+		Vitality->GetVitalitySnapshot();
+	return Snapshot.MaxHealth > 0.0f
+		? FMath::Clamp(Snapshot.Health / Snapshot.MaxHealth, 0.0f, 1.0f)
+		: 1.0f;
+}
+
+void UAIREEnemyAttackComponent::StartAttackMovement(
+	const float TraceWindowDuration)
+{
+	if (bAttackMovementStarted
+		|| !OwnerCharacter.IsValid()
+		|| !FMath::IsFinite(ActiveForwardMoveDistance)
+		|| ActiveForwardMoveDistance <= 0.0f
+		|| !FMath::IsFinite(TraceWindowDuration)
+		|| TraceWindowDuration <= 0.0f)
+	{
+		return;
+	}
+	UCharacterMovementComponent* Movement =
+		OwnerCharacter->GetCharacterMovement();
+	if (!IsValid(Movement)
+		|| (IsValid(ActiveAttackMontage)
+			&& ActiveAttackMontage->HasRootMotion()))
+	{
+		return;
+	}
+
+	float MontagePlayRate = ActivePlayRate;
+	if (BoundAnimInstance.IsValid() && IsValid(ActiveAttackMontage))
+	{
+		MontagePlayRate = BoundAnimInstance->Montage_GetPlayRate(
+			ActiveAttackMontage);
+	}
+	MontagePlayRate = FMath::Abs(MontagePlayRate);
+	if (!FMath::IsFinite(MontagePlayRate)
+		|| MontagePlayRate <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	FVector Forward = AttackForward.GetSafeNormal2D();
+	if (Forward.IsNearlyZero())
+	{
+		Forward = OwnerCharacter->GetActorForwardVector().GetSafeNormal2D();
+	}
+	if (Forward.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FVector StartLocation = OwnerCharacter->GetActorLocation();
+	TSharedPtr<FRootMotionSource_MoveToForce> MoveToForce =
+		MakeShared<FRootMotionSource_MoveToForce>();
+	MoveToForce->InstanceName = FName(TEXT("AIREEnemyAttackForwardMove"));
+	MoveToForce->AccumulateMode = ERootMotionAccumulateMode::Override;
+	MoveToForce->Settings.SetFlag(
+		ERootMotionSourceSettingsFlags::UseSensitiveLiftoffCheck);
+	MoveToForce->Priority = 1000;
+	MoveToForce->StartLocation = StartLocation;
+	MoveToForce->TargetLocation = StartLocation
+		+ Forward * ActiveForwardMoveDistance;
+	MoveToForce->Duration = TraceWindowDuration / MontagePlayRate;
+	MoveToForce->bRestrictSpeedToExpected = true;
+	MoveToForce->FinishVelocityParams.Mode =
+		ERootMotionFinishVelocityMode::SetVelocity;
+	MoveToForce->FinishVelocityParams.SetVelocity = FVector::ZeroVector;
+	ActiveMovementRootMotionSourceId =
+		Movement->ApplyRootMotionSource(MoveToForce);
+	bAttackMovementStarted = ActiveMovementRootMotionSourceId != 0;
+}
+
+void UAIREEnemyAttackComponent::StopAttackMovement()
+{
+	if (ActiveMovementRootMotionSourceId == 0)
+	{
+		return;
+	}
+	if (OwnerCharacter.IsValid())
+	{
+		if (UCharacterMovementComponent* Movement =
+			OwnerCharacter->GetCharacterMovement())
+		{
+			Movement->RemoveRootMotionSourceByID(
+				ActiveMovementRootMotionSourceId);
+		}
+	}
+	ActiveMovementRootMotionSourceId = 0;
+}
+
 void UAIREEnemyAttackComponent::CloseTraceWindow()
 {
 	bTraceWindowOpen = false;
 	bUseSocketTrace = false;
 	TraceWindowExecutionId.Invalidate();
+	ActiveStrikeIndex = INDEX_NONE;
+	ActiveStrikeDamageScale = 1.0f;
+	ActiveStrikeStaggerScale = 1.0f;
 	ActiveTraceMesh.Reset();
 	PreviousTraceStart = FVector::ZeroVector;
 	PreviousTraceEnd = FVector::ZeroVector;
@@ -675,20 +1174,33 @@ void UAIREEnemyAttackComponent::CloseTraceWindow()
 
 void UAIREEnemyAttackComponent::ResetTraceState()
 {
+	StopAttackMovement();
 	CloseTraceWindow();
+	ActiveAttackTraceSettings = FAIREEnemyMeleeTraceSettings();
 	ActiveMeleeTraceSettings = FAIREEnemyMeleeTraceSettings();
+	ActiveAttackMontage = nullptr;
+	ActivePatternId = NAME_None;
+	ActivePlayRate = 1.0f;
+	ActivePatternDamageScale = 1.0f;
+	ActivePatternStaggerScale = 1.0f;
+	ActiveCooldownScale = 1.0f;
+	ActiveForwardMoveDistance = 0.0f;
+	CommittedStrikeIndices.Reset();
+	StrikeExecutionIds.Reset();
 	bMontagePlayed = false;
 	bTraceWindowEverOpened = false;
+	bAttackMovementWindowEverOpened = false;
+	bAttackMovementStarted = false;
 }
 
 void UAIREEnemyAttackComponent::ClearMontageEndDelegate()
 {
-	if (BoundAnimInstance.IsValid() && IsValid(AttackMontage))
+	if (BoundAnimInstance.IsValid() && IsValid(ActiveAttackMontage))
 	{
 		FOnMontageEnded EmptyDelegate;
 		BoundAnimInstance->Montage_SetEndDelegate(
 			EmptyDelegate,
-			AttackMontage);
+			ActiveAttackMontage);
 	}
 	BoundAnimInstance.Reset();
 }
@@ -714,7 +1226,8 @@ void UAIREEnemyAttackComponent::FinishAttack()
 	{
 		World->GetTimerManager().ClearTimer(HitTimerHandle);
 		World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
-		NextAllowedAttackTime = World->GetTimeSeconds() + CooldownDuration;
+		NextAllowedAttackTime = World->GetTimeSeconds()
+			+ CooldownDuration * ActiveCooldownScale;
 	}
 	ClearMontageEndDelegate();
 	CloseTraceWindow();

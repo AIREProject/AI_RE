@@ -48,6 +48,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	EAIREEnemyAwarenessState,
 	CurrentState);
 
+enum class EAIREEnemyCombatApproachMove : uint8
+{
+	None,
+	Direct,
+	Sprint,
+	Lateral
+};
+
 UCLASS(Blueprintable)
 class AI_RE_API AAIREEnemyAIController : public AAIController
 {
@@ -95,13 +103,26 @@ protected:
 private:
 	void UpdateAwareness();
 	void UpdateEngagement(AActor* Target);
+	bool UpdateCombatApproach(
+		AActor* Target,
+		UAIREEnemyAttackComponent* Attack);
+	bool StartOrContinueDirectApproach(
+		AActor* Target,
+		float AcceptanceRadius);
+	bool StartLateralApproach(
+		AActor* Target,
+		float DesiredSurfaceDistance);
+	void ResetCombatApproach();
+	void ResetEngagementDecision(bool bResetAttackSequence);
+	void SetEngagementMovementSpeed(float Speed);
 	void BeginSearching();
-	void BeginReturning();
+	void BeginReturning(const TCHAR* Reason);
 	void CompleteReturnHome();
 	void SetAwarenessState(
 		EAIREEnemyAwarenessState NewState,
 		const TCHAR* Reason);
 	bool HasReachedHome() const;
+	bool IsOutsideHomeLeash(const AActor* Target = nullptr) const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIREEnemyAggroComponent> AggroComponent;
@@ -115,17 +136,33 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|AI", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float SearchDuration = 3.0f;
 
+	/** Center-to-home arrival radius shared by MoveTo and HasReachedHome. */
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|AI", meta = (ClampMin = "1.0", UIMin = "1.0", Units = "cm"))
 	float HomeAcceptanceRadius = 75.0f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|AI", meta = (ClampMin = "1.0", UIMin = "1.0", Units = "cm"))
+	/** Runtime copy of the possessed enemy config. Zero disables distance-driven return. */
 	float HomeLeashRadius = 2500.0f;
+	float BaseMovementSpeed = 400.0f;
+	float CombatSprintSpeed = 650.0f;
+	float CombatSprintStartDistance = 500.0f;
+	float TacticalApproachDistance = 300.0f;
+	float TacticalLateralOffset = 180.0f;
+	float TacticalMoveDuration = 0.9f;
 
 	TWeakObjectPtr<AAIREEnemyBase> Enemy;
+	TWeakObjectPtr<AActor> EngagementDecisionTarget;
+	TWeakObjectPtr<AActor> CombatApproachTarget;
 	FVector HomeLocation = FVector::ZeroVector;
 	FVector SearchLocation = FVector::ZeroVector;
+	FVector TacticalMoveDestination = FVector::ZeroVector;
 	double StateDeadline = 0.0;
+	double TacticalMoveDeadline = 0.0;
 	EAIREEnemyAwarenessState AwarenessState =
 		EAIREEnemyAwarenessState::IdleUnaware;
+	EAIREEnemyCombatApproachMove CombatApproachMove =
+		EAIREEnemyCombatApproachMove::None;
+	int32 NextLateralSide = 1;
 	bool bReturnRequested = false;
+	bool bUseCombatApproachActions = false;
+	bool bCooldownRepositionConsumed = false;
 };

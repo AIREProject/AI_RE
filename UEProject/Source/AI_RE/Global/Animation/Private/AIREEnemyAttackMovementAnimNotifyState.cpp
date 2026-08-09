@@ -1,4 +1,4 @@
-#include "AIREEnemyMeleeTraceAnimNotifyState.h"
+#include "AIREEnemyAttackMovementAnimNotifyState.h"
 
 #include "AIREEnemyAttackComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -16,7 +16,7 @@ UAIREEnemyAttackComponent* FindEnemyAttackComponent(
 }
 }
 
-void UAIREEnemyMeleeTraceAnimNotifyState::NotifyBegin(
+void UAIREEnemyAttackMovementAnimNotifyState::NotifyBegin(
 	USkeletalMeshComponent* MeshComp,
 	UAnimSequenceBase* Animation,
 	const float TotalDuration,
@@ -41,49 +41,12 @@ void UAIREEnemyMeleeTraceAnimNotifyState::NotifyBegin(
 
 	const TWeakObjectPtr<USkeletalMeshComponent> MeshKey(MeshComp);
 	ActiveExecutionIds.Add(MeshKey, Snapshot.ExecutionId);
-	AttackComponent->BeginMeleeTraceWindow(
+	AttackComponent->BeginAttackMovementWindow(
 		Snapshot.ExecutionId,
-		StrikeIndex,
-		DamageScale,
-		StaggerScale,
-		TraceStartSocket,
-		TraceEndSocket,
 		TotalDuration);
-	AttackComponent->UpdateMeleeTraceWindow(
-		Snapshot.ExecutionId,
-		StrikeIndex);
 }
 
-void UAIREEnemyMeleeTraceAnimNotifyState::NotifyTick(
-	USkeletalMeshComponent* MeshComp,
-	UAnimSequenceBase* Animation,
-	const float FrameDeltaTime,
-	const FAnimNotifyEventReference& EventReference)
-{
-	Super::NotifyTick(MeshComp, Animation, FrameDeltaTime, EventReference);
-
-	const TWeakObjectPtr<USkeletalMeshComponent> MeshKey(MeshComp);
-	const FGuid* ExecutionId = ActiveExecutionIds.Find(MeshKey);
-	UAIREEnemyAttackComponent* AttackComponent =
-		FindEnemyAttackComponent(MeshComp);
-	if (!ExecutionId || !IsValid(AttackComponent))
-	{
-		ActiveExecutionIds.Remove(MeshKey);
-		return;
-	}
-
-	const FAIREEnemyAttackSnapshot Snapshot =
-		AttackComponent->GetAttackSnapshot();
-	if (!Snapshot.bActive || Snapshot.ExecutionId != *ExecutionId)
-	{
-		ActiveExecutionIds.Remove(MeshKey);
-		return;
-	}
-
-	AttackComponent->UpdateMeleeTraceWindow(*ExecutionId, StrikeIndex);
-}
-
-void UAIREEnemyMeleeTraceAnimNotifyState::NotifyEnd(
+void UAIREEnemyAttackMovementAnimNotifyState::NotifyEnd(
 	USkeletalMeshComponent* MeshComp,
 	UAnimSequenceBase* Animation,
 	const FAnimNotifyEventReference& EventReference)
@@ -96,13 +59,13 @@ void UAIREEnemyMeleeTraceAnimNotifyState::NotifyEnd(
 		FindEnemyAttackComponent(MeshComp);
 	if (ExecutionId && IsValid(AttackComponent))
 	{
-		AttackComponent->EndMeleeTraceWindow(*ExecutionId, StrikeIndex);
+		AttackComponent->EndAttackMovementWindow(*ExecutionId);
 	}
 	ActiveExecutionIds.Remove(MeshKey);
 	RemoveStaleExecutionIds();
 }
 
-void UAIREEnemyMeleeTraceAnimNotifyState::RemoveStaleExecutionIds()
+void UAIREEnemyAttackMovementAnimNotifyState::RemoveStaleExecutionIds()
 {
 	for (auto It = ActiveExecutionIds.CreateIterator(); It; ++It)
 	{

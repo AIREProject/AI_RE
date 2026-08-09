@@ -1,5 +1,6 @@
 #include "AIREEnemyConfigDataAsset.h"
 
+#include "Animation/AnimMontage.h"
 #include "Misc/DataValidation.h"
 
 bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
@@ -10,8 +11,66 @@ bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
 	const bool bHasTraceEndSocket = !MeleeTrace.TraceEndSocket.IsNone();
 	const bool bHasCompleteSocketPair =
 		bHasTraceStartSocket == bHasTraceEndSocket;
+	bool bValidAttackPatterns = true;
+	TSet<FName> PatternIds;
+	for (const FAIREEnemyAttackPattern& Pattern : AttackPatterns)
+	{
+		const bool bValidPattern = !Pattern.PatternId.IsNone()
+			&& IsValid(Pattern.Montage)
+			&& !PatternIds.Contains(Pattern.PatternId)
+			&& FMath::IsFinite(Pattern.Weight)
+			&& Pattern.Weight > 0.0f
+			&& FMath::IsFinite(Pattern.MinRange)
+			&& Pattern.MinRange >= 0.0f
+			&& FMath::IsFinite(Pattern.MaxRange)
+			&& Pattern.MaxRange >= Pattern.MinRange
+			&& FMath::IsFinite(Pattern.MinHealthRatio)
+			&& Pattern.MinHealthRatio >= 0.0f
+			&& Pattern.MinHealthRatio <= 1.0f
+			&& FMath::IsFinite(Pattern.MaxHealthRatio)
+			&& Pattern.MaxHealthRatio >= Pattern.MinHealthRatio
+			&& Pattern.MaxHealthRatio <= 1.0f
+			&& FMath::IsFinite(Pattern.MinPlayRate)
+			&& Pattern.MinPlayRate > 0.0f
+			&& FMath::IsFinite(Pattern.MaxPlayRate)
+			&& Pattern.MaxPlayRate >= Pattern.MinPlayRate
+			&& FMath::IsFinite(Pattern.DamageScale)
+			&& Pattern.DamageScale >= 0.0f
+			&& FMath::IsFinite(Pattern.StaggerScale)
+			&& Pattern.StaggerScale >= 0.0f
+			&& (Pattern.DamageScale > 0.0f || Pattern.StaggerScale > 0.0f)
+			&& FMath::IsFinite(Pattern.CooldownScale)
+			&& Pattern.CooldownScale >= 0.0f
+			&& FMath::IsFinite(Pattern.ReuseCooldown)
+			&& Pattern.ReuseCooldown >= 0.0f
+			&& FMath::IsFinite(Pattern.ForwardMoveDistance)
+			&& Pattern.ForwardMoveDistance >= 0.0f
+			&& FMath::IsFinite(Pattern.ForwardMoveStopDistance)
+			&& Pattern.ForwardMoveStopDistance >= 0.0f
+			&& Pattern.ForwardMoveStopDistance <= Pattern.MaxRange
+			&& (Pattern.ForwardMoveDistance <= 0.0f
+				|| !Pattern.Montage->HasRootMotion());
+		if (!bValidPattern)
+		{
+			bValidAttackPatterns = false;
+			break;
+		}
+		PatternIds.Add(Pattern.PatternId);
+	}
 	const bool bValid = FMath::IsFinite(MovementSpeed)
 		&& MovementSpeed > 0.0f
+		&& FMath::IsFinite(HomeLeashRadius)
+		&& HomeLeashRadius >= 0.0f
+		&& FMath::IsFinite(CombatSprintSpeed)
+		&& CombatSprintSpeed > 0.0f
+		&& FMath::IsFinite(CombatSprintStartDistance)
+		&& CombatSprintStartDistance > 0.0f
+		&& FMath::IsFinite(TacticalApproachDistance)
+		&& TacticalApproachDistance > 0.0f
+		&& FMath::IsFinite(TacticalLateralOffset)
+		&& TacticalLateralOffset > 0.0f
+		&& FMath::IsFinite(TacticalMoveDuration)
+		&& TacticalMoveDuration > 0.0f
 		&& FMath::IsFinite(MaxHealth)
 		&& MaxHealth > 0.0f
 		&& FMath::IsFinite(InitialHealth)
@@ -46,7 +105,8 @@ bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
 		&& FMath::IsFinite(MeleeTrace.FallbackTraceDistance)
 		&& MeleeTrace.FallbackTraceDistance >= MeleeTrace.TraceRadius
 		&& MeleeTrace.TraceChannel.GetValue() >= ECC_WorldStatic
-		&& MeleeTrace.TraceChannel.GetValue() < ECC_MAX;
+		&& MeleeTrace.TraceChannel.GetValue() < ECC_MAX
+		&& bValidAttackPatterns;
 	if (!bValid)
 	{
 		OutValidationError = NSLOCTEXT(

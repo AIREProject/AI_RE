@@ -106,6 +106,9 @@ struct FAIRECompanionContextEvaluatorInstanceData
 	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
 	float ReturnStartDistance = 0.0f;
 
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
+	float ReturnStopDistance = 0.0f;
+
 	/** Deprecated StateTree binding retained for existing asset compatibility. */
 	UPROPERTY(
 		VisibleAnywhere,
@@ -128,6 +131,9 @@ struct FAIRECompanionContextEvaluatorInstanceData
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
 	bool bShouldReturn = false;
+
+	UPROPERTY(Transient)
+	bool bReturnLatched = false;
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
 	bool bIsDisabledRequested = false;
@@ -318,7 +324,10 @@ struct FAIRECompanionEngageThreatTaskInstanceData
 	TWeakObjectPtr<AActor> ActiveTarget;
 
 	UPROPERTY(Transient)
-	float RetryTimeRemaining = 0.0f;
+	float MovementRetryTimeRemaining = 0.0f;
+
+	UPROPERTY(Transient)
+	float AbilityRetryTimeRemaining = 0.0f;
 
 	UPROPERTY(Transient)
 	bool bMoveRequested = false;

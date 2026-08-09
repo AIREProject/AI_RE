@@ -42,7 +42,6 @@ namespace
 {
 	constexpr float CombatApproachMargin = 50.0f;
 	constexpr float CombatApproachAcceptanceRadius = 25.0f;
-	constexpr float CombatRangeExitSlack = 25.0f;
 	constexpr float CombatMovementRetryInterval = 0.5f;
 	constexpr float CombatActivationRetryInterval = 0.1f;
 	constexpr float SupportApproachMargin = 50.0f;
@@ -493,11 +492,13 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.bIsRunning = false;
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
+	InstanceData.ReturnStopDistance = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
 	InstanceData.bShouldFollow = false;
 	InstanceData.bShouldReturn = false;
+	InstanceData.bReturnLatched = false;
 	InstanceData.bIsDisabledRequested = false;
 	InstanceData.bIsSurvivalRequested = false;
 	InstanceData.bIsCombatRequested = false;
@@ -539,6 +540,7 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	InstanceData.MovementSpeed = 0.0f;
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
+	InstanceData.ReturnStopDistance = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
@@ -621,18 +623,31 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		{
 			InstanceData.FollowStopDistance = CompanionConfig->FollowStopDistance;
 			InstanceData.ReturnStartDistance = CompanionConfig->ReturnStartDistance;
+			InstanceData.ReturnStopDistance = CompanionConfig->ReturnStopDistance;
 
 			const UWorld* World = InstanceData.CompanionCharacter->GetWorld();
 			APawn* CurrentPlayerPawn = IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
 			if (IsValid(CurrentPlayerPawn))
 			{
 				InstanceData.PlayerPawn = CurrentPlayerPawn;
-				InstanceData.DistanceToPlayer = FVector::Distance(
+				const float CenterDistance = FVector::Distance(
 					InstanceData.CompanionCharacter->GetActorLocation(),
 					CurrentPlayerPawn->GetActorLocation());
+				InstanceData.DistanceToPlayer = FMath::Max(
+					0.0f,
+					CenterDistance
+						- InstanceData.CompanionCharacter->GetSimpleCollisionRadius()
+						- CurrentPlayerPawn->GetSimpleCollisionRadius());
 				InstanceData.bHasPlayer = true;
 				InstanceData.bShouldFollow = InstanceData.DistanceToPlayer > InstanceData.FollowStopDistance;
-				InstanceData.bShouldReturn = InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				InstanceData.bReturnLatched = InstanceData.bReturnLatched
+					? InstanceData.DistanceToPlayer > InstanceData.ReturnStopDistance
+					: InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				InstanceData.bShouldReturn = InstanceData.bReturnLatched;
+			}
+			else
+			{
+				InstanceData.bReturnLatched = false;
 			}
 
 			if (InstanceData.bIsCombatRequested || InstanceData.bShouldReturn)
@@ -1560,7 +1575,10 @@ void FAIRECompanionExecuteWorkOrderTask::CancelOwnedRequests(
 	const FGameplayAbilitySpecHandle AttackAbilityHandle =
 		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
 			AIRECompanionGameplayTags::AbilityCombatBasicAttack);
-	if (AttackAbilityHandle.IsValid())
+	if (const FGameplayAbilitySpec* AttackSpec =
+			InstanceData.AbilitySystemComponent->FindAbilitySpecFromHandle(
+				AttackAbilityHandle);
+		AttackSpec && AttackSpec->IsActive())
 	{
 		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
 			AttackAbilityHandle);
@@ -1590,7 +1608,8 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::EnterState(
 	}
 
 	InstanceData.ActiveTarget = InstanceData.ThreatTarget;
-	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.MovementRetryTimeRemaining = 0.0f;
+	InstanceData.AbilityRetryTimeRemaining = 0.0f;
 	InstanceData.bMoveRequested = false;
 	InstanceData.bSkillIntentBuffered = false;
 	InstanceData.bSkillIntentEvaluatedForStep = false;
@@ -1622,7 +1641,8 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	{
 		CancelOwnedRequests(InstanceData);
 		InstanceData.ActiveTarget = InstanceData.ThreatTarget;
-		InstanceData.RetryTimeRemaining = 0.0f;
+		InstanceData.MovementRetryTimeRemaining = 0.0f;
+		InstanceData.AbilityRetryTimeRemaining = 0.0f;
 		InstanceData.bSkillIntentBuffered = false;
 		InstanceData.bSkillIntentEvaluatedForStep = false;
 		InstanceData.bWasSkillCancelWindowOpen = false;
@@ -1650,59 +1670,35 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		TargetActor,
 		EAIFocusPriority::Gameplay);
 
-	bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+	const bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
 		AIRECompanionGameplayTags::StateActionAttacking);
-	const bool bCombatSkillWasActive =
-		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
-			AIRECompanionGameplayTags::StateActionAttackingSkill);
-	const float ActiveAttackRange = bCombatSkillWasActive
-		? WeaponDefinition->CombatSkill.AttackRange
-		: AttackRange;
-	const float AttackExitDistance =
-		ActiveAttackRange + CombatRangeExitSlack;
-	if (bAttackActive
-		&& !IsTargetInRange(*CompanionPawn, *TargetActor, AttackExitDistance))
-	{
-		const FGameplayTag CombatAbilityTags[] =
-		{
-			AIRECompanionGameplayTags::AbilityCombatBasicAttack,
-			AIRECompanionGameplayTags::AbilityCombatSkill
-		};
-		for (const FGameplayTag CombatAbilityTag : CombatAbilityTags)
-		{
-			const FGameplayAbilitySpecHandle AbilityHandle =
-				InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
-					CombatAbilityTag);
-			if (AbilityHandle.IsValid())
-			{
-				InstanceData.AbilitySystemComponent->CancelAbilityHandle(
-					AbilityHandle);
-			}
-		}
-		bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
-			AIRECompanionGameplayTags::StateActionAttacking);
-		InstanceData.RetryTimeRemaining = 0.0f;
-		InstanceData.bSkillIntentBuffered = false;
-		InstanceData.bSkillIntentEvaluatedForStep = false;
-		InstanceData.bWasSkillCancelWindowOpen = false;
-		InstanceData.bWasBasicAttackActive = false;
-	}
 
-	InstanceData.RetryTimeRemaining = FMath::Max(
+	InstanceData.MovementRetryTimeRemaining = FMath::Max(
 		0.0f,
-		InstanceData.RetryTimeRemaining - DeltaTime);
+		InstanceData.MovementRetryTimeRemaining - DeltaTime);
+	InstanceData.AbilityRetryTimeRemaining = FMath::Max(
+		0.0f,
+		InstanceData.AbilityRetryTimeRemaining - DeltaTime);
+	bool bApproachMoveFinished = false;
 	if (InstanceData.bMoveRequested
 		&& InstanceData.CompanionController->GetMoveStatus()
 			!= EPathFollowingStatus::Moving)
 	{
 		InstanceData.bMoveRequested = false;
+		bApproachMoveFinished = true;
 	}
 
 	if (!IsTargetInRange(*CompanionPawn, *TargetActor, AttackRange))
 	{
+		if (!bAttackActive && bApproachMoveFinished)
+		{
+			InstanceData.MovementRetryTimeRemaining = FMath::Max(
+				InstanceData.MovementRetryTimeRemaining,
+				CombatMovementRetryInterval);
+		}
 		if (!bAttackActive
 			&& !InstanceData.bMoveRequested
-			&& InstanceData.RetryTimeRemaining <= 0.0f)
+			&& InstanceData.MovementRetryTimeRemaining <= 0.0f)
 		{
 			const FVector ApproachLocation = CalculateCombatApproachLocation(
 				*CompanionPawn,
@@ -1720,17 +1716,21 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 					true);
 			InstanceData.bMoveRequested =
 				MoveResult == EPathFollowingRequestResult::RequestSuccessful;
-			if (MoveResult == EPathFollowingRequestResult::Failed)
+			if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
 			{
-				UE_LOG(
-					LogAIRECompanionStateTree,
-					Warning,
-					TEXT("Companion combat move failed. Companion=%s Target=%s ApproachLocation=%s AcceptanceRadius=%.2f"),
-					*GetNameSafe(CompanionPawn),
-					*GetNameSafe(TargetActor),
-					*ApproachLocation.ToCompactString(),
-					CombatApproachAcceptanceRadius);
-				InstanceData.RetryTimeRemaining = CombatMovementRetryInterval;
+				InstanceData.MovementRetryTimeRemaining =
+					CombatMovementRetryInterval;
+				if (MoveResult == EPathFollowingRequestResult::Failed)
+				{
+					UE_LOG(
+						LogAIRECompanionStateTree,
+						Warning,
+						TEXT("Companion combat move failed. Companion=%s Target=%s ApproachLocation=%s AcceptanceRadius=%.2f"),
+						*GetNameSafe(CompanionPawn),
+						*GetNameSafe(TargetActor),
+						*ApproachLocation.ToCompactString(),
+						CombatApproachAcceptanceRadius);
+				}
 			}
 		}
 		return EStateTreeRunStatus::Running;
@@ -1755,9 +1755,13 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	const FGameplayAbilitySpecHandle CombatSkillHandle =
 		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
 			AIRECompanionGameplayTags::AbilityCombatSkill);
+	const bool bCombatSkillOnCooldown =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::CooldownCombatSkill);
 	const bool bCanSelectCombatSkill =
 		WeaponDefinition->CombatSkill.bEnabled
-		&& CombatSkillHandle.IsValid();
+		&& CombatSkillHandle.IsValid()
+		&& !bCombatSkillOnCooldown;
 	const auto ShouldSelectCombatSkill =
 		[WeaponDefinition, bCanSelectCombatSkill]()
 		{
@@ -1831,7 +1835,7 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		InstanceData.bWasSkillCancelWindowOpen = false;
 	}
 
-	if (InstanceData.RetryTimeRemaining > 0.0f)
+	if (InstanceData.AbilityRetryTimeRemaining > 0.0f)
 	{
 		return EStateTreeRunStatus::Running;
 	}
@@ -1871,10 +1875,18 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 				*GetNameSafe(TargetActor),
 				ActivatedAbilityCount,
 				CombatActivationRetryInterval);
-			InstanceData.RetryTimeRemaining =
+			InstanceData.AbilityRetryTimeRemaining =
 				CombatActivationRetryInterval;
 			return EStateTreeRunStatus::Running;
 		}
+	}
+
+	if (InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::CooldownBasicAttack))
+	{
+		InstanceData.AbilityRetryTimeRemaining =
+			CombatActivationRetryInterval;
+		return EStateTreeRunStatus::Running;
 	}
 
 	FGameplayEventData AttackRequest;
@@ -1905,7 +1917,7 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 			*GetNameSafe(TargetActor),
 			CombatActivationRetryInterval);
 	}
-	InstanceData.RetryTimeRemaining = CombatActivationRetryInterval;
+	InstanceData.AbilityRetryTimeRemaining = CombatActivationRetryInterval;
 	return EStateTreeRunStatus::Running;
 }
 
@@ -1923,7 +1935,8 @@ void FAIRECompanionEngageThreatTask::ExitState(
 		*StaticEnum<EStateTreeRunStatus>()->GetNameStringByValue(
 			static_cast<int64>(Transition.CurrentRunStatus)));
 	InstanceData.ActiveTarget.Reset();
-	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.MovementRetryTimeRemaining = 0.0f;
+	InstanceData.AbilityRetryTimeRemaining = 0.0f;
 	InstanceData.bSkillIntentBuffered = false;
 	InstanceData.bSkillIntentEvaluatedForStep = false;
 	InstanceData.bWasSkillCancelWindowOpen = false;
@@ -1984,7 +1997,10 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	const FGameplayAbilitySpecHandle CombatSkillAbilityHandle =
 		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
 			AIRECompanionGameplayTags::AbilityCombatSkill);
-	if (CombatSkillAbilityHandle.IsValid())
+	if (const FGameplayAbilitySpec* CombatSkillSpec =
+			InstanceData.AbilitySystemComponent->FindAbilitySpecFromHandle(
+				CombatSkillAbilityHandle);
+		CombatSkillSpec && CombatSkillSpec->IsActive())
 	{
 		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
 			CombatSkillAbilityHandle);

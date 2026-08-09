@@ -129,41 +129,120 @@ reacting, and rejects attempts to report `Flinching`, `Stunned`, or `Dead`; thos
 states remain owned by the vitality/reaction runtime. After reaction recovery, the
 next StateTree state Enter task reports the resumed non-terminal state.
 
-Sight creates threat `1`. Applied damage adds threat at multiplier `1`. A candidate
-replaces the current aggro target only when it leads by `10`; threat does not decay.
-Damage is valid short-lived engagement evidence for one second. Lost targets use
-their last known location for a three-second search. Returning clears aggro and
+Sight creates threat `1`. Applied damage adds threat at multiplier `1`, and threat
+does not decay. Ordinary threat replacement still requires a lead of `10`, but it is
+deferred while the current target is visible or within a `3.0 s` recent-sight grace
+window. This prevents another party member briefly crossing the sight ray from
+causing an immediate target turn. The explicit Q promotion bypasses that hold.
+Damage remains valid short-lived engagement evidence for one second. Lost targets
+use their last known location for a three-second search. Returning clears aggro and
 ignores new aggro selection. Reaction gauges are reset only when return-home
 completion is confirmed; the home leash defaults to 2500 cm.
+`UAIREEnemyConfigDataAsset.HomeLeashRadius` is the per-enemy authority for that
+distance, and zero disables distance-driven return while preserving explicit and
+target-loss return paths. This allows arena bosses to sustain combat without changing
+the default leash behavior of ordinary enemies.
+Return movement and completion use the same center-to-home acceptance radius; the
+navigation request does not add the controlled pawn radius. Once return completes,
+sight tracking restarts and a visible eligible party target begins a fresh
+IdleUnaware-to-Alerted engagement.
 
-An attack snapshots its target, execution ID, attack axis, and melee-trace settings for
-the full windup/recovery. Later aggro changes affect the next attack and do not curve
-the active attack. On a successfully played montage,
-`UAIREEnemyMeleeTraceAnimNotifyState` opens, updates, and closes the trace window; the
-montage end itself never applies damage. A montage that never opens the window is a
-miss and emits a non-shipping diagnostic. If no montage plays, the timed fallback runs
-one forward sphere sweep instead. The deprecated `CommitActiveMeleeHit` seam also runs
-a spatial fallback sample and cannot commit from target identity or distance alone.
+An attack snapshots its target, attack execution ID, selected pattern, play rate,
+attack axis, and melee-trace settings for the full windup/recovery. Later aggro changes
+affect the next attack and do not curve the active attack. Eligible data-asset patterns
+are filtered by surface distance and current Health ratio, selected by weight, and avoid
+the two most recently selected patterns while another eligible choice exists. If that
+pool is exhausted, the immediately previous pattern remains excluded whenever at least
+one alternative is eligible. On a
+successfully played montage, `UAIREEnemyMeleeTraceAnimNotifyState` opens, updates, and
+closes one or more indexed trace windows; montage end itself never applies damage. A
+montage that never opens a window is a miss and emits a non-shipping diagnostic. If no
+montage plays, the timed fallback runs one forward sphere sweep instead. The deprecated
+`CommitActiveMeleeHit` seam also runs a spatial fallback sample and cannot commit from
+target identity or distance alone.
 
 Boss physical resolution is now implemented in T02A source. A configured bone/socket
 pair sweeps the previous and current limb segments with a config-driven sphere. Missing
-or invalid bones/sockets fall back to the snapshotted forward axis. Both paths use the
-same collision channel, accept only the snapshotted target as hit evidence, attach the
-resulting `FHitResult` to `FAIRECombatDamageRequest`, and retain the execution-ID ledger
-as the exact-once authority. Target loss, reaction, return, death, interruption, and
-EndPlay close the trace window and clear timers/delegates. The default fallback radius,
-reach from the capsule surface, and channel are 35 cm, 180 cm, and `ECC_Pawn`.
+or invalid bones/sockets fall back to the snapshotted forward axis. A window may override
+the socket pair for alternating-hand attacks and carries damage/stagger scales. Each
+unique strike index receives a distinct damage-request execution ID, so one montage may
+apply several exact-once contacts without defeating the shared subsystem ledger. Both
+paths use the same collision channel, accept only the snapshotted target as hit evidence,
+and attach the resulting `FHitResult` to `FAIRECombatDamageRequest`. Target loss,
+reaction, return, death, interruption, and EndPlay close the trace window and clear
+timers/delegates. The default fallback radius, reach from the capsule surface, and
+channel are 35 cm, 180 cm, and `ECC_Pawn`.
 
-This source state is not yet runtime evidence: it still requires the Unreal build,
-automation execution, project-owned Crunch animation assets, component assignments,
-and PIE verification. `M03-E09-T02B` adopts the proven seam for MAKO only after its
-model, Skeleton, AnimBP, weapon mesh, and trace-socket contract are fixed; T02A does
-not modify MAKO source or binary assets.
+An attack pattern may opt into `ForwardMoveDistance` and a desired
+`ForwardMoveStopDistance`. A positive stop distance clamps the move from the
+snapshotted target surface distance so it does not intentionally close past that
+distance; zero preserves the full configured forward move for committed lunges that
+rely on Character Movement collision to stop them.
+`UAIREEnemyAttackMovementAnimNotifyState` may start this move before the independent
+damage trace window; existing montages without that state retain first-trace-window
+startup for compatibility. The move follows the already snapshotted attack axis and
+uses montage play-rate-scaled duration. Character Movement owns the capsule sweep, so
+walls and Pawns block it. Code-driven movement is rejected for montages that already
+extract root motion, and reaction, death, return, target destruction, montage
+interruption, and EndPlay remove any active movement source with the attack.
+
+Per-pattern `ReuseCooldown` prevents a selected gap closer or signature attack from
+being selected again before its own lockout expires, in addition to the shared attack
+cooldown and recent-pattern avoidance. A Boss config may opt into combat approach
+actions: far targets are approached at `CombatSprintSpeed`, and an eligible gap closer
+may start from the outer pattern range. If the target is inside that outer range but no
+pattern is eligible, the Boss closes directly to the preferred melee range instead of
+alternating lateral steps. A code-driven gap closer temporarily requires one
+non-gap-closing melee follow-up before another gap closer may start. The requirement
+is owned by the attack selector and clears only after that non-gap attack starts or the
+engagement is explicitly reset by return, death, unpossession, or EndPlay. Target swaps,
+distance changes, and brief reaction interruptions do not bypass it. While the follow-up
+is pending, the Boss closes continuously to the preferred melee range without artificial
+pursuit pauses or lateral cooldown steps. During other shared attack cooldowns, at most
+one bounded lateral reposition is requested.
+Navigation is stopped only after an attack actually starts. Requests are reused while
+active, restored to `MovementSpeed` on exit, and cleared on return, death, unpossession,
+or EndPlay.
+Damage authority remains solely with the montage trace window; sprint, lateral movement,
+and attack movement do not commit damage by proximity.
+
+The current Boss asset uses a `140 cm` preferred surface range. Its ordinary pattern
+bands now overlap from `0` through `220 cm`, while `DashCross` retains its intentional
+`220-700 cm`, `ForwardMoveDistance=1000`, `CooldownScale=1`, and `ReuseCooldown=0`
+contract. These values only control entry and selection; the `100 cm` limb sweep still
+owns actual hit evidence.
+
+The project-owned Boss assets and component assignments are configured. A user-owned
+Rider build and PIE session verified locomotion, sustained chase, gap-closer movement,
+the required non-gap follow-up, death-pose retention, return/re-engagement, and MAKO
+follow/return stability. `AIRE.Combat.Damage.SharedPipeline` passed on 2026-08-09.
+`AIRE.Combat.Enemy.Attack.FallbackTrace` exposed two automation-fixture mismatches. The
+cooldown-only patterns were corrected, and spatial fallback now invokes the public spatial
+wrapper directly instead of trying to advance TimerManager repeatedly within one engine
+frame. Gameplay was not changed. After the user rebuild, both `SharedPipeline` and the
+corrected `FallbackTrace` passed on 2026-08-09. MAKO physical trace and
+evade presentation remain in
+`M03-E09-T02B` until its model, Skeleton, AnimBP, weapon mesh, and trace-socket contract
+are fixed. The user-approved moving-target stability slice does modify MAKO source and
+its basic weapon range, but not MAKO animation or model assets.
 
 Attack entry and cancellation also require separate ranges in T02. Once an attack is
 active, small target movement must not cause StateTree MoveTo and attack cancellation
 to alternate. The target may miss the eventual sweep without tearing down and
-restarting the same attack every frame.
+restarting the same attack every frame. Chase reuses one active `MoveToActor` request
+for the same target, and its reach test includes both the Boss and target collision
+radii so it agrees with the attack component's surface-distance gate.
+
+MAKO now keeps the selected sight target through a configurable `3.0 s` sight-loss
+memory and a `200 cm` selected-target lose-sight distance. Its StateTree no longer
+cancels an active basic attack or combat skill solely because the target crosses the
+entry range: the Ability owns hit-time and next-combo-step range validation. A completed
+fixed-point approach that is still out of range waits `0.5 s` before requesting another
+approach, preventing continuous same-frame path re-issuance. The current basic melee
+weapon surface range is `150 cm`. Movement retry and ability retry timers are independent,
+and StateTree does not emit attack events while the corresponding GAS cooldown tag is
+active. Follow and Return use capsule surface distance; Return latches at `600 cm` and
+releases at `400 cm`, while Follow stops at `200 cm`.
 
 ## 5. Q aggro swap
 
@@ -237,9 +316,10 @@ Run the narrow automation tests `AIRE.Combat.Damage.SharedPipeline` and
 combat fixture plus two real Boss instances to cover shared Health selection, Boss
 Health/stagger, validation, exact-once, and death edges. The second covers Boss
 fallback forward hit, rear/side miss, WorldStatic occlusion, cancellation, target
-destruction, and repeated resolution. Neither test instantiates the production Player
-or MAKO classes. Verify those adapters and all montage, socket-sweep, and AI behavior
-in PIE:
+destruction, repeated same-strike resolution, and two distinct strikes within one attack.
+It also covers fixed play-rate pattern selection and pattern-scaled fallback damage.
+Neither test instantiates the production Player or MAKO classes. Verify those adapters
+and all montage, socket-sweep, weighted selection, and AI behavior in PIE:
 
 ### 7.1 Partial PIE evidence recorded on 2026-08-06
 
@@ -266,7 +346,9 @@ in PIE:
   oscillation; a sweep miss completes one recovery before the next AI decision.
 - Duplicate execution IDs do not apply twice to one target and may apply once to a different target.
 - Player/MAKO friendly fire and Enemy/Enemy damage are rejected.
-- Flinch occurs at 50 accumulated stagger; stun takes priority at 200 and ignores new stagger until recovery.
+- Generic enemy defaults remain Flinch `50` and Stun `200`. The current Boss config uses
+  Flinch `100` and Stun `300`, so MAKO's `25` basic-hit stagger does not interrupt every
+  second hit while the `75` combat skill still contributes meaningful poise pressure.
 - Sight, damage-only engagement, alert, chase, attack, search, return, and death transitions complete.
 - With the StateTree running, each non-terminal Enter task updates the combined
   combat snapshot; an Enter report cannot overwrite active flinch, stun, or death.

@@ -16,6 +16,7 @@
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "AIRECombatEvadeComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -24,6 +25,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCharacter, Log, All);
 namespace
 {
 	constexpr TCHAR CompanionId[] = TEXT("MAKO");
+	const FName SoxMaterialSlotName(TEXT("UE_MIMI_BootCuff"));
+	const FName ShoesMaterialSlotName(TEXT("UE_MIMI_Shoes"));
 }
 
 AAIRECompanionCharacter::AAIRECompanionCharacter()
@@ -214,6 +217,17 @@ AAIRECompanionCharacter::GetCombatEvadeComponent() const
 	return CombatEvadeComponent;
 }
 
+void AAIRECompanionCharacter::SetSoxAndShoesVisible(const bool bVisible)
+{
+	bSoxAndShoesVisible = bVisible;
+	ApplySoxAndShoesVisibility();
+}
+
+bool AAIRECompanionCharacter::AreSoxAndShoesVisible() const
+{
+	return bSoxAndShoesVisible;
+}
+
 FString AAIRECompanionCharacter::GetCompanionId() const
 {
 	return CompanionId;
@@ -233,9 +247,16 @@ const UAIRECompanionConfigDataAsset* AAIRECompanionCharacter::GetCompanionConfig
 	return GetDefault<UAIRECompanionConfigDataAsset>();
 }
 
+void AAIRECompanionCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplySoxAndShoesVisibility();
+}
+
 void AAIRECompanionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplySoxAndShoesVisibility();
 
 	check(AbilitySystemComponent);
 	check(CompanionAttributeSet);
@@ -308,6 +329,51 @@ void AAIRECompanionCharacter::BeginPlay()
 			*GetNameSafe(this),
 			*GetNameSafe(CompanionConfig),
 			*ValidationError.ToString());
+	}
+}
+
+void AAIRECompanionCharacter::ApplySoxAndShoesVisibility()
+{
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!IsValid(MeshComponent))
+	{
+		return;
+	}
+
+	const int32 SoxMaterialIndex =
+		MeshComponent->GetMaterialIndex(SoxMaterialSlotName);
+	const int32 ShoesMaterialIndex =
+		MeshComponent->GetMaterialIndex(ShoesMaterialSlotName);
+	if (SoxMaterialIndex == INDEX_NONE
+		|| ShoesMaterialIndex == INDEX_NONE
+		|| SoxMaterialIndex == ShoesMaterialIndex)
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Warning,
+			TEXT("Companion mesh %s must provide distinct %s and %s footwear slots."),
+			*GetNameSafe(MeshComponent->GetSkeletalMeshAsset()),
+			*SoxMaterialSlotName.ToString(),
+			*ShoesMaterialSlotName.ToString());
+		return;
+	}
+
+	const int32 FootwearMaterialIndices[] =
+	{
+		SoxMaterialIndex,
+		ShoesMaterialIndex
+	};
+	const int32 LODCount = MeshComponent->GetNumLODs();
+	for (const int32 MaterialIndex : FootwearMaterialIndices)
+	{
+		for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
+		{
+			MeshComponent->ShowMaterialSection(
+				MaterialIndex,
+				INDEX_NONE,
+				bSoxAndShoesVisible,
+				LODIndex);
+		}
 	}
 }
 
