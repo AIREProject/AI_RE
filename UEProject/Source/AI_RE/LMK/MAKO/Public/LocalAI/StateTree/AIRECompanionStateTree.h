@@ -343,6 +343,26 @@ struct FAIRECompanionEngageThreatTaskInstanceData
 
 	UPROPERTY(Transient)
 	bool bWasBasicAttackActive = false;
+
+	/** Enemy executions already considered by the autonomous evade policy. */
+	UPROPERTY(Transient)
+	TSet<FGuid> EvaluatedEvadeExecutionIds;
+
+	/** FIFO order for the bounded autonomous evade decision ledger. */
+	UPROPERTY(Transient)
+	TArray<FGuid> EvaluatedEvadeExecutionOrder;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> PendingEvadeThreat;
+
+	UPROPERTY(Transient)
+	FGuid PendingEvadeExecutionId;
+
+	UPROPERTY(Transient)
+	float EvadeReactionTimeRemaining = 0.0f;
+
+	UPROPERTY(Transient)
+	bool bEvadeDecisionPending = false;
 };
 
 USTRUCT(meta = (DisplayName = "Engage Companion Threat", Category = "AIRE|Companion"))

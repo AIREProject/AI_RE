@@ -2,6 +2,7 @@
 
 #include "Animation/AIRECompanionAttackHitAnimNotify.h"
 #include "Animation/AIRECompanionComboWindowAnimNotifyState.h"
+#include "Animation/AIRECompanionMeleeTraceAnimNotifyState.h"
 #include "AIREEnemyAttackMovementAnimNotifyState.h"
 #include "AIREEnemyMeleeTraceAnimNotifyState.h"
 #include "Animation/AnimMontage.h"
@@ -305,6 +306,34 @@ namespace
 		}
 	}
 
+	void PopulateCompanionMeleeTraceInspection(
+		const UAnimMontage& Montage,
+		FAIREAnimationNotifyMutationResult& OutResult)
+	{
+		for (const FAnimNotifyEvent& NotifyEvent : Montage.Notifies)
+		{
+			const UAIRECompanionMeleeTraceAnimNotifyState* TraceWindow =
+				Cast<UAIRECompanionMeleeTraceAnimNotifyState>(
+					NotifyEvent.NotifyStateClass);
+			if (!IsValid(TraceWindow))
+			{
+				continue;
+			}
+
+			++OutResult.TraceWindowCount;
+			OutResult.Entries.Add(
+				FString::Printf(
+					TEXT("%s[%d]: %.3f-%.3f"),
+					TraceWindow->TraceMode ==
+							EAIRECompanionMeleeTraceMode::CombatSkill
+						? TEXT("CombatSkill")
+						: TEXT("BasicAttack"),
+					TraceWindow->ComboStepIndex,
+					NotifyEvent.GetTime(),
+					NotifyEvent.GetTime() + NotifyEvent.GetDuration()));
+		}
+	}
+
 	bool ValidateComboLayout(
 		const UAnimMontage& Montage,
 		const TArray<FAIREComboNotifyEntry>& HitNotifies,
@@ -531,6 +560,128 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 		TEXT("Configured %d combo sections from hit timing and reindexed %d hit notifies."),
 		SectionNames.Num(),
 		ReindexedHitCount);
+	return Result;
+}
+
+FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureMontageSections(
+	UAnimMontage* Montage,
+	const TArray<FName>& SectionNames,
+	const TArray<float>& SectionStartTimes)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeAnimationFailure(Error);
+	}
+	if (SectionNames.IsEmpty()
+		|| SectionNames.Num() != SectionStartTimes.Num())
+	{
+		return MakeAnimationFailure(
+			TEXT("Section names and start times must be non-empty and have equal counts."));
+	}
+
+	TSet<FName> UniqueSectionNames;
+	float PreviousStartTime = -1.0f;
+	for (int32 SectionIndex = 0; SectionIndex < SectionNames.Num(); ++SectionIndex)
+	{
+		const FName SectionName = SectionNames[SectionIndex];
+		const float StartTime = SectionStartTimes[SectionIndex];
+		if (SectionName.IsNone()
+			|| UniqueSectionNames.Contains(SectionName)
+			|| !FMath::IsFinite(StartTime)
+			|| StartTime < 0.0f
+			|| StartTime >= Montage->GetPlayLength()
+			|| StartTime <= PreviousStartTime)
+		{
+			return MakeAnimationFailure(
+				FString::Printf(
+					TEXT("Invalid or duplicate montage section %s at %.3f."),
+					*SectionName.ToString(),
+					StartTime));
+		}
+		UniqueSectionNames.Add(SectionName);
+		PreviousStartTime = StartTime;
+	}
+	if (!FMath::IsNearlyZero(SectionStartTimes[0], 0.001f))
+	{
+		return MakeAnimationFailure(
+			TEXT("The first montage section must start at zero."));
+	}
+
+	bool bSectionLayoutMatches =
+		Montage->GetNumSections() == SectionNames.Num();
+	bool bSectionsAlreadyMatch = bSectionLayoutMatches;
+	for (int32 SectionIndex = 0;
+		bSectionLayoutMatches && SectionIndex < SectionNames.Num();
+		++SectionIndex)
+	{
+		float ExistingStartTime = 0.0f;
+		float ExistingEndTime = 0.0f;
+		Montage->GetSectionStartAndEndTime(
+			SectionIndex,
+			ExistingStartTime,
+			ExistingEndTime);
+		bSectionLayoutMatches =
+			Montage->GetSectionName(SectionIndex) == SectionNames[SectionIndex]
+			&& FMath::IsNearlyEqual(
+				ExistingStartTime,
+				SectionStartTimes[SectionIndex],
+				0.001f);
+		bSectionsAlreadyMatch = bSectionsAlreadyMatch
+			&& bSectionLayoutMatches
+			&& Montage->CompositeSections[SectionIndex].NextSectionName.IsNone();
+	}
+
+	const bool bHasReplaceableDefaultSection =
+		Montage->GetNumSections() == 1
+		&& Montage->GetSectionName(0) == FName(TEXT("Default"));
+	if (!bSectionLayoutMatches && !bHasReplaceableDefaultSection)
+	{
+		return MakeAnimationFailure(
+			TEXT("Existing montage sections are neither the requested layout nor a single Default section."));
+	}
+	if (bSectionsAlreadyMatch)
+	{
+		FAIREAnimationComboMontageResult Result;
+		PopulateInspection(*Montage, Result);
+		Result.bSuccess = true;
+		Result.Message = TEXT("The requested montage sections are already configured.");
+		return Result;
+	}
+
+	const FScopedTransaction Transaction(
+		LOCTEXT("ConfigureMontageSections", "Configure Montage Sections"));
+	Montage->Modify();
+	if (!bSectionLayoutMatches)
+	{
+		Montage->CompositeSections.Reset();
+		for (int32 SectionIndex = 0; SectionIndex < SectionNames.Num(); ++SectionIndex)
+		{
+			if (Montage->AddAnimCompositeSection(
+				SectionNames[SectionIndex],
+				SectionStartTimes[SectionIndex]) == INDEX_NONE)
+			{
+				return MakeAnimationFailure(
+					FString::Printf(
+						TEXT("Failed to add montage section %s."),
+						*SectionNames[SectionIndex].ToString()));
+			}
+		}
+	}
+	for (FCompositeSection& Section : Montage->CompositeSections)
+	{
+		Section.NextSectionName = NAME_None;
+	}
+
+	Montage->RefreshCacheData();
+	Montage->MarkPackageDirty();
+
+	FAIREAnimationComboMontageResult Result;
+	PopulateInspection(*Montage, Result);
+	Result.bSuccess = true;
+	Result.Message = FString::Printf(
+		TEXT("Configured %d montage sections with no automatic next sections."),
+		SectionNames.Num());
 	return Result;
 }
 
@@ -959,6 +1110,155 @@ FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::ConfigureEnemyMelee
 			Result.RemovedLegacyNotifyCount,
 			Windows.Num())
 		: TEXT("The montage did not end with the requested trace windows and no legacy attack notifies.");
+	return Result;
+}
+
+FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::InspectCompanionMeleeTraceMontage(
+	UAnimMontage* Montage)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeNotifyMutationFailure(Error);
+	}
+
+	FAIREAnimationNotifyMutationResult Result;
+	PopulateCompanionMeleeTraceInspection(*Montage, Result);
+	Result.bSuccess = true;
+	Result.Message = TEXT("Companion melee trace montage inspected successfully.");
+	return Result;
+}
+
+FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::ConfigureCompanionMeleeTraceWindows(
+	UAnimMontage* Montage,
+	const FName NotifyTrackName,
+	const TArray<FAIRECompanionMeleeTraceWindowDefinition>& Windows)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeNotifyMutationFailure(Error);
+	}
+	if (NotifyTrackName.IsNone())
+	{
+		return MakeNotifyMutationFailure(
+			TEXT("NotifyTrackName must not be None."));
+	}
+	if (Windows.IsEmpty())
+	{
+		return MakeNotifyMutationFailure(
+			TEXT("At least one companion trace window is required."));
+	}
+
+	TSet<uint64> WindowKeys;
+	for (const FAIRECompanionMeleeTraceWindowDefinition& Window : Windows)
+	{
+		const uint64 WindowKey =
+			(static_cast<uint64>(Window.TraceMode) << 32)
+			| static_cast<uint32>(Window.ComboStepIndex);
+		if (!FMath::IsFinite(Window.StartTime)
+			|| !FMath::IsFinite(Window.EndTime)
+			|| Window.StartTime < 0.0f
+			|| Window.EndTime <= Window.StartTime
+			|| Window.EndTime > Montage->GetPlayLength()
+			|| Window.ComboStepIndex < 0
+			|| WindowKeys.Contains(WindowKey))
+		{
+			return MakeNotifyMutationFailure(
+				FString::Printf(
+					TEXT("Invalid or duplicate companion trace step %d at %.3f-%.3f for montage length %.3f."),
+					Window.ComboStepIndex,
+					Window.StartTime,
+					Window.EndTime,
+					Montage->GetPlayLength()));
+		}
+		WindowKeys.Add(WindowKey);
+	}
+
+	FAIREAnimationNotifyMutationResult ExistingResult;
+	PopulateCompanionMeleeTraceInspection(*Montage, ExistingResult);
+	bool bAlreadyConfigured =
+		ExistingResult.TraceWindowCount == Windows.Num();
+	for (const FAIRECompanionMeleeTraceWindowDefinition& Window : Windows)
+	{
+		const FAnimNotifyEvent* ExistingEvent =
+			Montage->Notifies.FindByPredicate(
+				[&Window](const FAnimNotifyEvent& NotifyEvent)
+				{
+					const UAIRECompanionMeleeTraceAnimNotifyState* TraceWindow =
+						Cast<UAIRECompanionMeleeTraceAnimNotifyState>(
+							NotifyEvent.NotifyStateClass);
+					return IsValid(TraceWindow)
+						&& TraceWindow->TraceMode == Window.TraceMode
+						&& TraceWindow->ComboStepIndex == Window.ComboStepIndex;
+				});
+		bAlreadyConfigured = bAlreadyConfigured
+			&& ExistingEvent
+			&& FMath::IsNearlyEqual(
+				ExistingEvent->GetTime(), Window.StartTime, 0.001f)
+			&& FMath::IsNearlyEqual(
+				ExistingEvent->GetTime() + ExistingEvent->GetDuration(),
+				Window.EndTime,
+				0.001f);
+	}
+	if (bAlreadyConfigured)
+	{
+		ExistingResult.bSuccess = true;
+		ExistingResult.Message =
+			TEXT("The requested companion melee trace windows are already configured.");
+		return ExistingResult;
+	}
+
+	const FScopedTransaction Transaction(
+		LOCTEXT(
+			"ConfigureCompanionMeleeTraceWindows",
+			"Configure Companion Melee Trace Windows"));
+	Montage->Modify();
+
+	FAIREAnimationNotifyMutationResult Result;
+	Result.ReplacedTraceWindowCount = Montage->Notifies.RemoveAll(
+		[](const FAnimNotifyEvent& NotifyEvent)
+		{
+			return IsValid(Cast<UAIRECompanionMeleeTraceAnimNotifyState>(
+				NotifyEvent.NotifyStateClass));
+		});
+
+	if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(
+		Montage,
+		NotifyTrackName))
+	{
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(
+			Montage,
+			NotifyTrackName);
+	}
+
+	for (const FAIRECompanionMeleeTraceWindowDefinition& Window : Windows)
+	{
+		UAIRECompanionMeleeTraceAnimNotifyState* TraceWindow =
+			NewObject<UAIRECompanionMeleeTraceAnimNotifyState>(
+				Montage,
+				NAME_None,
+				RF_Transactional);
+		TraceWindow->TraceMode = Window.TraceMode;
+		TraceWindow->ComboStepIndex = Window.ComboStepIndex;
+		UAnimationBlueprintLibrary::AddAnimationNotifyStateEventObject(
+			Montage,
+			Window.StartTime,
+			Window.EndTime - Window.StartTime,
+			TraceWindow,
+			NotifyTrackName);
+	}
+
+	Montage->RefreshCacheData();
+	Montage->MarkPackageDirty();
+	PopulateCompanionMeleeTraceInspection(*Montage, Result);
+	Result.bSuccess = Result.TraceWindowCount == Windows.Num();
+	Result.Message = Result.bSuccess
+		? FString::Printf(
+			TEXT("Replaced %d companion trace windows and configured %d windows."),
+			Result.ReplacedTraceWindowCount,
+			Windows.Num())
+		: TEXT("The montage did not end with the requested companion trace windows.");
 	return Result;
 }
 

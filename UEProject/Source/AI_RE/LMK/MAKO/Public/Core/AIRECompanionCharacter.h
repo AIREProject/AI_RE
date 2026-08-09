@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ActiveGameplayEffectHandle.h"
 #include "AbilitySystemInterface.h"
 #include "AIREHarvestRewardReceiver.h"
 #include "AIRECombatDamageTargetInterface.h"
 #include "AI_REInteractableInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayAbilitySpecHandle.h"
+#include "GameplayTagContainer.h"
 #include "AIRECompanionCharacter.generated.h"
 
 class UAIRECompanionConfigDataAsset;
@@ -101,7 +104,10 @@ protected:
 
 private:
 	void ApplySoxAndShoesVisibility();
+	bool InitializeAutonomousEvadeRuntime();
+	void ShutdownAutonomousEvadeRuntime();
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleInvulnerableStateChanged(FGameplayTag Tag, int32 NewCount);
 	void SynchronizeDeadState(float CurrentHealth);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Abilities", meta = (AllowPrivateAccess = "true", NoEditInline))
@@ -147,4 +153,7 @@ private:
 	bool bSoxAndShoesVisible = true;
 
 	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle InvulnerableStateChangedDelegateHandle;
+	FGameplayAbilitySpecHandle AutonomousEvadeAbilityHandle;
+	FActiveGameplayEffectHandle StaminaRegenEffectHandle;
 };

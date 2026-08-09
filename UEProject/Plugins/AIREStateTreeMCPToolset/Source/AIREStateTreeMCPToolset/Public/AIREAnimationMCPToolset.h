@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Animation/AIRECompanionMeleeTraceAnimNotifyState.h"
 #include "ToolsetRegistry/ToolsetDefinition.h"
 #include "AIREAnimationMCPToolset.generated.h"
 
@@ -95,6 +96,29 @@ struct FAIREEnemyMeleeTraceWindowDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
 	FName TraceEndSocket = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct FAIRECompanionMeleeTraceWindowDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StartTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float EndTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	EAIRECompanionMeleeTraceMode TraceMode =
+		EAIRECompanionMeleeTraceMode::BasicAttack;
+
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "AIRE|Animation",
+		meta = (ClampMin = "0", UIMin = "0"))
+	int32 ComboStepIndex = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -207,6 +231,12 @@ public:
 		float TransitionBias);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationComboMontageResult ConfigureMontageSections(
+		UAnimMontage* Montage,
+		const TArray<FName>& SectionNames,
+		const TArray<float>& SectionStartTimes);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
 	static FAIREAnimationComboMontageResult ConfigureBasicAttackComboWindows(
 		UAnimMontage* Montage,
 		FName NotifyTrackName,
@@ -236,6 +266,16 @@ public:
 		UAnimMontage* Montage,
 		FName NotifyTrackName,
 		const TArray<FAIREEnemyMeleeTraceWindowDefinition>& Windows);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationNotifyMutationResult InspectCompanionMeleeTraceMontage(
+		UAnimMontage* Montage);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationNotifyMutationResult ConfigureCompanionMeleeTraceWindows(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		const TArray<FAIRECompanionMeleeTraceWindowDefinition>& Windows);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
 	static FAIREAnimationMontageTrackResult ConfigureMontageAnimationTrack(

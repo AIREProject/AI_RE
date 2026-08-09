@@ -10,6 +10,7 @@ class ACharacter;
 class UAnimInstance;
 class UAnimMontage;
 class USkeletalMeshComponent;
+enum class EAIRECombatMeleeTraceResult : uint8;
 
 USTRUCT(BlueprintType)
 struct AI_RE_API FAIREEnemyAttackSnapshot
@@ -150,13 +151,6 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	enum class ETraceSampleResult : uint8
-	{
-		NoHit,
-		TargetHit,
-		Blocked
-	};
-
 	UFUNCTION()
 	void HandleTargetDestroyed(AActor* DestroyedActor);
 
@@ -168,18 +162,14 @@ private:
 		int32 StrikeIndex) const;
 	bool CanResolveActiveHit() const;
 	bool CommitResolvedHit(const FHitResult& HitResult);
-	ETraceSampleResult PerformSocketTraceSample(
+	EAIRECombatMeleeTraceResult PerformSocketTraceSample(
 		USkeletalMeshComponent* MeshComponent,
 		FHitResult& OutTargetHit);
-	ETraceSampleResult PerformFallbackTraceSample(FHitResult& OutTargetHit) const;
-	ETraceSampleResult SweepTraceSegments(
-		const TArray<TPair<FVector, FVector>>& Segments,
+	EAIRECombatMeleeTraceResult PerformFallbackTraceSample(
 		FHitResult& OutTargetHit) const;
-	bool SweepTraceSegment(
-		const FVector& Start,
-		const FVector& End,
-		FHitResult& OutHit) const;
-	void ResolveTraceSample(ETraceSampleResult Result, const FHitResult& TargetHit);
+	void ResolveTraceSample(
+		EAIRECombatMeleeTraceResult Result,
+		const FHitResult& TargetHit);
 	void CloseTraceWindow();
 	void ResetTraceState();
 	void PrepareFallbackStrike();

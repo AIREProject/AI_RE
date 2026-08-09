@@ -5,6 +5,24 @@
 #include "GameplayTagsManager.h"
 #include "Misc/DataValidation.h"
 
+bool FAIREWeaponTraceSocketPair::IsConfigured() const
+{
+	return !TraceStartSocket.IsNone() && !TraceEndSocket.IsNone();
+}
+
+bool FAIREWeaponTraceSocketPair::IsPartiallyConfigured() const
+{
+	return TraceStartSocket.IsNone() != TraceEndSocket.IsNone();
+}
+
+UAIRECompanionWeaponDefinitionDataAsset::UAIRECompanionWeaponDefinitionDataAsset()
+{
+	LeftTraceSockets.TraceStartSocket = FName(TEXT("weapon_l"));
+	LeftTraceSockets.TraceEndSocket = FName(TEXT("weapon_trace_tip_l"));
+	RightTraceSockets.TraceStartSocket = FName(TEXT("weapon_r"));
+	RightTraceSockets.TraceEndSocket = FName(TEXT("weapon_trace_tip_r"));
+}
+
 bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
@@ -35,6 +53,48 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			"AIRECompanionWeaponDefinition",
 			"MissingAbilitySet",
 			"Weapon Definition must reference an Ability Set.");
+		return false;
+	}
+
+	if (!LeftTraceSockets.IsConfigured()
+		|| LeftTraceSockets.TraceStartSocket
+			== LeftTraceSockets.TraceEndSocket
+		|| !RightTraceSockets.IsConfigured()
+		|| RightTraceSockets.TraceStartSocket
+			== RightTraceSockets.TraceEndSocket)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidDefaultTraceSockets",
+			"Left and Right Trace Sockets must each specify distinct start and end sockets.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(TraceRadius) || TraceRadius <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceRadius",
+			"Trace Radius must be finite and greater than zero.");
+		return false;
+	}
+
+	if (TraceChannel.GetValue() >= ECC_MAX)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceChannel",
+			"Trace Channel must be a valid collision channel.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(HarvestAttackRange)
+		|| HarvestAttackRange < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidHarvestAttackRange",
+			"Harvest Attack Range must be finite and non-negative.");
 		return false;
 	}
 
@@ -127,6 +187,19 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				FText::AsNumber(StepIndex));
 			return false;
 		}
+		if (ComboStep.TraceSocketOverride.IsPartiallyConfigured()
+			|| (ComboStep.TraceSocketOverride.IsConfigured()
+				&& ComboStep.TraceSocketOverride.TraceStartSocket
+					== ComboStep.TraceSocketOverride.TraceEndSocket))
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboTraceSocketOverride",
+					"Combo Step {0} Trace Socket Override must be empty or specify distinct start and end sockets."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
 
 	}
 
@@ -196,6 +269,17 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				"Current companion combat skills support SingleTarget only.");
 			return false;
 		}
+		if (CombatSkill.TraceSocketOverride.IsPartiallyConfigured()
+			|| (CombatSkill.TraceSocketOverride.IsConfigured()
+				&& CombatSkill.TraceSocketOverride.TraceStartSocket
+					== CombatSkill.TraceSocketOverride.TraceEndSocket))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillTraceSocketOverride",
+				"Combat Skill Trace Socket Override must be empty or specify distinct start and end sockets.");
+			return false;
+		}
 
 		if (!FMath::IsFinite(CombatSkill.CooldownDuration)
 			|| CombatSkill.CooldownDuration < 0.0f)
@@ -248,6 +332,21 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsMeleeWeapon() const
 {
 	return WeaponTag.IsValid()
 		&& WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanionMelee);
+}
+
+FAIREWeaponTraceSocketPair
+UAIRECompanionWeaponDefinitionDataAsset::ResolveTraceSockets(
+	const EAIRECompanionWeaponTraceSide TraceSide,
+	const FAIREWeaponTraceSocketPair& TraceSocketOverride) const
+{
+	if (TraceSocketOverride.IsConfigured())
+	{
+		return TraceSocketOverride;
+	}
+
+	return TraceSide == EAIRECompanionWeaponTraceSide::Left
+		? LeftTraceSockets
+		: RightTraceSockets;
 }
 
 #if WITH_EDITOR
