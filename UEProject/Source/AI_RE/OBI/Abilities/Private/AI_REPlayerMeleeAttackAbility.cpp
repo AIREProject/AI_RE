@@ -152,12 +152,29 @@ void UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen(FGameplayEventData Pa
 void UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose(FGameplayEventData Payload)
 {
 	bIsComboWindowOpen = false;
+	
+	if (bHasComboInput)
+	{
+		// 콤보 입력이 성공했다면, Close 노티파이가 있는 이 시점에 '즉시' 다음 모션으로 강제 점프!
+		ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+		if (Character && Character->GetMesh() && Character->GetMesh()->GetAnimInstance())
+		{
+			UAnimInstance* AnimInst = Character->GetMesh()->GetAnimInstance();
+			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex); // HandleComboInput에서 이미 1 증가됨
+			
+			AnimInst->Montage_JumpToSection(FName(*NextSectionStr), CurrentMontage);
+		}
+		
+		// 점프 후 다시 다음 입력을 받기 위해 초기화
+		bHasComboInput = false;
+	}
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboInput(FGameplayEventData Payload)
 {
 	if (bIsComboWindowOpen && !bHasComboInput)
 	{
+		// 콤보 예약 확정 (점프는 Close 노티파이에서 수행함)
 		bHasComboInput = true;
 		
 		ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
@@ -166,10 +183,6 @@ void UAI_REPlayerMeleeAttackAbility::HandleComboInput(FGameplayEventData Payload
 			UAnimInstance* AnimInst = Character->GetMesh()->GetAnimInstance();
 			CurrentMontage = AnimInst->GetCurrentActiveMontage();
 			
-			FString CurrentSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex);
-			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex + 1);
-			
-			AnimInst->Montage_SetNextSection(FName(*CurrentSectionStr), FName(*NextSectionStr), CurrentMontage);
 			CurrentComboIndex++;
 		}
 	}
@@ -203,19 +216,27 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 		}
 	}
 
-	FVector TraceStart = ViewLocation;
-	FVector TraceEnd = TraceStart + (ViewRotation.Vector() * TraceDist);
+	// 카메라 대신 '캐릭터의 가슴팍'에서 '캐릭터가 바라보는 앞방향'으로 쏩니다. (근접 공격에 훨씬 자연스러움)
+	FVector TraceStart = Character->GetActorLocation() + FVector(0.f, 0.f, 30.f); 
+	FVector TraceEnd = TraceStart + (Character->GetActorForwardVector() * TraceDist);
 
 	FHitResult HitResult;
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(Character);
 
-	if (GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
+	// 얇은 선(Line) 대신 두꺼운 구체(Sphere)로 휩쓸어서(Sweep) 판정 크기를 대폭 키웁니다.
+	FCollisionShape Sphere = FCollisionShape::MakeSphere(45.0f); 
+
+	if (GetWorld()->SweepSingleByChannel(HitResult, TraceStart, TraceEnd, FQuat::Identity, ECC_Visibility, Sphere, QueryParams))
 	{
 		AActor* HitActor = HitResult.GetActor();
+		// 구체 트레이스 시각화 (빨간색 -> 닿으면 초록색)
+		DrawDebugCapsule(GetWorld(), TraceStart + (TraceEnd - TraceStart) * HitResult.Time, 45.0f, 45.0f, FQuat::Identity, FColor::Green, false, 2.0f);
+		DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 15.0f, FColor::Red, false, 2.0f);
+
 		if (HitActor)
 		{
-			DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 10.0f, FColor::Green, false, 2.0f);
+			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, FString::Printf(TEXT("💥 [Debug] 타격 성공! 대상: %s, 데미지: %.1f"), *HitActor->GetName(), Dmg));
 
 			// 하이브리드 최적화 분기: ASC가 있는 대상 vs 단순 자원(나무/돌)
 			UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitActor, true);
@@ -242,5 +263,10 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 				IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(HitActor, Dmg, Character);
 			}
 		}
+	}
+	else
+	{
+		// 허공에 휘둘렀을 때 빨간 캡슐 표시
+		DrawDebugCapsule(GetWorld(), TraceStart + (TraceEnd - TraceStart) * 0.5f, (TraceEnd - TraceStart).Size() * 0.5f, 45.0f, FRotationMatrix::MakeFromZ(TraceEnd - TraceStart).ToQuat(), FColor::Red, false, 1.0f);
 	}
 }

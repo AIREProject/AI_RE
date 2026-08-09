@@ -9,14 +9,15 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 {
 	OutValidationError = FText::GetEmpty();
 	if (!WeaponTag.IsValid()
-		|| !WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanionMelee))
+		|| !WeaponTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("Weapon")))
+		|| WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon")))
+		|| WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Companion")))
+		|| WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Player"))))
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionWeaponDefinition",
 			"InvalidWeaponTag",
-			"Weapon Tag must be a concrete child of Weapon.Companion.");
+			"Weapon Tag must be a concrete child of Weapon (e.g. Weapon.Companion.Melee or Weapon.Player.Melee).");
 		return false;
 	}
 
@@ -56,6 +57,8 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			"Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
 		return false;
 	}
+	// TargetingMode 제한 해제: 플레이어 광역(MultiTarget) 공격 허용을 위해 임시 주석 처리
+	/*
 	if (TargetingMode != EAIRECombatTargetingMode::SingleTarget)
 	{
 		OutValidationError = NSLOCTEXT(
@@ -64,6 +67,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			"Current companion damage execution supports SingleTarget attacks only.");
 		return false;
 	}
+	*/
 
 	TSet<FName> ComboMontageSections;
 	for (int32 StepIndex = 0; StepIndex < ComboSteps.Num(); ++StepIndex)
@@ -116,6 +120,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				FText::AsNumber(StepIndex));
 			return false;
 		}
+		/*
 		if (ComboStep.TargetingMode
 			!= EAIRECombatTargetingMode::SingleTarget)
 		{
@@ -127,6 +132,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				FText::AsNumber(StepIndex));
 			return false;
 		}
+		*/
 
 	}
 
@@ -187,6 +193,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				"Combat Skill Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
 			return false;
 		}
+		/*
 		if (CombatSkill.TargetingMode
 			!= EAIRECombatTargetingMode::SingleTarget)
 		{
@@ -196,6 +203,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				"Current companion combat skills support SingleTarget only.");
 			return false;
 		}
+		*/
 
 		if (!FMath::IsFinite(CombatSkill.CooldownDuration)
 			|| CombatSkill.CooldownDuration < 0.0f)
@@ -247,7 +255,7 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 bool UAIRECompanionWeaponDefinitionDataAsset::IsMeleeWeapon() const
 {
 	return WeaponTag.IsValid()
-		&& WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanionMelee);
+		&& (WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanionMelee) || WeaponTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("Weapon.Player.Melee"))));
 }
 
 #if WITH_EDITOR

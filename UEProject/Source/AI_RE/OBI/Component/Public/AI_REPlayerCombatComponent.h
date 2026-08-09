@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "AI_REItemDataAsset.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "Engine/StreamableManager.h"
 #include "AI_REPlayerCombatComponent.generated.h"
 
@@ -29,6 +30,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat|Equipment")
 	TObjectPtr<UAI_REItemDataAsset> EquippedWeapon;
 
+	// 무기 장착 시 부여된 스킬 핸들 목록
+	UPROPERTY(Transient)
+	TArray<FGameplayAbilitySpecHandle> GrantedWeaponAbilities;
+
+	// 아무 무기도 장착하지 않았을 때 기본으로 장착될 무기 (맨주먹 등)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat|Equipment")
+	TObjectPtr<UAI_REItemDataAsset> DefaultUnarmedWeapon;
+
 	// 스태미나 소모량 (기획자 요청으로 보존, 0으로 설정하면 소모 안함)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat")
 	float AttackStaminaCost = 15.f;
@@ -46,4 +55,10 @@ protected:
 	TSharedPtr<FStreamableHandle> MontageLoadHandle;
 	
 	void OnWeaponMontageLoaded();
+
+	/** 장착된 무기가 부여한 스킬(어빌리티)들을 회수합니다. */
+	void ClearWeaponAbilities();
+
+	/** 손에 쥐고 있는 무기 외형과 레이어드 애니메이션을 해제하여 맨손 상태로 되돌립니다. */
+	void ClearWeaponVisuals();
 };
