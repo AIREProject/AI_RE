@@ -5,6 +5,8 @@
 #include "AIREAnimationMCPToolset.generated.h"
 
 class UAnimMontage;
+class UAnimSequence;
+class UAnimSequenceBase;
 class UControlRigBlueprint;
 class USkeletalMesh;
 
@@ -36,6 +38,120 @@ struct FAIREAnimationComboMontageResult
 };
 
 USTRUCT(BlueprintType)
+struct FAIREAnimationNotifyMutationResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 LegacyNotifyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 TraceWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 AttackMovementWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 RemovedLegacyNotifyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 ReplacedTraceWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 ReplacedAttackMovementWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	TArray<FString> Entries;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREEnemyMeleeTraceWindowDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StartTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float EndTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	int32 StrikeIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float DamageScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StaggerScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	FName TraceStartSocket = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	FName TraceEndSocket = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREAnimationMontageSegmentDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	TObjectPtr<UAnimSequenceBase> Animation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float PlayRate = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	int32 LoopingCount = 1;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREAnimationMontageTrackResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 SegmentCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	float PlayLength = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	TArray<FString> Entries;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREAnimationBoneMotionResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	float PlayLength = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	TArray<FString> Entries;
+};
+
+USTRUCT(BlueprintType)
 struct FAIREControlRigHierarchySyncResult
 {
 	GENERATED_BODY()
@@ -54,6 +170,21 @@ struct FAIREControlRigHierarchySyncResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
 	int32 DiscrepancyCountAfter = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	TArray<FString> Entries;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREControlRigVMResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
+	FString Message;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation|ControlRig")
 	TArray<FString> Entries;
@@ -82,8 +213,84 @@ public:
 		float WindowStartOffsetAfterHit,
 		float SectionEndPadding);
 
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationNotifyMutationResult InspectEnemyMeleeTraceMontage(
+		UAnimMontage* Montage);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationNotifyMutationResult ConfigureEnemyMeleeTraceWindow(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		float WindowStartTime,
+		float WindowEndTime);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationNotifyMutationResult ConfigureEnemyAttackMovementWindow(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		float WindowStartTime,
+		float WindowEndTime);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationNotifyMutationResult ConfigureEnemyMeleeTraceWindows(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		const TArray<FAIREEnemyMeleeTraceWindowDefinition>& Windows);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationMontageTrackResult ConfigureMontageAnimationTrack(
+		UAnimMontage* Montage,
+		FName SlotName,
+		const TArray<FAIREAnimationMontageSegmentDefinition>& Segments,
+		bool bClearMontageNotifies);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationBoneMotionResult InspectAnimationBoneMotion(
+		UAnimSequence* Animation,
+		USkeletalMesh* SkeletalMesh,
+		const TArray<FName>& BoneNames,
+		int32 SampleCount);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationBoneMotionResult InspectAnimationBoneLocalRotations(
+		UAnimSequence* Animation,
+		USkeletalMesh* SkeletalMesh,
+		const TArray<FName>& BoneNames,
+		const TArray<float>& NormalizedTimes);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationBoneMotionResult InspectAnimationBoneLocalTransforms(
+		UAnimSequence* Animation,
+		USkeletalMesh* SkeletalMesh,
+		const TArray<FName>& BoneNames,
+		const TArray<float>& NormalizedTimes);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationBoneMotionResult BakePlanarRootMotionFromBone(
+		UAnimSequence* Animation,
+		USkeletalMesh* SkeletalMesh,
+		FName MotionBoneName);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationBoneMotionResult NormalizeRootRotationToReference(
+		UAnimSequence* Animation,
+		USkeletalMesh* SkeletalMesh,
+		FName MotionBoneName);
+
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|ControlRig|Mutation")
 	static FAIREControlRigHierarchySyncResult SyncControlRigBoneHierarchy(
 		UControlRigBlueprint* ControlRigBlueprint,
 		USkeletalMesh* SkeletalMesh);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|ControlRig|Query")
+	static FAIREControlRigVMResult InspectControlRigVMPins(
+		UControlRigBlueprint* ControlRigBlueprint,
+		const FString& Filter);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|ControlRig|Mutation")
+	static FAIREControlRigVMResult SetControlRigVMPinDefault(
+		UControlRigBlueprint* ControlRigBlueprint,
+		const FString& GraphName,
+		const FString& PinPath,
+		const FString& DefaultValue);
 };

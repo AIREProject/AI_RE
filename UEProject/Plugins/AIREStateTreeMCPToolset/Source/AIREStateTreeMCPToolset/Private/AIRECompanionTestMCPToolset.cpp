@@ -504,4 +504,25 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::SaveLevelBlueprint
 	return Result;
 }
 
+FAIRECompanionTestFixtureResult
+UAIRECompanionTestMCPToolset::RunBossCombatAutomationTests()
+{
+	FAIRECompanionTestFixtureResult Result;
+	if (!IsValid(GEditor))
+	{
+		Result.Message = TEXT("Unreal Editor is not available.");
+		return Result;
+	}
+	UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
+	const bool bStarted = GEditor->Exec(
+		EditorWorld,
+		TEXT("Automation RunTests AIRE.Combat.Damage.SharedPipeline+AIRE.Combat.Enemy.Attack.FallbackTrace"));
+	Result.bSuccess = bStarted;
+	Result.NodeCount = bStarted ? 2 : 0;
+	Result.Message = bStarted
+		? TEXT("Started the two Boss combat automation tests. Poll the Output Log for completion and failures.")
+		: TEXT("The Automation RunTests console command was not accepted.");
+	return Result;
+}
+
 #undef LOCTEXT_NAMESPACE
