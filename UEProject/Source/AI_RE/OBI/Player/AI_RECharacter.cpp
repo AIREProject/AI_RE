@@ -26,6 +26,7 @@
 #include "AI_REInteractableInterface.h"
 #include "AIRECombatEvadeComponent.h"
 #include "Engine/OverlapResult.h"
+#include "../Component/Public/AI_RETargetScannerComponent.h"
 
 AAI_RECharacter::AAI_RECharacter()
 {
@@ -66,6 +67,12 @@ AAI_RECharacter::AAI_RECharacter()
 	CraftingComponent = CreateDefaultSubobject<UAI_REPlayerCraftingComponent>(TEXT("CraftingComponent"));
 	CombatComponent = CreateDefaultSubobject<UAI_REPlayerCombatComponent>(TEXT("CombatComponent"));
 	CombatEvadeComponent = CreateDefaultSubobject<UAIRECombatEvadeComponent>(TEXT("CombatEvade"));
+	TargetScannerComponent = CreateDefaultSubobject<UAI_RETargetScannerComponent>(TEXT("TargetScannerComponent"));
+	
+	// 무기 장착용 메시 컴포넌트 생성 및 소켓에 부착
+	WeaponMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMeshComponent"));
+	WeaponMeshComponent->SetupAttachment(GetMesh(), FName("WeaponSocket_R"));
+	WeaponMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision); // 무기 자체의 물리 충돌은 끕니다.
 	
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
@@ -100,6 +107,11 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		if (InteractAction)
 		{
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoInteract);
+		}
+
+		if (AttackAction)
+		{
+			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoAttack);
 		}
 
 		// QuickSlots (1~0 키 바인딩)
@@ -344,40 +356,24 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 		return;
 	}
 
-	// 캐릭터 가슴팍 높이에서 카메라가 바라보는 방향으로 2.5m(250) 길이의 두꺼운 레이저 쏘기
-	FVector Start = GetActorLocation() + FVector(0.f, 0.f, 30.f);
-	FVector End = Start + (GetControlRotation().Vector() * 250.0f);
-
-	FCollisionShape Sphere = FCollisionShape::MakeSphere(45.0f); // 반지름 45의 두꺼운 구체 트레이스
-	
-	TArray<FHitResult> HitResults;
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(this); // 나 자신은 검사에서 제외
-
-	GetWorld()->SweepMultiByChannel(
-		HitResults, 
-		Start, 
-		End, 
-		FQuat::Identity, 
-		ECC_Visibility, 
-		Sphere,
-		QueryParams
-	);
-
-	if (HitResults.Num() > 0)
+	// TargetScannerComponent에서 캐싱된 상호작용 대상을 가져와 즉시 상호작용
+	if (TargetScannerComponent)
 	{
-		for (const FHitResult& Hit : HitResults)
+		if (AActor* Target = TargetScannerComponent->GetCachedInteractableTarget())
 		{
-			AActor* HitActor = Hit.GetActor();
-			
-			if (HitActor && HitActor->Implements<UAI_REInteractableInterface>())
-			{
-				IAI_REInteractableInterface::Execute_Interact(HitActor, this);
-				return; // 상호작용 성공 시 여기서 함수 종료
-			}
+			IAI_REInteractableInterface::Execute_Interact(Target, this);
+			return;
 		}
 	}
 
-	// 3. 반경 내에 상호작용할 물건이 아무것도 없다면 맨손 제작(None) 메뉴를 엽니다!
+	// 반경 내에 상호작용할 물건이 아무것도 없다면 맨손 제작(None) 메뉴를 엽니다!
 	OpenCraftingUI(EWorkbenchType::None);
+}
+
+void AAI_RECharacter::DoAttack()
+{
+	if (CombatComponent)
+	{
+		CombatComponent->TryStartPrimaryAction();
+	}
 }

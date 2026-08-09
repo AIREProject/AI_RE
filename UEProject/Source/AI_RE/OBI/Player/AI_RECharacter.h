@@ -62,6 +62,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class UInputAction> InteractAction;
 
+	/** Attack Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> AttackAction;
+
 public:
 
 	/** Constructor */
@@ -82,6 +86,9 @@ protected:
 
 	/** Called for interaction input */
 	void DoInteract(const FInputActionValue& Value);
+
+	/** Called for attack input */
+	void DoAttack();
 
 public:
 
@@ -179,6 +186,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
 	TObjectPtr<UAIRECombatEvadeComponent> CombatEvadeComponent;
 
+	// 통합 타겟 스캐너 (분리됨)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
+	TObjectPtr<class UAI_RETargetScannerComponent> TargetScannerComponent;
+
+	// 무기 장착용 슬롯 컴포넌트
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<class UStaticMeshComponent> WeaponMeshComponent;
+
 	virtual void BeginPlay() override;
 	
 public:
@@ -194,6 +209,8 @@ public:
 	FORCEINLINE TObjectPtr<UAI_REPlayerInventoryComponent> GetInventoryComponent() const { return InventoryComponent; }
 	FORCEINLINE TObjectPtr<UAI_REPlayerCombatComponent> GetCombatComponent() const { return CombatComponent; }
 	FORCEINLINE UAIRECombatEvadeComponent* GetCombatEvadeComponent() const { return CombatEvadeComponent; }
+	FORCEINLINE class UAI_RETargetScannerComponent* GetTargetScannerComponent() const { return TargetScannerComponent; }
+	FORCEINLINE class UStaticMeshComponent* GetWeaponMeshComponent() const { return WeaponMeshComponent; }
 	
 };
 
