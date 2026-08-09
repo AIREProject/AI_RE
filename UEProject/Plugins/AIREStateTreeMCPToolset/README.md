@@ -16,6 +16,34 @@ Editor-only UE 5.8 MCP tools for project-owned StateTree, UMG, and animation ass
 - UMG mutations reject assets outside `/Game/Work/LMK/`.
 - Combo montage mutations validate one indexed hit notify per section, add only
   missing combo window states, and reject assets outside `/Game/Work/LMK/`.
+- Enemy melee montage mutations remove only the legacy `SaveAttack` and
+  `ResetCombo` notifies, replace project-owned melee trace windows, and reject
+  assets outside `/Game/Work/LMK/`. Each window carries a unique strike index,
+  damage/stagger scales, and an optional per-strike socket pair.
+- `ConfigureEnemyAttackMovementWindow` replaces only the project-owned attack
+  movement state so a collision-aware gap closer can start independently from
+  its damage trace window.
+- `ConfigureMontageAnimationTrack` rebuilds a project-owned Montage from one or
+  more compatible Animation Sequences, recalculates the real play length through
+  the montage data controller, and can clear template Montage notifies.
+- `InspectAnimationBoneMotion` samples selected bones on a compatible Skeletal
+  Mesh and reports path length, peak speed, maximum reach, and forward-extension
+  timing for contact-window and striking-hand decisions.
+- `InspectAnimationBoneLocalRotations` compares selected animation bones against
+  their mesh reference-pose rotations at explicit normalized times. Use it to
+  distinguish finger curl from whole-arm movement during retarget validation.
+- Frank-to-MAKO retarget tools create project-scoped IK Rig and IK Retargeter
+  assets without overwriting existing retargeted animations. The default setup
+  preserves the MAKO pelvis, spine, neck, and head reference pose while aligning
+  limbs and fingers, uses one-to-one rotation for the spine, arms, and fingers,
+  and exports trials under `Animations/Retarget/Fixed`.
+- `CreateOrUpdateMakoWeaponSockets` copies the Frank left and right weapon-handle
+  reference transforms onto MAKO mesh-only `weapon_l` and `weapon_r` sockets.
+  It does not create or extract a separate weapon mesh.
+- `RunBossCombatAutomationTests` starts only
+  `AIRE.Combat.Damage.SharedPipeline` and
+  `AIRE.Combat.Enemy.Attack.FallbackTrace`; completion remains explicit in the
+  Output Log.
 - Control Rig hierarchy sync accepts only project assets under `/Game/Work/LMK/`,
   replaces and removes bone hierarchy entries from the selected Skeletal Mesh,
   leaves curves and sockets untouched, and does not compile or save the asset.
@@ -51,6 +79,24 @@ Named state and node creation is retry-safe: a matching sibling state or a match
    hit notify to the padded end of its section.
 5. Inspect the result and save the montage with `AssetTools.save_assets`.
 
+## Enemy melee montage workflow
+
+1. Duplicate a template montage under `/Game/Work/LMK/`.
+2. When the desired source is an Animation Sequence rather than a Montage, call
+   `ConfigureMontageAnimationTrack` with the required Slot and sequence list.
+3. Use `InspectAnimationBoneMotion` with the actual mesh and candidate limb bones,
+   then preview-confirm the reported striking hand and contact interval.
+4. Use `InspectEnemyMeleeTraceMontage` to inspect the existing notify layout.
+5. Use `ConfigureEnemyMeleeTraceWindow` for a one-hit montage, or
+   `ConfigureEnemyMeleeTraceWindows` for a multi-hit montage. Supply the
+   preview-confirmed contact intervals and unique zero-based strike indices.
+   Alternating-hand attacks can override the socket pair per strike.
+   The mutation removes `SaveAttack` and `ResetCombo` and replaces only the
+   project-owned `AIRE Enemy Melee Trace Window` states.
+6. For a configured gap closer, use `ConfigureEnemyAttackMovementWindow` to
+   place its movement interval independently from the contact interval.
+7. Inspect the result and save only the edited montage with `AssetTools.save_assets`.
+
 ## Control Rig hierarchy workflow
 
 1. Duplicate the source Control Rig under `/Game/Work/LMK/` and assign the target
@@ -61,3 +107,21 @@ Named state and node creation is retry-safe: a matching sibling state or a match
    Animation Blueprint.
 4. Compile and save the Control Rig explicitly, then compile and save the
    dependent Animation Blueprint.
+
+## Frank-to-MAKO retarget workflow
+
+1. Call `CreateOrUpdateFrankToMakoRetargetSetup` with the Frank Dual source mesh
+   and `SM_MAKO`. The created assets remain dirty until explicitly saved.
+2. Call `InspectFrankToMakoRetargetSetup` and verify the intended target-pose
+   offsets on `pelvis`, `spine_01`, `spine_05`, `neck_01`, and `head` before exporting.
+3. Retarget only Idle and one movement clip first with
+   `RetargetFrankAnimationsToMako`; inspect the generated `Fixed` assets.
+4. If a small target-pose correction is still required, use
+   `SetMakoTargetRetargetPose`, export a new prefixed trial, and compare again.
+5. Use `AutoAlignMakoTargetRetargetPoseBones` to compare Direction, Mesh,
+   Local Rotation Axes, or Global Rotation Axes alignment on selected target
+   bones without saving the trial.
+6. Save the setup and accepted animation assets explicitly after visual review.
+7. Call `CreateOrUpdateMakoWeaponSockets` when the Frank weapon-handle reference
+   transforms should seed MAKO `weapon_l` and `weapon_r`; save `SM_MAKO` only
+   after a separate weapon mesh has been preview-attached and visually checked.
