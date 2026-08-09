@@ -66,6 +66,7 @@ public:
 	FAIREEnemyAggroSnapshot GetAggroSnapshot() const;
 
 	bool IsSelectedTargetVisible() const;
+	bool SelectedTargetHasRecentSightEvidence() const;
 	bool SelectedTargetHasRecentDamageEvidence() const;
 	FVector GetSelectedTargetLastKnownLocation() const;
 
@@ -81,6 +82,7 @@ private:
 		bool bVisible = false;
 		bool bHasDamageEvidence = false;
 		FVector LastKnownLocation = FVector::ZeroVector;
+		double LastSightTime = -1.0;
 		double LastDamageTime = -1.0;
 	};
 
@@ -96,6 +98,7 @@ private:
 	FAggroEntry& FindOrAddEntry(AActor* Actor);
 	void RemoveEntry(AActor* Actor);
 	void SelectTarget(AActor* Target);
+	bool HasRecentSightEvidence(const FAggroEntry& Entry) const;
 	void ConfigureSight();
 
 	UPROPERTY(VisibleAnywhere, Category = "AIRE|Enemy|Aggro")
@@ -115,6 +118,10 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Aggro", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
 	float DamageEvidenceDuration = 1.0f;
+
+	/** Keeps brief party-member occlusion from invalidating the current target. */
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Aggro", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
+	float SightEvidenceDuration = 3.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Enemy|Aggro", meta = (ClampMin = "1.0", UIMin = "1.0", Units = "cm"))
 	float SightRadius = 1800.0f;

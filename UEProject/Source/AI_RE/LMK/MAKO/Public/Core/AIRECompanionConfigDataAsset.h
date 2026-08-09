@@ -69,8 +69,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm"))
 	float ReturnStartDistance = 600.0f;
 
+	/** Once returning starts, keep returning until this surface distance is reached. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm"))
+	float ReturnStopDistance = 400.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (UIMin = "0.0", Units = "cm"))
 	float ThreatDetectionDistance = 1000.0f;
+
+	/** Extra distance retained only for the currently selected threat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float ThreatLoseSightDistance = 200.0f;
+
+	/** Grace period before a sight-loss event releases the current threat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float ThreatSightMemoryDuration = 3.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (UIMin = "0.0", Units = "cm"))
 	float MaxChaseDistanceFromPlayer = 1500.0f;

@@ -53,6 +53,24 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!FMath::IsFinite(ReturnStopDistance) || ReturnStopDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidReturnStopDistance", "Return Stop Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatLoseSightDistance) || ThreatLoseSightDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatLoseSightDistance", "Threat Lose Sight Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatSightMemoryDuration) || ThreatSightMemoryDuration < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatSightMemoryDuration", "Threat Sight Memory Duration must be finite and non-negative.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(MaxChaseDistanceFromPlayer) || MaxChaseDistanceFromPlayer < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidMaxChaseDistance", "Max Chase Distance From Player must be finite and non-negative.");
@@ -116,9 +134,10 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
-	if (FollowStopDistance >= ReturnStartDistance)
+	if (FollowStopDistance >= ReturnStopDistance
+		|| ReturnStopDistance >= ReturnStartDistance)
 	{
-		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Follow Stop Distance must be less than Return Start Distance.");
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Movement distances must satisfy Follow Stop Distance < Return Stop Distance < Return Start Distance.");
 		return false;
 	}
 

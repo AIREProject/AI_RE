@@ -92,5 +92,6 @@ private:
 		LocalBehaviorPolicyComponent;
 	TWeakObjectPtr<AActor> SelectedThreatTarget;
 	TArray<TWeakObjectPtr<AActor>> PerceivedHostiles;
+	TMap<TWeakObjectPtr<AActor>, double> PendingSightLossDeadlines;
 	bool bIsThreatDetectionActive = false;
 };

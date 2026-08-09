@@ -3,6 +3,8 @@
 #include "AbilitySystemComponent.h"
 #include "AI_REAttributeSet.h"
 #include "AIRECombatGameplayTags.h"
+#include "Animation/AnimMontage.h"
+#include "GameFramework/Character.h"
 
 UAIREEnemyVitalityComponent::UAIREEnemyVitalityComponent()
 {
@@ -27,6 +29,7 @@ bool UAIREEnemyVitalityComponent::InitializeVitality(
 	}
 
 	AbilitySystem = InAbilitySystem;
+	OwnerCharacter = Cast<ACharacter>(GetOwner());
 	InAbilitySystem->SetNumericAttributeBase(
 		UAI_REAttributeSet::GetMaxHPAttribute(),
 		MaxHealth);
@@ -45,6 +48,7 @@ bool UAIREEnemyVitalityComponent::InitializeVitality(
 
 void UAIREEnemyVitalityComponent::ShutdownVitality()
 {
+	StopDeathMontage();
 	if (AbilitySystem.IsValid() && HealthChangedDelegateHandle.IsValid())
 	{
 		AbilitySystem
@@ -54,6 +58,7 @@ void UAIREEnemyVitalityComponent::ShutdownVitality()
 	}
 	HealthChangedDelegateHandle.Reset();
 	AbilitySystem.Reset();
+	OwnerCharacter.Reset();
 	OnHealthChanged.Clear();
 	OnDeath.Clear();
 }
@@ -125,5 +130,22 @@ void UAIREEnemyVitalityComponent::SynchronizeDeath(
 
 	bDead = true;
 	AbilitySystem->CancelAllAbilities();
+	PlayDeathMontage();
 	OnDeath.Broadcast(GetOwner());
+}
+
+void UAIREEnemyVitalityComponent::PlayDeathMontage()
+{
+	if (OwnerCharacter.IsValid() && IsValid(DeathMontage))
+	{
+		OwnerCharacter->PlayAnimMontage(DeathMontage);
+	}
+}
+
+void UAIREEnemyVitalityComponent::StopDeathMontage()
+{
+	if (OwnerCharacter.IsValid() && IsValid(DeathMontage))
+	{
+		OwnerCharacter->StopAnimMontage(DeathMontage);
+	}
 }

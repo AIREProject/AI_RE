@@ -80,6 +80,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat")
 	UAIRECombatEvadeComponent* GetCombatEvadeComponent() const;
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance")
+	void SetSoxAndShoesVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance")
+	bool AreSoxAndShoesVisible() const;
+
 	bool ResetAttributesToConfiguredDefaults();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE")
@@ -89,10 +95,12 @@ public:
 	const UAIRECompanionConfigDataAsset* GetCompanionConfig() const;
 
 protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void ApplySoxAndShoesVisibility();
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void SynchronizeDeadState(float CurrentHealth);
 
@@ -134,6 +142,9 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Configuration", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
+	bool bSoxAndShoesVisible = true;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 };

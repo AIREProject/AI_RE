@@ -116,8 +116,9 @@ Ability는 자신의 AbilitySpec `SourceObject`에서 Weapon Definition을 가�
 공격 거리는 Event의 임의 숫자를 신뢰하지 않고 Weapon Definition의 `AttackRange`를
 다시 읽어 최종 검증합니다.
 
-실제 공격 제한은 GAS Cooldown이 소유합니다. StateTree의 짧은 재시도 간격은 매 Tick
-활성화 요청을 막는 throttle일 뿐 Cooldown의 두 번째 원본이 아닙니다.
+실제 공격 제한은 GAS Cooldown이 소유합니다. StateTree는 해당 Cooldown Tag가 활성화된
+동안 Gameplay Event를 다시 보내지 않으며, 짧은 재검사 간격은 Cooldown의 두 번째 원본이
+아닙니다. 이동 재시도와 Ability 활성화 재검사는 서로 다른 타이머를 사용합니다.
 
 ## 4. Data Asset 계약
 
@@ -127,7 +128,7 @@ Companion Config가 소유하는 값은 다음과 같습니다.
 
 - 이동 속도와 Walk/Run 전환 거리
 - Follow/Return 거리
-- Threat 감지 거리, 플레이어 방어 반경과 최대 추격 거리
+- Threat 감지 거리, 선택 Target의 추가 소실 거리·시야 기억 시간, 플레이어 방어 반경과 최대 추격 거리
 - 기본 교전 정책과 역할 선호
 - 초기 Health·Stamina와 Max 값
 
@@ -249,15 +250,27 @@ Montage가 없거나 로드되지 않으면 기존 `FallbackHitDelay`와
 
 Anim Notify는 실제 명중을 확정하지 않고 Hit 판정을 시도할 타이밍만 전달합니다.
 현재 T05A는 선택된 Threat Target의 생존·적대성·거리를 Ability에서 검증한 뒤
-공용 Combat Damage Subsystem에 Request를 전달합니다.
+공용 Combat Damage Subsystem에 Request를 전달합니다. 기본 근접 Weapon의 현재 표면
+공격 거리는 `150 cm`입니다.
 
 2026-08-06 이동하는 Boss 대상 PIE에서 이 임시 경계가 Move/Attack 진동과 실제 궤적을
-확인하지 않는 피해 판정을 만든다는 결함이 확인됐습니다. M03-E09-T02에서 MAKO와 Boss가
-재사용하는 실제 근접 공간 판정 경계로 교체합니다. Weapon Mesh와 Blade Socket 계약이
-있으면 Socket 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
+확인하지 않는 피해 판정을 만든다는 결함이 확인됐습니다. M03-E09-T02A는 Boss에서 실제
+근접 공간 판정 경계를 먼저 확립합니다. 이후 사용자 승인으로 MAKO 이동 표적 안정화
+source만 먼저 보완했습니다. Threat는 선택 Target에 `200 cm` 소실 거리와 `3.0 s` 시야
+기억을 적용합니다. 플레이어와 함께 싸우는 Companion은 감지 거리와 시야 차폐를
+유지하되 방향과 무관하게 주변 적을 최초 획득합니다. StateTree는 진행 중인 공격을
+단순 거리 이탈만으로 취소하지 않습니다.
+현재 Step의 hit 거리와 다음 Combo Step 진입 거리는 Ability가 계속 검증하므로, 이탈한
+공격은 피해 없이 현재 표현을 마친 뒤 다음 연계를 종료합니다. 완료된 고정 지점 접근이
+여전히 사거리 밖이면 `0.5 s` 판단 간격 뒤 새 접근을 요청합니다.
+
+MAKO 실제 공간 판정은 모델, Skeleton, AnimBP, Weapon Mesh와 Blade Socket 계약이 확정된
+뒤 M03-E09-T02B에서 같은 경계를 채택합니다. Socket 계약이
+있으면 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
 placeholder 공격은 Character 전방 Config 기반 Shape Sweep을 사용합니다. 선택 Target,
-Montage 재생과 거리 진입은 명중 증거가 아니며 실제 Sweep이 snapshotted Target을 교차해야
-공용 Damage Request를 commit할 수 있습니다.
+Montage 재생과 거리 진입은 최종 공간 명중 증거가 아니며 실제 Sweep이 snapshotted Target을
+교차해야 공용 Damage Request를 commit할 수 있습니다. 이번 안정화 slice는 MAKO animation,
+model과 StateTree binary asset을 수정하지 않습니다.
 
 이때도 StateTree, Combo Step, 단계별 Damage, 실행당 Cooldown과 `ExecutionId` exact-once
 계약은 유지합니다. 공격 진입 거리와 더 넓은 취소 거리를 분리해 작은 Target 이동으로
@@ -433,6 +446,16 @@ StateTree를 Compile한 뒤 Save합니다.
 - Base Anim Blueprint와 Linked Anim Layer 연결 방식
 - Combat Target fixture의 ASC 설정
 
+#### 추적·귀환 안정화 계약
+
+- Follow와 Return 판단은 Character capsule의 표면 거리를 사용합니다.
+- Follow는 `FollowStopDistance=200 cm`에서 evaluator가 이동을 종료합니다. Follow MoveTo의
+  성공 반경은 이 값에 binding하지 않아 같은 frame의 완료·재진입 loop를 만들지 않습니다.
+- Return은 `ReturnStartDistance=600 cm`에서 latch하고 `ReturnStopDistance=400 cm`에서
+  해제합니다. Follow·Return의 판단 소유자는 StateTree evaluator 하나입니다.
+- 이동 재시도와 Ability 재시도 timer는 분리하며, 해당 GAS cooldown tag가 활성인 동안
+  StateTree는 같은 공격 Gameplay Event를 반복 발행하지 않습니다.
+
 ### 8.3 기본 공격 콤보 설정
 
 1. `AttackMontage` 하나에 실행 순서대로 Montage Section을 만듭니다.
@@ -447,9 +470,10 @@ StateTree를 Compile한 뒤 Save합니다.
    Compile·Save합니다.
 
 T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
-거리만 다시 검증하는 경로는 T01 기준선이며, M03-E09-T02 이후에는 실제 Weapon Socket
-또는 placeholder 전방 Shape Sweep이 Target을 교차해야 피해를 적용합니다. Notify와
-시간 fallback은 같은 판정 seam을 호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
+거리만 다시 검증하는 경로는 T01 기준선입니다. Boss가 T02A에서 실제 공간 판정 seam을
+검증한 뒤, MAKO는 모델·Socket 계약이 고정되는 T02B에서 실제 Weapon Socket 또는
+placeholder 전방 Shape Sweep을 채택합니다. Notify와 시간 fallback은 같은 판정 seam을
+호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
 
 ### 8.4 전투 스킬 설정
 

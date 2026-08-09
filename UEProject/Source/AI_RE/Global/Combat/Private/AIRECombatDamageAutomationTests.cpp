@@ -11,6 +11,7 @@
 #include "AIREEnemyReactionComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "GameFramework/WorldSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
 
@@ -50,6 +51,7 @@ bool FAIRECombatDamagePipelineTest::RunTest(const FString& Parameters)
 	TestWorld->InitializeActorsForPlay(FURL());
 	ON_SCOPE_EXIT
 	{
+		TestWorld->EndPlay(EEndPlayReason::Quit);
 		GEngine->ShutdownWorldNetDriver(TestWorld);
 		TestWorld->DestroyWorld(true);
 		TestWorld->SetPhysicsScene(nullptr);
@@ -80,6 +82,7 @@ bool FAIRECombatDamagePipelineTest::RunTest(const FString& Parameters)
 	}
 	PartySource->SetHostileForTesting(false);
 	TestWorld->BeginPlay();
+	TestWorld->GetWorldSettings()->NotifyBeginPlay();
 
 	UAIRECombatDamageSubsystem* DamageSubsystem =
 		TestWorld->GetSubsystem<UAIRECombatDamageSubsystem>();
@@ -161,12 +164,6 @@ bool FAIRECombatDamagePipelineTest::RunTest(const FString& Parameters)
 		TEXT("The flinch-threshold stagger request applies"),
 		DamageSubsystem->ApplyDamageRequest(FlinchRequest),
 		EAIRECombatDamageResult::Applied);
-	TestWorld->Tick(LEVELTICK_All, 0.01f);
-	TestEqual(
-		TEXT("Flinch starts at 50 accumulated stagger"),
-		FirstEnemy->GetEnemyReactionComponent()->GetReactionSnapshot().State,
-		EAIREEnemyReactionState::Flinching);
-
 	for (int32 StaggerIndex = 0; StaggerIndex < 7; ++StaggerIndex)
 	{
 		FAIRECombatDamageRequest StunBuildRequest;
@@ -182,6 +179,10 @@ bool FAIRECombatDamagePipelineTest::RunTest(const FString& Parameters)
 			EAIRECombatDamageResult::Applied);
 	}
 	TestWorld->Tick(LEVELTICK_All, 0.01f);
+	TestEqual(
+		TEXT("Flinch starts at 50 accumulated stagger"),
+		FirstEnemy->GetEnemyReactionComponent()->GetReactionSnapshot().State,
+		EAIREEnemyReactionState::Flinching);
 	TestEqual(
 		TEXT("Stun takes priority when both gauges cross on one evaluation"),
 		SecondEnemy->GetEnemyReactionComponent()->GetReactionSnapshot().State,
