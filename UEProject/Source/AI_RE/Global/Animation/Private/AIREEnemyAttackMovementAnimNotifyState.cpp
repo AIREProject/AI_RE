@@ -6,7 +6,7 @@
 
 namespace
 {
-UAIREEnemyAttackComponent* FindEnemyAttackComponent(
+UAIREEnemyAttackComponent* FindEnemyAttackMovementComponent(
 	USkeletalMeshComponent* MeshComp)
 {
 	AActor* Owner = IsValid(MeshComp) ? MeshComp->GetOwner() : nullptr;
@@ -26,7 +26,7 @@ void UAIREEnemyAttackMovementAnimNotifyState::NotifyBegin(
 	RemoveStaleExecutionIds();
 
 	UAIREEnemyAttackComponent* AttackComponent =
-		FindEnemyAttackComponent(MeshComp);
+		FindEnemyAttackMovementComponent(MeshComp);
 	if (!IsValid(AttackComponent))
 	{
 		return;
@@ -56,7 +56,7 @@ void UAIREEnemyAttackMovementAnimNotifyState::NotifyEnd(
 	const TWeakObjectPtr<USkeletalMeshComponent> MeshKey(MeshComp);
 	const FGuid* ExecutionId = ActiveExecutionIds.Find(MeshKey);
 	UAIREEnemyAttackComponent* AttackComponent =
-		FindEnemyAttackComponent(MeshComp);
+		FindEnemyAttackMovementComponent(MeshComp);
 	if (ExecutionId && IsValid(AttackComponent))
 	{
 		AttackComponent->EndAttackMovementWindow(*ExecutionId);
@@ -71,7 +71,7 @@ void UAIREEnemyAttackMovementAnimNotifyState::RemoveStaleExecutionIds()
 	{
 		USkeletalMeshComponent* MeshComp = It.Key().Get();
 		UAIREEnemyAttackComponent* AttackComponent =
-			FindEnemyAttackComponent(MeshComp);
+			FindEnemyAttackMovementComponent(MeshComp);
 		if (!IsValid(AttackComponent))
 		{
 			It.RemoveCurrent();
