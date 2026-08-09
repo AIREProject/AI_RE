@@ -2,6 +2,7 @@
 
 #include "AIRECombatDamageSubsystem.h"
 #include "AIRECombatDamageTargetInterface.h"
+#include "AIRECombatMeleeTraceResolver.h"
 #include "AIREEnemyVitalityComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -12,65 +13,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/RootMotionSource.h"
 #include "TimerManager.h"
-
-#if ENABLE_DRAW_DEBUG
-#include "DrawDebugHelpers.h"
-#include "HAL/IConsoleManager.h"
-
-namespace
-{
-	TAutoConsoleVariable<int32> CVarAIREEnemyMeleeTraceDebug(
-		TEXT("aire.Enemy.MeleeTrace.Debug"),
-		0,
-		TEXT("Draw enemy melee sphere sweeps.\n")
-		TEXT("0: Disabled\n")
-		TEXT("1: Enabled"),
-		ECVF_Cheat);
-
-	void DrawEnemyMeleeTraceSweep(
-		const UWorld* World,
-		const FVector& Start,
-		const FVector& End,
-		const float Radius,
-		const FColor& Color)
-	{
-		constexpr float DebugLifetime = 1.0f;
-		constexpr float DebugThickness = 1.5f;
-		const FVector SweepDelta = End - Start;
-		if (SweepDelta.IsNearlyZero())
-		{
-			DrawDebugSphere(
-				World,
-				Start,
-				Radius,
-				16,
-				Color,
-				false,
-				DebugLifetime,
-				0,
-				DebugThickness);
-			return;
-		}
-
-		const FVector SweepCenter = (Start + End) * 0.5f;
-		const float HalfHeight = (SweepDelta.Size() * 0.5f) + Radius;
-		const FQuat SweepRotation = FQuat::FindBetweenNormals(
-			FVector::UpVector,
-			SweepDelta.GetSafeNormal());
-		DrawDebugCapsule(
-			World,
-			SweepCenter,
-			HalfHeight,
-			Radius,
-			SweepRotation,
-			Color,
-			false,
-			DebugLifetime,
-			0,
-			DebugThickness);
-	}
-}
-#endif
 
 #if !UE_BUILD_SHIPPING
 DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAttack, Log, All);
@@ -360,9 +302,11 @@ bool UAIREEnemyAttackComponent::CommitActiveMeleeHit()
 	}
 
 	FHitResult TargetHit;
-	const ETraceSampleResult Result = PerformFallbackTraceSample(TargetHit);
+	const EAIRECombatMeleeTraceResult Result =
+		PerformFallbackTraceSample(TargetHit);
 	ResolveTraceSample(Result, TargetHit);
-	if (Result == ETraceSampleResult::NoHit)
+	if (Result == EAIRECombatMeleeTraceResult::NoHit
+		|| Result == EAIRECombatMeleeTraceResult::Invalid)
 	{
 		CloseOpportunity();
 	}
@@ -459,7 +403,7 @@ void UAIREEnemyAttackComponent::UpdateMeleeTraceWindow(
 	}
 
 	FHitResult TargetHit;
-	const ETraceSampleResult Result = bUseSocketTrace
+	const EAIRECombatMeleeTraceResult Result = bUseSocketTrace
 		? PerformSocketTraceSample(ActiveTraceMesh.Get(), TargetHit)
 		: PerformFallbackTraceSample(TargetHit);
 	ResolveTraceSample(Result, TargetHit);
@@ -651,9 +595,11 @@ void UAIREEnemyAttackComponent::HandleFallbackHit()
 		return;
 	}
 	FHitResult TargetHit;
-	const ETraceSampleResult Result = PerformFallbackTraceSample(TargetHit);
+	const EAIRECombatMeleeTraceResult Result =
+		PerformFallbackTraceSample(TargetHit);
 	ResolveTraceSample(Result, TargetHit);
-	if (Result == ETraceSampleResult::NoHit)
+	if (Result == EAIRECombatMeleeTraceResult::NoHit
+		|| Result == EAIRECombatMeleeTraceResult::Invalid)
 	{
 		CloseOpportunity();
 	}
@@ -763,14 +709,29 @@ bool UAIREEnemyAttackComponent::CommitResolvedHit(
 	Request.ExecutionId = StrikeExecutionId;
 	Request.bHasHitResult = true;
 	Request.HitResult = HitResult;
+	const EAIRECombatDamageResult DamageResult =
+		DamageSubsystem->ApplyDamageRequest(Request);
+#if !UE_BUILD_SHIPPING
+	UE_LOG(
+		LogAIREEnemyAttack,
+		Log,
+		TEXT("[ENEMY ATTACK] Phase=DamageCommit Source=%s Target=%s StrikeIndex=%d ExecutionId=%s Damage=%.2f Stagger=%.2f Result=%s"),
+		*GetNameSafe(Request.Source.Get()),
+		*GetNameSafe(Request.Target.Get()),
+		CommittedStrikeIndex,
+		*Request.ExecutionId.ToString(),
+		Request.Damage,
+		Request.StaggerValue,
+		*StaticEnum<EAIRECombatDamageResult>()->GetNameStringByValue(
+			static_cast<int64>(DamageResult)));
+#endif
 	const bool bStrikeDamageApplied =
-		DamageSubsystem->ApplyDamageRequest(Request)
-		== EAIRECombatDamageResult::Applied;
+		DamageResult == EAIRECombatDamageResult::Applied;
 	bDamageApplied = bDamageApplied || bStrikeDamageApplied;
 	return bStrikeDamageApplied;
 }
 
-UAIREEnemyAttackComponent::ETraceSampleResult
+EAIRECombatMeleeTraceResult
 UAIREEnemyAttackComponent::PerformSocketTraceSample(
 	USkeletalMeshComponent* MeshComponent,
 	FHitResult& OutTargetHit)
@@ -789,27 +750,36 @@ UAIREEnemyAttackComponent::PerformSocketTraceSample(
 		ActiveMeleeTraceSettings.TraceStartSocket);
 	const FVector CurrentTraceEnd = MeshComponent->GetSocketLocation(
 		ActiveMeleeTraceSettings.TraceEndSocket);
-	TArray<TPair<FVector, FVector>> TraceSegments;
-	TraceSegments.Reserve(4);
-	TraceSegments.Emplace(PreviousTraceStart, CurrentTraceStart);
-	TraceSegments.Emplace(PreviousTraceEnd, CurrentTraceEnd);
-	TraceSegments.Emplace(PreviousTraceStart, PreviousTraceEnd);
-	TraceSegments.Emplace(CurrentTraceStart, CurrentTraceEnd);
-	const ETraceSampleResult Result = SweepTraceSegments(
-		TraceSegments,
-		OutTargetHit);
+	FAIRECombatMeleeTraceRequest Request;
+	Request.World = GetWorld();
+	Request.Source = OwnerCharacter.Get();
+	Request.Target = AttackTarget.Get();
+	Request.Radius = ActiveMeleeTraceSettings.TraceRadius;
+	Request.TraceChannel =
+		ActiveMeleeTraceSettings.TraceChannel.GetValue();
+	Request.Segments.Reserve(4);
+	Request.Segments.Emplace(PreviousTraceStart, CurrentTraceStart);
+	Request.Segments.Emplace(PreviousTraceEnd, CurrentTraceEnd);
+	Request.Segments.Emplace(PreviousTraceStart, PreviousTraceEnd);
+	Request.Segments.Emplace(CurrentTraceStart, CurrentTraceEnd);
+	const FAIRECombatMeleeTraceResolution Resolution =
+		FAIRECombatMeleeTraceResolver::Resolve(Request);
 	PreviousTraceStart = CurrentTraceStart;
 	PreviousTraceEnd = CurrentTraceEnd;
-	return Result;
+	if (Resolution.Result == EAIRECombatMeleeTraceResult::TargetHit)
+	{
+		OutTargetHit = Resolution.HitResult;
+	}
+	return Resolution.Result;
 }
 
-UAIREEnemyAttackComponent::ETraceSampleResult
+EAIRECombatMeleeTraceResult
 UAIREEnemyAttackComponent::PerformFallbackTraceSample(
 	FHitResult& OutTargetHit) const
 {
 	if (!OwnerCharacter.IsValid())
 	{
-		return ETraceSampleResult::NoHit;
+		return EAIRECombatMeleeTraceResult::NoHit;
 	}
 
 	FVector Forward = AttackForward.GetSafeNormal2D();
@@ -828,125 +798,32 @@ UAIREEnemyAttackComponent::PerformFallbackTraceSample(
 		ActiveMeleeTraceSettings.FallbackTraceDistance
 			- ActiveMeleeTraceSettings.TraceRadius);
 	const FVector End = Start + Forward * CenterTravelDistance;
-	FHitResult HitResult;
-	if (!SweepTraceSegment(Start, End, HitResult))
+	FAIRECombatMeleeTraceRequest Request;
+	Request.World = GetWorld();
+	Request.Source = OwnerCharacter.Get();
+	Request.Target = AttackTarget.Get();
+	Request.Radius = ActiveMeleeTraceSettings.TraceRadius;
+	Request.TraceChannel =
+		ActiveMeleeTraceSettings.TraceChannel.GetValue();
+	Request.Segments.Emplace(Start, End);
+	const FAIRECombatMeleeTraceResolution Resolution =
+		FAIRECombatMeleeTraceResolver::Resolve(Request);
+	if (Resolution.Result == EAIRECombatMeleeTraceResult::TargetHit)
 	{
-		return ETraceSampleResult::NoHit;
+		OutTargetHit = Resolution.HitResult;
 	}
-	if (HitResult.GetActor() == AttackTarget.Get())
-	{
-		OutTargetHit = HitResult;
-		return ETraceSampleResult::TargetHit;
-	}
-	return ETraceSampleResult::Blocked;
-}
-
-UAIREEnemyAttackComponent::ETraceSampleResult
-UAIREEnemyAttackComponent::SweepTraceSegments(
-	const TArray<TPair<FVector, FVector>>& Segments,
-	FHitResult& OutTargetHit) const
-{
-	bool bTargetHit = false;
-	bool bBlocked = false;
-	for (const TPair<FVector, FVector>& Segment : Segments)
-	{
-		FHitResult HitResult;
-		if (!SweepTraceSegment(Segment.Key, Segment.Value, HitResult))
-		{
-			continue;
-		}
-		if (HitResult.GetActor() == AttackTarget.Get())
-		{
-			if (!bTargetHit)
-			{
-				OutTargetHit = HitResult;
-				bTargetHit = true;
-			}
-		}
-		else
-		{
-			bBlocked = true;
-		}
-	}
-	if (bTargetHit)
-	{
-		return ETraceSampleResult::TargetHit;
-	}
-	return bBlocked
-		? ETraceSampleResult::Blocked
-		: ETraceSampleResult::NoHit;
-}
-
-bool UAIREEnemyAttackComponent::SweepTraceSegment(
-	const FVector& Start,
-	const FVector& End,
-	FHitResult& OutHit) const
-{
-	UWorld* World = GetWorld();
-	if (!IsValid(World)
-		|| !OwnerCharacter.IsValid()
-		|| !FMath::IsFinite(ActiveMeleeTraceSettings.TraceRadius)
-		|| ActiveMeleeTraceSettings.TraceRadius <= 0.0f
-		|| ActiveMeleeTraceSettings.TraceChannel.GetValue() >= ECC_MAX)
-	{
-		return false;
-	}
-
-	FCollisionQueryParams QueryParams(
-		SCENE_QUERY_STAT(AIREEnemyMeleeTrace),
-		false,
-		OwnerCharacter.Get());
-	TArray<AActor*> AttachedActors;
-	OwnerCharacter->GetAttachedActors(AttachedActors, true, true);
-	QueryParams.AddIgnoredActors(AttachedActors);
-	const bool bHit = World->SweepSingleByChannel(
-		OutHit,
-		Start,
-		End,
-		FQuat::Identity,
-		ActiveMeleeTraceSettings.TraceChannel.GetValue(),
-		FCollisionShape::MakeSphere(ActiveMeleeTraceSettings.TraceRadius),
-		QueryParams);
-
-#if ENABLE_DRAW_DEBUG
-	if (CVarAIREEnemyMeleeTraceDebug.GetValueOnGameThread() > 0)
-	{
-		const FColor DebugColor = !bHit
-			? FColor::Cyan
-			: OutHit.GetActor() == AttackTarget.Get()
-				? FColor::Green
-				: FColor::Red;
-		DrawEnemyMeleeTraceSweep(
-			World,
-			Start,
-			End,
-			ActiveMeleeTraceSettings.TraceRadius,
-			DebugColor);
-		if (bHit)
-		{
-			DrawDebugPoint(
-				World,
-				OutHit.ImpactPoint,
-				12.0f,
-				DebugColor,
-				false,
-				1.0f);
-		}
-	}
-#endif
-
-	return bHit;
+	return Resolution.Result;
 }
 
 void UAIREEnemyAttackComponent::ResolveTraceSample(
-	const ETraceSampleResult Result,
+	const EAIRECombatMeleeTraceResult Result,
 	const FHitResult& TargetHit)
 {
-	if (Result == ETraceSampleResult::TargetHit)
+	if (Result == EAIRECombatMeleeTraceResult::TargetHit)
 	{
 		CommitResolvedHit(TargetHit);
 	}
-	else if (Result == ETraceSampleResult::Blocked)
+	else if (Result == EAIRECombatMeleeTraceResult::Blocked)
 	{
 		CloseTraceWindow();
 		CloseOpportunity();

@@ -15,6 +15,10 @@ namespace AIRECombatGameplayTags
 		"State.Combat.Dead",
 		"The combatant has no remaining health.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
+		StateInvulnerable,
+		"State.Combat.Invulnerable",
+		"Shared combat damage and stagger requests cannot affect the combatant.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(
 		StateFlinching,
 		"State.Combat.Reaction.Flinching",
 		"The combatant is in a short flinch reaction.");

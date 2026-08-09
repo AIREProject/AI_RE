@@ -26,6 +26,7 @@ enum class EAIRECombatDamageResult : uint8
 	MissingSourceAbilitySystem,
 	MissingTargetAbilitySystem,
 	TargetDead,
+	TargetInvulnerable,
 	DuplicateExecution,
 	EffectSpecFailed
 };

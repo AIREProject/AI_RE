@@ -7,6 +7,31 @@
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
 
+bool FAIRECompanionAutonomousEvadeSettings::IsValid() const
+{
+	return FMath::IsFinite(SelectionChance)
+		&& SelectionChance >= 0.0f
+		&& SelectionChance <= 1.0f
+		&& FMath::IsFinite(ReactionDelayMin)
+		&& ReactionDelayMin >= 0.0f
+		&& FMath::IsFinite(ReactionDelayMax)
+		&& ReactionDelayMax >= ReactionDelayMin
+		&& FMath::IsFinite(CooldownDuration)
+		&& CooldownDuration > 0.0f
+		&& FMath::IsFinite(MinimumClearance)
+		&& MinimumClearance > 0.0f
+		&& FMath::IsFinite(StaminaCost)
+		&& StaminaCost > 0.0f
+		&& FMath::IsFinite(StaminaRegenDelay)
+		&& StaminaRegenDelay > 0.0f
+		&& FMath::IsFinite(StaminaRegenRate)
+		&& StaminaRegenRate > 0.0f
+		&& FMath::IsFinite(InvulnerabilityStartDelay)
+		&& InvulnerabilityStartDelay >= 0.0f
+		&& FMath::IsFinite(InvulnerabilityDuration)
+		&& InvulnerabilityDuration > 0.0f;
+}
+
 bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
@@ -121,6 +146,16 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 	if (!FMath::IsFinite(InitialStamina) || InitialStamina < 0.0f || InitialStamina > MaxStamina)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidInitialStamina", "Initial Stamina must be finite and between zero and Max Stamina.");
+		return false;
+	}
+
+	if (!AutonomousEvade.IsValid()
+		|| AutonomousEvade.StaminaCost > MaxStamina)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidAutonomousEvade",
+			"Autonomous Evade values must be finite and ordered, and Stamina Cost must not exceed Max Stamina.");
 		return false;
 	}
 

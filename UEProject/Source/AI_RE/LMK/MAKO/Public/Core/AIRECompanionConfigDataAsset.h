@@ -36,6 +36,47 @@ struct FAIRECompanionStorageRule
 	int32 MaximumCarryCount = 0;
 };
 
+USTRUCT(BlueprintType)
+struct FAIRECompanionAutonomousEvadeSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade")
+	bool bEnabled = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float SelectionChance = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float ReactionDelayMin = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float ReactionDelayMax = 0.28f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
+	float CooldownDuration = 5.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
+	float MinimumClearance = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	float StaminaCost = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
+	float StaminaRegenDelay = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01"))
+	float StaminaRegenRate = 15.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float InvulnerabilityStartDelay = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Autonomous Evade", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "s"))
+	float InvulnerabilityDuration = 0.12f;
+
+	bool IsValid() const;
+};
+
 UCLASS(BlueprintType)
 class AI_RE_API UAIRECompanionConfigDataAsset : public UDataAsset
 {
@@ -125,6 +166,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Attributes", meta = (ClampMin = "0.0", UIMin = "0.0"))
 	float MaxStamina = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Combat")
+	FAIRECompanionAutonomousEvadeSettings AutonomousEvade;
 
 	UPROPERTY(
 		EditAnywhere,

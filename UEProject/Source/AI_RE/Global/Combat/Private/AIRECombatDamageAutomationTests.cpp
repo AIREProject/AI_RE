@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "AI_REAttributeSet.h"
 #include "AIREBossEnemy.h"
+#include "AIRECombatGameplayTags.h"
 #include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "Testing/AIRECompanionCombatTestTarget.h"
 #include "AIREEnemyReactionAttributeSet.h"
@@ -135,6 +136,45 @@ bool FAIRECombatDamagePipelineTest::RunTest(const FString& Parameters)
 		TEXT("The same execution ID may apply once to another target"),
 		DamageSubsystem->ApplyDamageRequest(Request),
 		EAIRECombatDamageResult::Applied);
+
+	const float FirstEnemyHealthBeforeInvulnerability =
+		FirstEnemyAbilitySystem->GetNumericAttribute(
+			UAI_REAttributeSet::GetHPAttribute());
+	const float FirstEnemyFlinchBeforeInvulnerability =
+		FirstEnemyAbilitySystem->GetNumericAttribute(
+			UAIREEnemyReactionAttributeSet::GetFlinchGaugeAttribute());
+	FAIRECombatDamageRequest InvulnerableRequest;
+	InvulnerableRequest.Source = PartySource;
+	InvulnerableRequest.Target = FirstEnemy;
+	InvulnerableRequest.Damage = 3.0f;
+	InvulnerableRequest.StaggerValue = 5.0f;
+	InvulnerableRequest.ExecutionId = FGuid::NewGuid();
+	FirstEnemyAbilitySystem->SetLooseGameplayTagCount(
+		AIRECombatGameplayTags::StateInvulnerable,
+		1);
+	TestEqual(
+		TEXT("Invulnerability terminally resolves shared damage and stagger"),
+		DamageSubsystem->ApplyDamageRequest(InvulnerableRequest),
+		EAIRECombatDamageResult::TargetInvulnerable);
+	TestTrue(
+		TEXT("Invulnerability preserves health"),
+		FMath::IsNearlyEqual(
+			FirstEnemyAbilitySystem->GetNumericAttribute(
+				UAI_REAttributeSet::GetHPAttribute()),
+			FirstEnemyHealthBeforeInvulnerability));
+	TestTrue(
+		TEXT("Invulnerability preserves stagger"),
+		FMath::IsNearlyEqual(
+			FirstEnemyAbilitySystem->GetNumericAttribute(
+				UAIREEnemyReactionAttributeSet::GetFlinchGaugeAttribute()),
+			FirstEnemyFlinchBeforeInvulnerability));
+	FirstEnemyAbilitySystem->SetLooseGameplayTagCount(
+		AIRECombatGameplayTags::StateInvulnerable,
+		0);
+	TestEqual(
+		TEXT("An invulnerable execution stays consumed after immunity ends"),
+		DamageSubsystem->ApplyDamageRequest(InvulnerableRequest),
+		EAIRECombatDamageResult::DuplicateExecution);
 
 	const float PartyHealthBeforeSelfRequest =
 		PartySource->GetAbilitySystemComponent()->GetNumericAttribute(

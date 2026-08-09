@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AIRECombatDamageTypes.h"
+#include "AIRECombatMeleeTraceResolver.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayAbility.h"
 #include "AIRECompanionCombatSkillAbility.generated.h"
 
 class UAIRECompanionWeaponDefinitionDataAsset;
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitGameplayEvent;
+class USkeletalMeshComponent;
 
 UCLASS()
 class AI_RE_API UAIRECompanionCombatSkillAbility : public UAIRECompanionGameplayAbility
@@ -46,7 +49,17 @@ private:
 	void FaceTarget(const AActor* TargetActor) const;
 	bool IsActiveExecutionValid() const;
 	bool ResolveSkillHit();
+	EAIRECombatMeleeTraceResult SampleSkillTrace(
+		USkeletalMeshComponent* MeshComponent,
+		FHitResult& OutTargetHit);
+	bool CommitSkillHit(const FHitResult& TargetHit);
+	void ResolveSkillTraceSample(
+		EAIRECombatMeleeTraceResult TraceResult,
+		const FHitResult& TargetHit);
+	bool TryBeginSkillTrace(USkeletalMeshComponent* MeshComponent);
+	void CloseSkillTrace();
 	void StartHitEventWait();
+	void StartTraceEventWait();
 	void StartFallback();
 	void SendFallbackHitEvent();
 	void FinishFallback();
@@ -55,6 +68,12 @@ private:
 
 	UFUNCTION()
 	void HandleHitEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleTraceEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleTargetDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
 	void HandleMontageCompleted();
@@ -71,10 +90,29 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitEventTask;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> TraceEventTask;
+
 	FTimerHandle FallbackHitTimerHandle;
 	FTimerHandle FallbackRecoveryTimerHandle;
 	FGuid ActiveExecutionId;
+	TWeakObjectPtr<USkeletalMeshComponent> ActiveTraceMesh;
+	FVector PreviousTraceStart = FVector::ZeroVector;
+	FVector PreviousTraceEnd = FVector::ZeroVector;
+	FName ActiveTraceStartSocket = NAME_None;
+	FName ActiveTraceEndSocket = NAME_None;
+	float ActiveDamage = 0.0f;
+	float ActiveStaggerValue = 0.0f;
+	float ActiveAttackRange = 0.0f;
+	float ActiveTraceRadius = 0.0f;
+	TEnumAsByte<ECollisionChannel> ActiveTraceChannel = ECC_MAX;
+	EAIRECombatTargetingMode ActiveTargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 	bool bHitConsumed = false;
+	bool bPointSampleConsumed = false;
+	bool bTraceWindowOpen = false;
+	bool bTraceWindowEverOpened = false;
+	bool bUsingFallback = false;
 	bool bTransitionStarted = false;
 	bool bIsEnding = false;
 };

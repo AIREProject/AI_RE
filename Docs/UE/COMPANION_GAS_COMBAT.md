@@ -9,11 +9,14 @@ Unreal Editor 설정과 PIE 검증 절차를 정의합니다.
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E03-T02`, `M03-E03-T03`, `M03-E03-T04`, `M03-E03-T05`,
   `M03-E06-T01`, `M03-E06-T02`, `M03-E09-T01`, `M03-E09-T02`
-- 코드 기준일: 2026-08-06
+- 코드 기준일: 2026-08-10
 - 현재 검증 상태: T05A 기본 공격 콤보와 T05B 전투 스킬 검증 완료.
   T05C 인벤토리·무기 장착·소모품 회복 구현과 현재 자산으로 가능한 UBT·Editor·PIE
   검증 완료. M03-E08-T01 Gameplay Inventory Subsystem은 Review이며 사용자 UBT·Editor·PIE,
-  실제 플레이어 GAS Health 연동과 다중 무기 검증 대기
+  실제 플레이어 GAS Health 연동과 다중 무기 검증 대기. M03-E09-T02B MAKO 실제 무기
+  Trace·자율 회피 source와 project-owned 자산 연결은 완료했고 사용자 PIE 스모크에서
+  자율 회피를 확인했습니다. 마지막 표현·디버그 source 변경 뒤 재빌드, 신규 자동화,
+  공격 범위 envelope 튜닝과 상세 PIE/lifecycle 검증이 남아 `Review`입니다.
 
 Player·MAKO·Enemy가 공유하는 피해·스태거 실행과 Boss/Q 어그로 스왑 계약은
 [`COMBAT_DAMAGE_STAGGER_CONTRACT.md`](COMBAT_DAMAGE_STAGGER_CONTRACT.md)를 따릅니다.
@@ -153,6 +156,10 @@ deprecated 프로퍼티로 남아 있지만 런타임에서는 사용하지 않�
 | `CooldownDuration` | GAS Cooldown 지속 시간 |
 | `FallbackHitDelay` | Montage가 없을 때 Hit 발생 지연 |
 | `FallbackRecoveryDuration` | fallback 공격 종료 지연 |
+| `LeftTraceSockets` / `RightTraceSockets` | 좌·우 칼날의 project-owned base/tip socket pair |
+| `TraceRadius` / `TraceChannel` | 공용 melee resolver의 sphere 반경과 collision channel |
+| `ComboSteps.TraceSide` / `TraceSocketOverride` | 단계별 선행 칼날과 선택적 socket pair override |
+| `HarvestAttackRange` | Combat sweep과 분리된 직접 채집 판정 거리 |
 | `CombatSkill` | 선택적 스킬 활성화·Montage·Damage·Cooldown·Range·선택 확률·fallback 시간 |
 
 무기마다 별도 C++ Data Asset 클래스를 만들지 않습니다. 동일한
@@ -264,13 +271,20 @@ source만 먼저 보완했습니다. Threat는 선택 Target에 `200 cm` 소실 
 공격은 피해 없이 현재 표현을 마친 뒤 다음 연계를 종료합니다. 완료된 고정 지점 접근이
 여전히 사거리 밖이면 `0.5 s` 판단 간격 뒤 새 접근을 요청합니다.
 
-MAKO 실제 공간 판정은 모델, Skeleton, AnimBP, Weapon Mesh와 Blade Socket 계약이 확정된
-뒤 M03-E09-T02B에서 같은 경계를 채택합니다. Socket 계약이
-있으면 이전·현재 위치 기반 Sphere 또는 Capsule Sweep을 사용하고, Socket이 없는
-placeholder 공격은 Character 전방 Config 기반 Shape Sweep을 사용합니다. 선택 Target,
-Montage 재생과 거리 진입은 최종 공간 명중 증거가 아니며 실제 Sweep이 snapshotted Target을
-교차해야 공용 Damage Request를 commit할 수 있습니다. 이번 안정화 slice는 MAKO animation,
-model과 StateTree binary asset을 수정하지 않습니다.
+M03-E09-T02B source는 Boss와 MAKO가 공간 판정만 공유하는
+`FAIRECombatMeleeTraceResolver`를 채택했습니다. 기본 공격의 각 Combo Step과 Combat Skill
+활성화는 Target, `ExecutionId`, Damage, Stagger, targeting mode, trace radius/channel과
+좌·우 socket pair를 snapshot합니다. NotifyState의 Begin/Tick/End는 이전·현재 base/tip의
+네 구간을 `25 cm` sphere로 sweep합니다. `NoHit`은 다음 sample을 허용하고,
+`Blocked`·`Invalid`·`TargetHit`은 strike를 종료합니다. `TargetHit`만 `FHitResult`를 포함한
+공용 Damage Request를 commit합니다.
+
+기본 socket 계약은 `weapon_l/r`에서 `weapon_trace_tip_l/r`까지이며, Combo Step과 Skill이
+선행 칼날 또는 완전한 socket pair override를 선택합니다. Socket 누락은 explicit invalid
+miss와 validation 오류이며 거리 기반 combat hit로 대체하지 않습니다. 기존 point Notify와
+Montage가 없는 시간 fallback은 one-shot spatial sample로 유지합니다. Harvest만 직접 채집
+hit를 유지하고 활성화와 판정 시점 모두 별도 `75 cm` 표면 거리를 검증합니다. 현재 진행 중인
+Combat strike는 Threat 변경이나 사거리 이탈로 snapshot target을 교체하거나 취소하지 않습니다.
 
 이때도 StateTree, Combo Step, 단계별 Damage, 실행당 Cooldown과 `ExecutionId` exact-once
 계약은 유지합니다. 공격 진입 거리와 더 넓은 취소 거리를 분리해 작은 Target 이동으로
@@ -310,11 +324,42 @@ Window에서 처리합니다. 스킬 활성화가 Cooldown·Target·상태 검�
 파괴 시 두 Ability의 Montage Task, Event Task, Timer, Window Tag, 버퍼와 transient
 참조를 정리하고 늦은 Event를 무시합니다.
 
-지상 기본 공격과 전투 스킬은 Stamina를 소비하지 않습니다. Stamina는 후속 Task에서
-회피와 전투 중 달리기에 사용하며, 궁극기·공명 회로와 함께 이 문서의 현재 구현 범위에서
-제외합니다.
+지상 기본 공격과 전투 스킬은 Stamina를 소비하지 않습니다. T02B 자율 회피만 `25`를
+소비하며, 성공한 dash 뒤 `1.5 s` 동안 회복을 막고 이후 `15/s`로 최대 `100`까지
+회복합니다. Q AggroSwap 회피는 무료입니다.
 
-### 6.3 MAKO 인벤토리·지원 회복 계약
+### 6.3 자율 회피 계약
+
+StateTree의 Engage Threat Task만 자율 회피 여부를 결정합니다. 현재 선택 Threat에서
+MAKO를 겨냥한 열린 `SingleTarget` 공격 snapshot을 읽고, 각 `ExecutionId`를 한 번만
+GUID-seeded deterministic stream으로 평가합니다. 기본 선택 확률은 `50%`, 선택된 반응
+지연은 `0.15-0.28 s`입니다. 지연 종료 시 동일 opportunity, Stamina, `5 s` cooldown과
+`100 cm` 최소 lateral clearance를 다시 검증합니다. 실패·만료·차단은 재시도하지 않으며
+회피 중 새 요청은 queue하지 않습니다.
+
+`UAIRECompanionAutonomousEvadeAbility`는 현재 melee 장착과 snapshot을 다시 확인한 뒤
+공격/스킬 Ability를 취소하고 준비된 계획을 실행합니다. 실제 이동은
+`UAIRECombatEvadeComponent`만 소유합니다. Character capsule을 좌우 `300 cm` sweep해 더
+넓은 방향을 고르고 동률이면 오른쪽을 선택한 뒤, 선택한 실제 거리만 `0.25 s` 동안 swept
+movement로 이동합니다. `Evade_L/R` Montage section은 in-place 표현만 담당하며 Root
+Motion이 있으면 재생하지 않습니다. Montage interrupt만으로 code-driven dash를 중단하지
+않습니다. 현재 `MK_AM_Evade`는 각 section을 `2.0` 배속으로 `0.375 s` 표현하고, 실제
+capsule dash는 계속 `0.25 s`입니다. 정상 dash 종료는 Montage를 자르지 않지만 충돌,
+명시적 cancel, death, unequip, unpossess와 EndPlay는 즉시 표현을 중단합니다.
+
+dash 시작 성공 뒤에만 Stamina/cooldown/regen-block을 확정합니다. `+0.05 s`부터 최대
+`0.12 s` 동안 `State.Combat.Invulnerable`을 부여하며 조기 충돌·cancel·death에서는 즉시
+제거합니다. Montage 재생 길이는 이 고정 `+0.05-0.17 s` window를 변경하지 않습니다.
+이 시간에 닿은 Damage/Stagger 요청은 `TargetInvulnerable`로 terminal 기록되어
+무적 종료 뒤 같은 `(ExecutionId, Target)` duplicate가 피해를 적용할 수 없습니다. Q가
+동일 Threat와 ExecutionId의 자율 dash와 겹치면 이동을 재시작하지 않고 현재 dash를
+재사용하며, strike cancel·aggro promotion·Q cooldown만 수행합니다. 다른 Execution이면
+거부합니다.
+
+cancel, target destruction, death, unpossess, unequip과 EndPlay는 pending decision,
+timer, delegate, transient tag/effect와 active movement context를 정리합니다.
+
+### 6.4 MAKO 인벤토리·지원 회복 계약
 
 MAKO 일반 인벤토리는 `UAIREGameplayInventorySubsystem`의 20칸 Container이며 이번
 범위에서는 `Consumable`과 `Weapon`만 소유합니다. 장착 무기는 일반 Stack과 분리된
@@ -387,7 +432,7 @@ fallback입니다. 신규 Companion Config는 초기 무기 Item과
 
 ### 8.1 필수 설정
 
-#### `DA_AIRE_Weapon_BasicMelee`
+#### `DA_MAKO_Weapon_BasicMelee`
 
 기존 Companion Config에 커스텀 전투 값이 있었다면 Weapon Definition으로 복사합니다.
 
@@ -405,13 +450,13 @@ CombatSkill.SelectionChance = 0.45
 
 다음 참조도 유지해야 합니다.
 
-- `AbilitySet = DA_AIRE_AbilitySet_BasicMelee`
+- `AbilitySet = DA_MAKO_AbilitySet_BasicMelee`
 - 승인된 `AttackMontage`
 - 승인된 `LinkedAnimLayerClass`
 
 변경 후 Data Asset을 Save합니다.
 
-#### `DA_AIRE_AbilitySet_BasicMelee`
+#### `DA_MAKO_AbilitySet_BasicMelee`
 
 - `UAIRECompanionMeleeAttackAbility`가 존재하는지 확인합니다.
 - `UAIRECompanionCombatSkillAbility`가 존재하는지 확인합니다.
@@ -421,7 +466,7 @@ CombatSkill.SelectionChance = 0.45
 #### `BP_MAKO`
 
 - Equipment Component의 `DefaultWeaponDefinition`이
-  `DA_AIRE_Weapon_BasicMelee`를 가리키는지 확인합니다.
+  `DA_MAKO_Weapon_BasicMelee`를 가리키는지 확인합니다.
 - Character·ASC·AttributeSet 클래스나 컴포넌트 추가 설정은 필요하지 않습니다.
 
 #### `ST_AIRECompanion_Local`
@@ -460,34 +505,63 @@ StateTree를 Compile한 뒤 Save합니다.
 
 1. `AttackMontage` 하나에 실행 순서대로 Montage Section을 만듭니다.
 2. Weapon Definition의 `ComboSteps`에 같은 순서로 Section 이름과 Damage를 입력합니다.
-3. 각 Section의 판정 프레임에 `AIRE Companion Attack Hit` Notify를 배치하고
-   `ComboStepIndex`를 배열의 0-based Index와 맞춥니다.
-4. 다음 단계로 전환할 Section에는 `AIRE Companion Combo Window` Notify State를
+3. MAKO project-owned Skeleton에 `weapon_trace_tip_l/r`을 보이는 칼날 끝에 추가하고,
+   Weapon Definition의 기본 좌·우 socket pair, `TraceSide` 또는 override를 실제 선행
+   칼날과 맞춥니다.
+4. 각 Section의 유효 칼날 구간에 `AIRE Companion Melee Trace Window` NotifyState를
+   배치하고 Mode `BasicAttack`, `ComboStepIndex`를 배열의 0-based Index와 맞춥니다.
+   기존 `AIRE Companion Attack Hit`은 호환 one-shot sample로만 유지합니다.
+5. 다음 단계로 전환할 Section에는 `AIRE Companion Combo Window` Notify State를
    배치하고 같은 `ComboStepIndex`를 입력합니다. Notify State의 End 위치가 실제 다음
    Section으로 전환할 지점입니다.
-5. 마지막 Step에는 다음 단계가 없으므로 Combo Window가 필요하지 않습니다.
-6. Data Validation 후 Weapon Definition, Montage와 관련 Anim Blueprint를
+6. 마지막 Step에는 다음 단계가 없으므로 Combo Window가 필요하지 않습니다.
+7. Data Validation 후 Weapon Definition, Montage와 관련 Anim Blueprint를
    Compile·Save합니다.
 
-T05A의 Hit Notify는 Trace 명중을 확정하지 않습니다. 현재 선택 Target의 생존·적대성·
-거리만 다시 검증하는 경로는 T01 기준선입니다. Boss가 T02A에서 실제 공간 판정 seam을
-검증한 뒤, MAKO는 모델·Socket 계약이 고정되는 T02B에서 실제 Weapon Socket 또는
-placeholder 전방 Shape Sweep을 채택합니다. Notify와 시간 fallback은 같은 판정 seam을
-호출하고 같은 단계의 피해를 최대 한 번만 commit합니다.
+Notify는 Trace 명중을 확정하지 않습니다. NotifyState와 시간 fallback은 같은 공용 공간
+resolver를 호출하고, 같은 단계의 `ExecutionId`는 snapshotted Target에 terminal 결과를
+최대 한 번만 commit합니다. Trace window의 첫 miss는 window를 소비하지 않습니다.
 
 ### 8.4 전투 스킬 설정
 
 1. Weapon Definition의 `CombatSkill.bEnabled`를 켜고 Damage 45, Cooldown 4초,
    Range와 SelectionChance를 설정합니다.
-2. `DA_AIRE_AbilitySet_BasicMelee`에 `UAIRECompanionCombatSkillAbility`를 추가합니다.
-3. 스킬 Montage가 있으면 판정 프레임에 `AIRE Companion Combat Skill Hit` Notify를
-   한 번 배치합니다. Montage가 없으면 fallback 시간이 사용됩니다.
+2. `DA_MAKO_AbilitySet_BasicMelee`에 `UAIRECompanionCombatSkillAbility`를 추가합니다.
+3. 스킬 Montage의 유효 칼날 구간에 `AIRE Companion Melee Trace Window` NotifyState를
+   Mode `CombatSkill`로 배치하고 Weapon Definition의 `TraceSide`/override를 선행
+   칼날과 맞춥니다. 기존 Combat Skill Hit Notify는 호환 one-shot sample입니다.
+   Montage가 없으면 spatial fallback 시간이 사용됩니다.
 4. 선택 경로를 고정해 검증할 때 SelectionChance를 1.0 또는 0.0으로 설정하고, 검증 후
    승인값 0.45로 복원합니다.
 5. Weapon Definition, Ability Set, Montage, 관련 Anim Blueprint와 StateTree를
    Compile·Save합니다.
 
-### 8.5 인벤토리·지원 회복 설정
+### 8.5 자율 회피 설정
+
+1. Companion Config의 `AutonomousEvade`가 `0.5`, `0.15-0.28 s`, `5 s`, `100 cm`,
+   Stamina `25`, regen delay/rate `1.5 s`/`15`, invulnerability `+0.05 s`/`0.12 s`인지
+   확인합니다.
+2. `MK_AM_Evade`에 in-place `Evade_L/R` section을 만들고 Root Motion을 비활성화한 뒤
+   `UAIRECombatEvadeComponent`의 Evade Montage에 연결합니다.
+3. Weapon Definition의 Linked Anim Layer는 검증 대상 `MK_ABP_MAKO_DualLayers`로
+   연결하고 공격·스킬·Harvest·회피 전체를 회귀 검증합니다.
+4. project-owned 자산만 Compile·Save하고 vendor animation/Skeleton은 수정하지 않습니다.
+
+2026-08-10 Editor MCP readback/save 기준으로 실제 편집 대상은
+`/Game/Work/LMK/Blueprints/AI/BP_MAKO`이며 `/AI/MAKO/BP_MAKO`는 구형 redirector입니다.
+`SM_MAKO`의 `weapon_trace_tip_l/r`, `MK_AM_Combo01_Montage`의 네 Basic trace window,
+`MK_AM_ChargeAttack`의 Combat Skill trace window, `DA_MAKO_Weapon_BasicMelee`의
+`MK_ABP_MAKO_DualLayers`, `MK_AM_Evade`의 in-place `Evade_L/R`, 그리고 `BP_MAKO`의
+Evade Montage 할당은 project-owned 자산에 개별 저장했습니다. 사용자는 PIE 스모크에서
+자율 회피 동작을 확인했지만, 이후 추가된 presentation lifetime 분리와 진단 로그 source는
+재빌드 전이며 공격 시작 거리와 `25 cm` trace envelope의 최종 승인이 남았습니다.
+
+PIE에서 `aire.Combat.MeleeTrace.Debug 1`을 사용하면 공용 trace가 cyan `NoHit`, green
+`TargetHit`, red `Blocked`로 표시됩니다. Output Log는 `[MAKO ATTACK]`, `[MAKO HEALTH]`,
+`[MAKO EVADE]`, `[ENEMY ATTACK]`을 필터링해 strike/ExecutionId, Health, 무적 ON/OFF와
+`TargetInvulnerable` 결과를 확인합니다. 검증 뒤 debug cvar는 `0`으로 복원합니다.
+
+### 8.6 인벤토리·지원 회복 설정
 
 다음 자산을 생성하고 저장합니다.
 
@@ -588,8 +662,8 @@ StateTree 상태 선택 Blueprint Graph를 두지 않습니다. 외부 PNG·아�
 - [ ] Rider에서 새 폴더 구조가 정상 인식된다.
 - [ ] UnrealBuildTool 빌드가 성공한다.
 - [ ] 이동한 C++ 클래스가 Blueprint에서 Missing Class로 표시되지 않는다.
-- [ ] `DA_AIRE_Weapon_BasicMelee`가 오류 없이 열리고 Save된다.
-- [ ] `DA_AIRE_AbilitySet_BasicMelee` Data Validation이 성공한다.
+- [ ] `DA_MAKO_Weapon_BasicMelee`가 오류 없이 열리고 Save된다.
+- [ ] `DA_MAKO_AbilitySet_BasicMelee` Data Validation이 성공한다.
 - [ ] `ST_AIRECompanion_Local`이 Compile·Save된다.
 - [ ] `BP_MAKO`와 관련 Anim Blueprint가 Compile·Save된다.
 
@@ -608,6 +682,10 @@ AttackRange: 150 → 300 → 150
 CooldownDuration: 1.5 → 3.0 → 1.5
 ```
 
+T02B 종료 시점의 `150 cm`는 구현 기준선이지 최종 체감 승인값이 아닙니다. 공격 진입이
+보이는 칼날 궤적보다 지나치게 이르거나 늦지 않은지, `25 cm` trace radius가 의도하지
+않은 측면 hit를 만들지 않는지를 함께 비교한 뒤 두 값을 확정해야 합니다.
+
 ### 9.3 Stamina·Cooldown
 
 - [ ] 단일 기본 공격과 4단 Combo 전체에서 Stamina가 변하지 않는다.
@@ -621,10 +699,13 @@ CooldownDuration: 1.5 → 3.0 → 1.5
 Target이 먼저 사망해 검증이 끝나지 않으면 테스트 Target의 Health를 임시로 높이거나
 Target을 Reset한 뒤 반복합니다.
 
-### 9.4 Hit·Damage
+### 9.4 Trace·Hit·Damage
 
 - [ ] Target Health 100, Damage 25 기준으로 정확히 네 번의 Hit 후 사망한다.
-- [ ] 한 Ability 실행에서 Hit Notify가 중복되어도 피해는 한 번만 적용된다.
+- [ ] 정지/이동 Target의 실제 blade sweep 교차에서만 피해가 적용된다.
+- [ ] 후방·측면·사거리 밖 intentional miss와 WorldStatic/Pawn 차폐는 피해를 적용하지 않는다.
+- [ ] Trace window의 첫 `NoHit` 뒤 후속 sample이 명중할 수 있다.
+- [ ] `Blocked`와 `TargetHit`은 terminal이며 중복 Notify/fallback이 추가 피해를 만들지 않는다.
 - [ ] Hit 전에 Ability를 취소하면 피해가 적용되지 않는다.
 - [ ] 취소 후 늦게 도착한 Hit Event가 피해를 적용하지 않는다.
 - [ ] Target 사망 후 추가 피해가 적용되지 않는다.
@@ -634,7 +715,8 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] `AttackRange` 밖에서는 Target에게 접근한다.
 - [ ] 유효 거리 안에 들어온 뒤 이동을 멈추고 공격한다.
 - [ ] 기본 공격·각 Combo Step·스킬 시작 시 선택 Target 방향을 바라본다.
-- [ ] 공격 중 Target이 거리 밖으로 이동하면 Ability와 이동 요청이 정리된다.
+- [ ] 공격 중 Target이 거리 밖으로 이동해도 진행 중 strike를 강제 취소하지 않고 표현과
+  spatial miss를 마친 뒤 다음 연계 진입에서 정리한다.
 - [ ] Target 파괴·EndPlay 시 Ability, Focus와 이동 요청이 정리된다.
 - [ ] Threat가 해제되면 ReturnToPlayer 또는 FollowPlayer로 복귀한다.
 
@@ -650,7 +732,7 @@ Target을 Reset한 뒤 반복합니다.
 
 ### 9.7 표현과 fallback
 
-- [ ] Attack Montage와 Hit Notify 경로로 피해가 적용된다.
+- [ ] Attack/Skill Montage의 Trace NotifyState 경로로 피해가 적용된다.
 - [ ] Linked Anim Layer가 기본 Locomotion을 유지한다.
 - [ ] Montage가 없는 테스트 Weapon에서도 시간 기반 fallback 공격이 종료된다.
 - [ ] fallback 취소 후 Timer가 남아 늦은 피해를 주지 않는다.
@@ -696,7 +778,23 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] State Exit·Target 파괴·Unequip·Disabled·사망 후 늦은 Hit·Ended가 피해나 재개를 만들지 않는다.
 - [ ] Equip·Unequip과 정상·실패·취소를 3회 이상 반복해 Handle·Timer·Delegate가 누적되지 않는다.
 
-### 9.11 인벤토리·무기 교체·지원 회복
+### 9.11 자율 회피
+
+- [ ] 선택 Threat의 열린 `SingleTarget` Execution마다 deterministic roll을 한 번만 수행한다.
+- [ ] 50% 선택과 `0.15-0.28 s` 지연이 고정 seed에서 재현되고 실패·만료는 재시도하지 않는다.
+- [ ] Stamina `24.99`는 거부되고 `25`는 성공 후 0이 되며, `1.5 s` 뒤 `15/s`로 회복해
+  100에서 clamp된다.
+- [ ] 성공 시 `5 s` cooldown이 적용되고 시작 실패에는 비용과 cooldown이 없다.
+- [ ] 좌우 clearance 중 넓은 쪽, 동률 오른쪽, 최소 `100 cm`, `300 cm/0.25 s` swept
+  movement와 Root Motion 비중복을 확인한다.
+- [ ] `+0.05 s` 전에는 피해, `+0.05-0.17 s`에는 `TargetInvulnerable`, 이후에는 정상 피해가
+  적용되며 무적 접촉 duplicate는 늦은 피해를 만들지 않는다.
+- [ ] 같은 Execution의 Q는 dash를 재사용하고 추가 Stamina를 쓰지 않으며 다른 Execution은
+  거부한다.
+- [ ] cancel·target destroy·death·unpossess·unequip·EndPlay를 세 번 반복해 timer, delegate,
+  tag/effect와 movement context가 남지 않는다.
+
+### 9.12 인벤토리·무기 교체·지원 회복
 
 - [x] 앰플 3개에서 회복 성공 후 2개가 남고 Health가 50에서 75로 증가한다.
 - [ ] Health 90에서 회복해도 100을 넘지 않고 앰플은 정확히 하나만 소비된다.
@@ -715,7 +813,7 @@ Target을 Reset한 뒤 반복합니다.
 > 공격 중 교체 거부와 장착 실패 복구는 실제 두 번째 무기를 추가할 때 검증합니다.
 > 실제 플레이어 ASC·GAS Health 연동 전까지 지원 회복은 ASC 아군 fixture 기준입니다.
 
-### 9.12 로컬 전투·지원 정책과 데모 UI
+### 9.13 로컬 전투·지원 정책과 데모 UI
 
 - [x] `AI_REEditor Win64 Development` UHT·UBT 빌드가 성공한다.
 - [x] WBP가 커스텀 C++ 부모와 필수 `BindWidget` 계약으로 Compile·Save된다.

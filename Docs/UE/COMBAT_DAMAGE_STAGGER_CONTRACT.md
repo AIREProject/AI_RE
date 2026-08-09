@@ -6,14 +6,18 @@ This document defines the project-owned combat seam introduced by `M03-E09-T01`.
 It covers Player/MAKO damage delivery, enemy Health and stagger reactions, the direct
 `EnemyBase -> BossEnemy` hierarchy, Boss awareness/aggro, and the two-person Q aggro
 swap. Backend, replication, boss phases, wild animals, inventory, storage, and
-`ST_AIRECompanion_Local` changes are outside this task.
+`ST_AIRECompanion_Local` binary graph changes are outside this task.
 
-- Code baseline: 2026-08-07
-- Task status: `Review` (`M03-E09-T01`) / implementation in progress (`M03-E09-T02A`)
-- Completed locally: T01 C++ baseline and assets, one partial fallback PIE session, and
-  T02A Boss physical-trace source plus static checks
-- Still required: Unreal build, automation execution, Boss animation assets and assignment,
-  moving-target/AI stability, physical Q input integration, and the remaining PIE/lifecycle gates
+- Code baseline: 2026-08-10
+- Task status: `Review` (`M03-E09-T01`) / `Done` (`M03-E09-T02A`) /
+  `Review` (`M03-E09-T02B`)
+- Completed locally: T01 C++ baseline, the user-verified T02A Boss physical trace,
+  T02B source for the shared melee resolver, MAKO weapon trace, autonomous evade,
+  stamina, and short invulnerability, plus the project-owned MAKO socket, trace-window,
+  linked Anim Layer, and in-place evade Montage assignments
+- Still required: a user-owned rebuild after the final T02B presentation/debug source
+  changes, the new automation suite, focused PIE/lifecycle evidence, approval of the
+  attack-entry/physical-trace range envelope, and physical Q input integration in T03
 
 ## 2. Runtime ownership
 
@@ -54,6 +58,12 @@ friendly-fire branches.
 An `ExecutionId` applies at most once to a given target. The same ID may apply once
 to another target, preserving a future multi-target attack seam. The bounded ledger
 keeps the most recent 4096 target/execution records and prunes destroyed targets.
+
+`State.Combat.Invulnerable` is checked after target validation and duplicate lookup but
+before the damage/stagger Gameplay Effect is created. Contact during that state returns
+`TargetInvulnerable` and is recorded as a terminal `(ExecutionId, Target)` resolution.
+It applies no Damage, Stagger, or reaction, and a delayed duplicate cannot apply after
+the invulnerability window closes.
 
 ### 2.2 Target contract
 
@@ -173,6 +183,25 @@ reaction, return, death, interruption, and EndPlay close the trace window and cl
 timers/delegates. The default fallback radius, reach from the capsule surface, and
 channel are 35 cm, 180 cm, and `ECC_Pawn`.
 
+T02B extracts only the stateless spatial part into
+`FAIRECombatMeleeTraceResolver::Resolve`. Its input is source, snapshotted target,
+collision channel, radius, and ordered swept segments; its result is `NoHit`,
+`TargetHit`, `Blocked`, or `Invalid`, with `FHitResult` only for `TargetHit`. It owns
+neither target selection, strike lifetime, nor damage commit. Boss keeps its existing
+socket history and strike ledger while calling this resolver, and MAKO calls the same
+resolver without attaching an Enemy component or introducing concrete Boss/MAKO casts.
+
+MAKO basic combo steps each snapshot a distinct `ExecutionId`, Damage, Stagger,
+targeting mode, radius, channel, and selected left/right socket pair. Combat Skill
+keeps one such strike snapshot for the whole activation. A trace window sweeps previous
+and current base/tip positions as four ordered segments. `NoHit` leaves the window open;
+`Blocked`, `Invalid`, and `TargetHit` are terminal for that strike. Only `TargetHit`
+submits a shared Damage request with its `FHitResult`. The legacy point Notify and
+timer fallback remain one-shot spatial samples, while Harvest remains a direct resource
+hit with a separate `75 cm` range. Missing blade sockets are an explicit invalid miss,
+never a distance-based combat hit. The default MAKO contract is `weapon_l/r` to
+`weapon_trace_tip_l/r`, radius `25 cm`, and `ECC_Pawn`.
+
 An attack pattern may opt into `ForwardMoveDistance` and a desired
 `ForwardMoveStopDistance`. A positive stop distance clamps the move from the
 snapshotted target surface distance so it does not intentionally close past that
@@ -220,11 +249,16 @@ follow/return stability. `AIRE.Combat.Damage.SharedPipeline` passed on 2026-08-0
 cooldown-only patterns were corrected, and spatial fallback now invokes the public spatial
 wrapper directly instead of trying to advance TimerManager repeatedly within one engine
 frame. Gameplay was not changed. After the user rebuild, both `SharedPipeline` and the
-corrected `FallbackTrace` passed on 2026-08-09. MAKO physical trace and
-evade presentation remain in
-`M03-E09-T02B` until its model, Skeleton, AnimBP, weapon mesh, and trace-socket contract
-are fixed. The user-approved moving-target stability slice does modify MAKO source and
-its basic weapon range, but not MAKO animation or model assets.
+corrected `FallbackTrace` passed on 2026-08-09. MAKO physical trace and evade source
+are implemented in `M03-E09-T02B`. On 2026-08-10 the project-owned `SM_MAKO` received
+`weapon_trace_tip_l/r`, the four combo sections and Combat Skill received their
+trace-window NotifyStates, `DA_MAKO_Weapon_BasicMelee` was linked to
+`MK_ABP_MAKO_DualLayers`, and the in-place `MK_AM_Evade` plus `BP_MAKO` assignment were
+saved through Editor MCP readback. The user then observed autonomous evades in a PIE
+smoke session. The remaining T02B gate is the final rebuild after later debug and
+presentation-lifetime source changes, the focused automation/lifecycle matrix, and the
+attack-entry/physical-trace range envelope approval. Vendor animation and Skeleton
+assets remain untouched.
 
 Attack entry and cancellation also require separate ranges in T02. Once an attack is
 active, small target movement must not cause StateTree MoveTo and attack cancellation
@@ -270,6 +304,32 @@ The evade is code-driven swept movement. It does not teleport or exchange actor
 positions and does not mutate root-motion mode. The optional montage must therefore
 be authored in place with root motion disabled.
 
+The current MAKO `MK_AM_Evade` sections use a `2.0` play rate and last `0.375 s` per
+direction. The collision-safe dash still lasts `0.25 s`; normal dash completion lets
+the in-place presentation finish naturally instead of cutting it at the movement
+boundary. Collision, explicit cancel, death, unequip, unpossession, and EndPlay stop the
+presentation immediately. This animation duration does not resize the invulnerability
+window: it is fixed relative to a successful dash start at `+0.05-0.17 s`, except that
+early dash termination removes it sooner.
+
+MAKO autonomous evade uses that same movement component but does not cancel the Boss
+strike. The Engage StateTree reads only the currently selected threat's open
+single-target attack snapshot. Each valid `ExecutionId` is evaluated once with a
+GUID-seeded deterministic `50%` roll and, when selected, a `0.15-0.28 s` reaction
+delay. At delay expiry it rechecks the same opportunity, `25` Stamina, the `5 s`
+autonomous cooldown, and at least `100 cm` lateral clearance. Failure or expiry is not
+retried, and an active evade does not queue another request.
+
+After a dash actually starts, autonomous evade spends `25` Stamina, refreshes a
+`1.5 s` regeneration block, and commits its `5 s` cooldown. Stamina then regenerates
+at `15/s` to the `100` cap. The shared invulnerable tag starts `0.05 s` after dash
+start and lasts at most `0.12 s`; early dash termination removes it immediately.
+Basic attacks, Combat Skill, and Q aggro-swap evade remain Stamina-free. If Q arrives
+during an autonomous dash for the same threat and `ExecutionId`, it reuses that dash,
+cancels the strike, promotes aggro, and applies Q's cooldown without another movement
+start or Stamina cost. A different threat or execution is rejected while the dash is
+active.
+
 T01 exposes the PlayerController input seam but does not own the production Player
 Input Action or Mapping Context. No `IA_AIREAggroSwap` or dedicated IMC is currently
 assigned. The Player Combat/Input owner creates and maps physical Q in
@@ -291,16 +351,18 @@ vitality/reaction states.
 
 `M03-E09-T02A` owns Boss attack/flinch/stun/death presentation, Boss physical melee
 sweeps, and the remaining Boss-only non-input PIE and lifecycle gates. `M03-E09-T02B`
-owns MAKO moving-target attack stability, adoption of the physical sweep, and the
-in-place MAKO evade montage after the MAKO asset contract is fixed. Root motion stays
-disabled for the evade montage because `UAIRECombatEvadeComponent` owns the swept
-capsule movement.
+owns MAKO moving-target attack stability, adoption of the physical sweep, autonomous
+evade policy/resources/invulnerability, and the in-place MAKO evade montage. Its source
+and project-owned asset assignments are implemented and a user PIE smoke showed the
+autonomous evade, but the latest source rebuild, systematic PIE/lifecycle matrix, and
+attack-range envelope approval remain. Root motion stays disabled for the evade montage
+because `UAIRECombatEvadeComponent` owns the swept capsule movement.
 
 The selected T02A source assets are Paragon Crunch's mesh and `Crunch_Skeleton`, with
 `Ability_Combo_01_Montage`, `HitReact_Front`, `Stunned_Start`/`Stunned_Loop`, and
-`Death_A` as project-owned montage sources. The vendor assets remain untouched. The
-project-owned `ABP_AIRE_Boss` and Attack/Flinch/Stun/Death montage copies still need to
-be authored, compiled, saved, and assigned after the C++ build succeeds.
+`Death_A` as project-owned montage sources. The project-owned `ABP_AIRE_Boss` and
+Attack/Flinch/Stun/Death montage copies were authored, compiled, saved, assigned, and
+user-verified in T02A. The vendor assets remain untouched.
 
 `M03-E09-T03` owns `IA_AIREAggroSwap`, the active Player IMC Q mapping,
 PlayerController assignment, Player evade presentation, and the physical two-way
@@ -311,15 +373,19 @@ Only the Boss derivative participates in this gate. WildAnimal remains out of sc
 
 ## 7. Verification gate
 
-Run the narrow automation tests `AIRE.Combat.Damage.SharedPipeline` and
-`AIRE.Combat.Enemy.Attack.FallbackTrace`. The first uses the existing PlayerParty
+Run the narrow automation tests `AIRE.Combat.Damage.SharedPipeline`,
+`AIRE.Combat.MeleeTrace.Resolver`, `AIRE.Combat.Enemy.Attack.FallbackTrace`,
+`AIRE.Companion.Combat.WeaponTraceDefinition`, and the three
+`AIRE.Companion.Combat.AutonomousEvade.*` tests. `SharedPipeline` uses the existing PlayerParty
 combat fixture plus two real Boss instances to cover shared Health selection, Boss
-Health/stagger, validation, exact-once, and death edges. The second covers Boss
+Health/stagger, validation, exact-once, invulnerable terminal resolution, and death
+edges. The resolver covers moving endpoint sweeps, target/miss, WorldStatic/Pawn
+obstruction, and recursively attached source actors. `FallbackTrace` covers Boss
 fallback forward hit, rear/side miss, WorldStatic occlusion, cancellation, target
 destruction, repeated same-strike resolution, and two distinct strikes within one attack.
 It also covers fixed play-rate pattern selection and pattern-scaled fallback damage.
-Neither test instantiates the production Player or MAKO classes. Verify those adapters
-and all montage, socket-sweep, weighted selection, and AI behavior in PIE:
+Verify production montage/socket adapters, autonomous opportunity timing, Q overlap,
+weighted selection, and AI behavior in PIE:
 
 ### 7.1 Partial PIE evidence recorded on 2026-08-06
 
@@ -356,8 +422,23 @@ and all montage, socket-sweep, weighted selection, and AI behavior in PIE:
 - Q outside an opportunity consumes no cooldown; Q during one valid opportunity cancels damage, evades the old target, promotes the other target, and starts a 12-second cooldown.
 - Two simultaneous enemy opportunities reject Q without consuming cooldown.
 - Obstruction chooses the farther lateral side; equal clearance chooses right; both blocked sides remain collision-safe.
+- Autonomous evade evaluates one deterministic roll per selected single-target
+  execution, respects reaction delay, cooldown, Stamina, and minimum clearance, and
+  never queues during an active dash.
+- Invulnerability is absent before `+0.05 s`, terminally resolves contact from
+  `+0.05 s` through `+0.17 s`, and is removed on early collision/cancel/death.
+- Same-execution Q reuses the autonomous dash without a second Stamina cost; another
+  execution is rejected.
 - Spawn/Possess/UnPossess/Destroy repeated three times leaves no Timer, Delegate, perception, StateTree, ASC, or focus residue.
 - Backend and LLM remain unavailable without breaking the local combat loop.
+
+For focused PIE diagnosis, `aire.Combat.MeleeTrace.Debug 1` draws common Boss/MAKO
+samples as cyan `NoHit`, green `TargetHit`, and red `Blocked`; set it back to `0` after
+testing. Output Log markers `[MAKO ATTACK]`, `[MAKO HEALTH]`, `[MAKO EVADE]`, and
+`[ENEMY ATTACK]` expose strike snapshots, terminal spatial results, Health deltas,
+invulnerability tag transitions, and named Damage outcomes including
+`TargetInvulnerable`. Execution IDs must match when checking exact-once or an
+invulnerable terminal duplicate.
 
 T01 remains `Review`; it must not be closed as `Done` merely because T02/T03 now own
 the remaining integration work. Close it after those tasks provide the original gate

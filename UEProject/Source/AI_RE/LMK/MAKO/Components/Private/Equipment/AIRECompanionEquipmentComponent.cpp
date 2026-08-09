@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "AIRECombatEvadeComponent.h"
 #include "Animation/AnimInstance.h"
 #include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
@@ -482,6 +483,15 @@ void UAIRECompanionEquipmentComponent::ReleaseCurrentWeaponState()
 
 	if (AbilitySystem.IsValid())
 	{
+		FGameplayTagContainer AutonomousEvadeAbilityTags;
+		AutonomousEvadeAbilityTags.AddTag(
+			AIRECompanionGameplayTags::AbilityCombatAutonomousEvade);
+		AbilitySystem->CancelAbilities(&AutonomousEvadeAbilityTags);
+		if (UAIRECombatEvadeComponent* Evade =
+			GetOwner()->FindComponentByClass<UAIRECombatEvadeComponent>())
+		{
+			Evade->CancelEvade();
+		}
 		for (const FGameplayAbilitySpecHandle& AbilityHandle : GrantedAbilityHandles)
 		{
 			if (AbilityHandle.IsValid())

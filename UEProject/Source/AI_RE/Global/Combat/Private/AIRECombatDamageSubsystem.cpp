@@ -113,6 +113,15 @@ EAIRECombatDamageResult UAIRECombatDamageSubsystem::ApplyDamageRequest(
 	{
 		return EAIRECombatDamageResult::DuplicateExecution;
 	}
+	if (TargetAbilitySystem->HasMatchingGameplayTag(
+		AIRECombatGameplayTags::StateInvulnerable))
+	{
+		// Invulnerability is a terminal resolution for this target-scoped
+		// execution. Recording it prevents a delayed duplicate from applying
+		// after the short immunity window has closed.
+		RecordAppliedExecution(Target, Request.ExecutionId);
+		return EAIRECombatDamageResult::TargetInvulnerable;
+	}
 
 	FGameplayEffectContextHandle EffectContext =
 		SourceAbilitySystem->MakeEffectContext();
