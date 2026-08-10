@@ -1,11 +1,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ActiveGameplayEffectHandle.h"
 #include "AbilitySystemInterface.h"
 #include "AIREHarvestRewardReceiver.h"
 #include "AIRECombatDamageTargetInterface.h"
 #include "AI_REInteractableInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayAbilitySpecHandle.h"
+#include "GameplayTagContainer.h"
 #include "AIRECompanionCharacter.generated.h"
 
 class UAIRECompanionConfigDataAsset;
@@ -80,6 +83,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat")
 	UAIRECombatEvadeComponent* GetCombatEvadeComponent() const;
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance")
+	void SetSoxAndShoesVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance")
+	bool AreSoxAndShoesVisible() const;
+
 	bool ResetAttributesToConfiguredDefaults();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE")
@@ -89,11 +98,16 @@ public:
 	const UAIRECompanionConfigDataAsset* GetCompanionConfig() const;
 
 protected:
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	void ApplySoxAndShoesVisibility();
+	bool InitializeAutonomousEvadeRuntime();
+	void ShutdownAutonomousEvadeRuntime();
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleInvulnerableStateChanged(FGameplayTag Tag, int32 NewCount);
 	void SynchronizeDeadState(float CurrentHealth);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Abilities", meta = (AllowPrivateAccess = "true", NoEditInline))
@@ -135,5 +149,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Configuration", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
+	bool bSoxAndShoesVisible = true;
+
 	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle InvulnerableStateChangedDelegateHandle;
+	FGameplayAbilitySpecHandle AutonomousEvadeAbilityHandle;
+	FActiveGameplayEffectHandle StaminaRegenEffectHandle;
 };

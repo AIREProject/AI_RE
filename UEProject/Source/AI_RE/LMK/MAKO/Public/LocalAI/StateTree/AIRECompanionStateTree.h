@@ -106,6 +106,9 @@ struct FAIRECompanionContextEvaluatorInstanceData
 	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
 	float ReturnStartDistance = 0.0f;
 
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
+	float ReturnStopDistance = 0.0f;
+
 	/** Deprecated StateTree binding retained for existing asset compatibility. */
 	UPROPERTY(
 		VisibleAnywhere,
@@ -128,6 +131,9 @@ struct FAIRECompanionContextEvaluatorInstanceData
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
 	bool bShouldReturn = false;
+
+	UPROPERTY(Transient)
+	bool bReturnLatched = false;
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
 	bool bIsDisabledRequested = false;
@@ -318,7 +324,10 @@ struct FAIRECompanionEngageThreatTaskInstanceData
 	TWeakObjectPtr<AActor> ActiveTarget;
 
 	UPROPERTY(Transient)
-	float RetryTimeRemaining = 0.0f;
+	float MovementRetryTimeRemaining = 0.0f;
+
+	UPROPERTY(Transient)
+	float AbilityRetryTimeRemaining = 0.0f;
 
 	UPROPERTY(Transient)
 	bool bMoveRequested = false;
@@ -334,6 +343,26 @@ struct FAIRECompanionEngageThreatTaskInstanceData
 
 	UPROPERTY(Transient)
 	bool bWasBasicAttackActive = false;
+
+	/** Enemy executions already considered by the autonomous evade policy. */
+	UPROPERTY(Transient)
+	TSet<FGuid> EvaluatedEvadeExecutionIds;
+
+	/** FIFO order for the bounded autonomous evade decision ledger. */
+	UPROPERTY(Transient)
+	TArray<FGuid> EvaluatedEvadeExecutionOrder;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<AActor> PendingEvadeThreat;
+
+	UPROPERTY(Transient)
+	FGuid PendingEvadeExecutionId;
+
+	UPROPERTY(Transient)
+	float EvadeReactionTimeRemaining = 0.0f;
+
+	UPROPERTY(Transient)
+	bool bEvadeDecisionPending = false;
 };
 
 USTRUCT(meta = (DisplayName = "Engage Companion Threat", Category = "AIRE|Companion"))

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AIRECombatDamageTypes.h"
+#include "AIRECombatMeleeTraceResolver.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayAbility.h"
 #include "AIRECompanionMeleeAttackAbility.generated.h"
 
@@ -9,6 +10,7 @@ class UAIRECompanionWeaponDefinitionDataAsset;
 class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitGameplayEvent;
 class UAnimMontage;
+class USkeletalMeshComponent;
 
 UCLASS()
 class AI_RE_API UAIRECompanionMeleeAttackAbility : public UAIRECompanionGameplayAbility
@@ -60,8 +62,18 @@ private:
 	bool ResumeAfterCombatSkill();
 	bool TryGetEventStepIndex(const FGameplayEventData& Payload, int32& OutStepIndex) const;
 	bool ResolveCurrentStepHit();
+	EAIRECombatMeleeTraceResult SampleCurrentStepCombatTrace(
+		USkeletalMeshComponent* MeshComponent,
+		FHitResult& OutTargetHit);
+	bool CommitCurrentStepCombatHit(const FHitResult& TargetHit);
+	void ResolveCurrentStepTraceSample(
+		EAIRECombatMeleeTraceResult TraceResult,
+		const FHitResult& TargetHit);
+	bool TryBeginCurrentStepTrace(USkeletalMeshComponent* MeshComponent);
+	void CloseCurrentStepTrace();
 	void ResetCurrentStepState();
 	void StartHitEventWait();
+	void StartTraceEventWait();
 	void StartComboWindowEventWait();
 	void StartCombatSkillTransitionEventWait();
 	void SetSkillCancelWindowTag(bool bEnabled);
@@ -73,6 +85,12 @@ private:
 
 	UFUNCTION()
 	void HandleHitEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleTraceEvent(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleTargetDestroyed(AActor* DestroyedActor);
 
 	UFUNCTION()
 	void HandleComboWindowEvent(FGameplayEventData Payload);
@@ -96,6 +114,9 @@ private:
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitEventTask;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> TraceEventTask;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboWindowEventTask;
 
 	UPROPERTY(Transient)
@@ -104,11 +125,25 @@ private:
 	FTimerHandle FallbackHitTimerHandle;
 	FTimerHandle FallbackRecoveryTimerHandle;
 	FGuid CurrentStepExecutionId;
+	TWeakObjectPtr<USkeletalMeshComponent> ActiveTraceMesh;
+	FVector PreviousTraceStart = FVector::ZeroVector;
+	FVector PreviousTraceEnd = FVector::ZeroVector;
+	FName CurrentTraceStartSocket = NAME_None;
+	FName CurrentTraceEndSocket = NAME_None;
 	float AttackRange = 0.0f;
+	float CurrentStepDamage = 0.0f;
+	float CurrentStepStaggerValue = 0.0f;
+	float CurrentTraceRadius = 0.0f;
+	TEnumAsByte<ECollisionChannel> CurrentTraceChannel = ECC_MAX;
+	EAIRECombatTargetingMode CurrentStepTargetingMode =
+		EAIRECombatTargetingMode::SingleTarget;
 	EExecutionMode ActiveExecutionMode = EExecutionMode::None;
 	int32 CurrentStepIndex = INDEX_NONE;
 	int32 ResumeStepIndex = INDEX_NONE;
 	bool bCurrentStepHitConsumed = false;
+	bool bCurrentStepPointSampleConsumed = false;
+	bool bTraceWindowOpen = false;
+	bool bTraceWindowEverOpened = false;
 	bool bComboWindowOpen = false;
 	bool bNextStepQueued = false;
 	bool bUsingFallback = false;

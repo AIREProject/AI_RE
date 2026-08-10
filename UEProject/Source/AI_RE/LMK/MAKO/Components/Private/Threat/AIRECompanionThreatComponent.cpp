@@ -4,6 +4,7 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Perception/AISense_Sight.h"
@@ -21,6 +22,7 @@ UAIRECompanionThreatComponent::UAIRECompanionThreatComponent()
 	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
 	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
 	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
+	SightConfig->PeripheralVisionAngleDegrees = 180.0f;
 	ConfigureSense(*SightConfig);
 	SetDominantSense(SightConfig->GetSenseImplementation());
 }
@@ -60,9 +62,12 @@ void UAIRECompanionThreatComponent::StartThreatDetection(AAIRECompanionCharacter
 	UE_LOG(
 		LogAIRECompanionThreat,
 		Log,
-		TEXT("Threat detection started. Companion=%s DetectionDistance=%.2f MaxPlayerChaseDistance=%.2f"),
+		TEXT("Threat detection started. Companion=%s DetectionDistance=%.2f LoseSightDistance=%.2f SightMemory=%.2f MaxPlayerChaseDistance=%.2f"),
 		*GetNameSafe(InCompanionCharacter),
 		CompanionConfig->ThreatDetectionDistance,
+		CompanionConfig->ThreatDetectionDistance
+			+ CompanionConfig->ThreatLoseSightDistance,
+		CompanionConfig->ThreatSightMemoryDuration,
 		CompanionConfig->MaxChaseDistanceFromPlayer);
 }
 
@@ -140,12 +145,29 @@ void UAIRECompanionThreatComponent::HandleTargetPerceptionUpdated(AActor* Actor,
 	{
 		if (IsActorHostile(Actor))
 		{
+			PendingSightLossDeadlines.Remove(Actor);
 			AddPerceivedHostile(Actor);
 		}
 		return;
 	}
 
-	RemovePerceivedHostile(Actor, EAIREThreatCleanupReason::PerceptionLost);
+	const UAIRECompanionConfigDataAsset* CompanionConfig =
+		CompanionCharacter.IsValid()
+			? CompanionCharacter->GetCompanionConfig()
+			: nullptr;
+	const UWorld* World = GetWorld();
+	if (!PerceivedHostiles.Contains(Actor)
+		|| !IsValid(CompanionConfig)
+		|| CompanionConfig->ThreatSightMemoryDuration <= 0.0f
+		|| !IsValid(World))
+	{
+		RemovePerceivedHostile(Actor, EAIREThreatCleanupReason::PerceptionLost);
+		return;
+	}
+
+	PendingSightLossDeadlines.FindOrAdd(Actor) =
+		World->GetTimeSeconds()
+		+ CompanionConfig->ThreatSightMemoryDuration;
 }
 
 void UAIRECompanionThreatComponent::HandlePerceivedActorDestroyed(AActor* DestroyedActor)
@@ -165,7 +187,8 @@ void UAIRECompanionThreatComponent::HandleLocalBehaviorPolicyChanged(
 void UAIRECompanionThreatComponent::ConfigureSight(const UAIRECompanionConfigDataAsset& CompanionConfig)
 {
 	SightConfig->SightRadius = CompanionConfig.ThreatDetectionDistance;
-	SightConfig->LoseSightRadius = CompanionConfig.ThreatDetectionDistance;
+	SightConfig->LoseSightRadius = CompanionConfig.ThreatDetectionDistance
+		+ CompanionConfig.ThreatLoseSightDistance;
 	ConfigureSense(*SightConfig);
 }
 
@@ -190,17 +213,38 @@ void UAIRECompanionThreatComponent::RefreshThreatSelection()
 		return;
 	}
 
+	const UWorld* World = CompanionCharacter->GetWorld();
+	const double Now = IsValid(World) ? World->GetTimeSeconds() : 0.0;
 	for (int32 Index = PerceivedHostiles.Num() - 1; Index >= 0; --Index)
 	{
-		AActor* Actor = PerceivedHostiles[Index].Get();
-		if (IsValid(Actor) && IsActorHostile(Actor))
+		const TWeakObjectPtr<AActor> Candidate = PerceivedHostiles[Index];
+		AActor* Actor = Candidate.Get();
+		if (!IsValid(Actor))
+		{
+			const bool bWasSelectedTarget = SelectedThreatTarget == Candidate;
+			PendingSightLossDeadlines.Remove(Candidate);
+			PerceivedHostiles.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+			if (bWasSelectedTarget)
+			{
+				ClearSelectedTarget(EAIREThreatCleanupReason::TargetInvalid);
+			}
+			continue;
+		}
+
+		const double* SightLossDeadline =
+			PendingSightLossDeadlines.Find(Candidate);
+		const bool bSightMemoryExpired = SightLossDeadline != nullptr
+			&& (!IsValid(World) || Now >= *SightLossDeadline);
+		if (IsActorHostile(Actor) && !bSightMemoryExpired)
 		{
 			continue;
 		}
 
 		RemovePerceivedHostile(
 			Actor,
-			IsValid(Actor) ? EAIREThreatCleanupReason::NotHostile : EAIREThreatCleanupReason::TargetInvalid);
+			bSightMemoryExpired
+				? EAIREThreatCleanupReason::PerceptionLost
+				: EAIREThreatCleanupReason::NotHostile);
 	}
 
 	const FAIRECompanionLocalBehaviorPolicy Policy =
@@ -216,7 +260,6 @@ void UAIRECompanionThreatComponent::RefreshThreatSelection()
 		return;
 	}
 
-	const UWorld* World = CompanionCharacter->GetWorld();
 	APawn* PlayerPawn =
 		IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
 	if (!IsValid(PlayerPawn))
@@ -300,7 +343,12 @@ bool UAIRECompanionThreatComponent::IsActorEligible(
 	const float DistanceToCompanionSquared = FVector::DistSquared(
 		Actor->GetActorLocation(),
 		Companion->GetActorLocation());
-	if (DistanceToCompanionSquared > FMath::Square(CompanionConfig.ThreatDetectionDistance))
+	const float EligibleDetectionDistance =
+		CompanionConfig.ThreatDetectionDistance
+		+ (Actor == SelectedThreatTarget.Get()
+			? CompanionConfig.ThreatLoseSightDistance
+			: 0.0f);
+	if (DistanceToCompanionSquared > FMath::Square(EligibleDetectionDistance))
 	{
 		OutFailureReason = EAIREThreatCleanupReason::OutsideDetectionDistance;
 		return false;
@@ -346,6 +394,7 @@ void UAIRECompanionThreatComponent::RemovePerceivedHostile(
 	{
 		Actor->OnDestroyed.RemoveDynamic(this, &UAIRECompanionThreatComponent::HandlePerceivedActorDestroyed);
 	}
+	PendingSightLossDeadlines.Remove(Actor);
 	PerceivedHostiles.Remove(Actor);
 
 	if (SelectedThreatTarget.Get() == Actor || (!IsValid(Actor) && !SelectedThreatTarget.IsValid()))
@@ -438,6 +487,7 @@ void UAIRECompanionThreatComponent::ClearPerceivedHostiles(const EAIREThreatClea
 		}
 	}
 	PerceivedHostiles.Reset();
+	PendingSightLossDeadlines.Reset();
 }
 
 const TCHAR* UAIRECompanionThreatComponent::GetCleanupReasonName(const EAIREThreatCleanupReason Reason)

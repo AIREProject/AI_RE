@@ -7,6 +7,31 @@
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
 
+bool FAIRECompanionAutonomousEvadeSettings::IsValid() const
+{
+	return FMath::IsFinite(SelectionChance)
+		&& SelectionChance >= 0.0f
+		&& SelectionChance <= 1.0f
+		&& FMath::IsFinite(ReactionDelayMin)
+		&& ReactionDelayMin >= 0.0f
+		&& FMath::IsFinite(ReactionDelayMax)
+		&& ReactionDelayMax >= ReactionDelayMin
+		&& FMath::IsFinite(CooldownDuration)
+		&& CooldownDuration > 0.0f
+		&& FMath::IsFinite(MinimumClearance)
+		&& MinimumClearance > 0.0f
+		&& FMath::IsFinite(StaminaCost)
+		&& StaminaCost > 0.0f
+		&& FMath::IsFinite(StaminaRegenDelay)
+		&& StaminaRegenDelay > 0.0f
+		&& FMath::IsFinite(StaminaRegenRate)
+		&& StaminaRegenRate > 0.0f
+		&& FMath::IsFinite(InvulnerabilityStartDelay)
+		&& InvulnerabilityStartDelay >= 0.0f
+		&& FMath::IsFinite(InvulnerabilityDuration)
+		&& InvulnerabilityDuration > 0.0f;
+}
+
 bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
@@ -50,6 +75,24 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 	if (!FMath::IsFinite(ThreatDetectionDistance) || ThreatDetectionDistance < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatDetectionDistance", "Threat Detection Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ReturnStopDistance) || ReturnStopDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidReturnStopDistance", "Return Stop Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatLoseSightDistance) || ThreatLoseSightDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatLoseSightDistance", "Threat Lose Sight Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatSightMemoryDuration) || ThreatSightMemoryDuration < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatSightMemoryDuration", "Threat Sight Memory Duration must be finite and non-negative.");
 		return false;
 	}
 
@@ -106,6 +149,16 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!AutonomousEvade.IsValid()
+		|| AutonomousEvade.StaminaCost > MaxStamina)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidAutonomousEvade",
+			"Autonomous Evade values must be finite and ordered, and Stamina Cost must not exceed Max Stamina.");
+		return false;
+	}
+
 	if (FollowStopDistance >= WalkResumeDistance
 		|| WalkResumeDistance >= RunStartDistance)
 	{
@@ -116,9 +169,10 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
-	if (FollowStopDistance >= ReturnStartDistance)
+	if (FollowStopDistance >= ReturnStopDistance
+		|| ReturnStopDistance >= ReturnStartDistance)
 	{
-		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Follow Stop Distance must be less than Return Start Distance.");
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Movement distances must satisfy Follow Stop Distance < Return Stop Distance < Return Start Distance.");
 		return false;
 	}
 

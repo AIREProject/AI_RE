@@ -9,6 +9,17 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogAIRECombatEvade, Log, All);
+
+bool FAIRECombatEvadePlan::IsValid() const
+{
+	return ::IsValid(ThreatActor.Get())
+		&& !Direction.ContainsNaN()
+		&& !Direction.GetSafeNormal2D().IsNearlyZero()
+		&& FMath::IsFinite(AvailableDistance)
+		&& AvailableDistance > 0.0f;
+}
+
 UAIRECombatEvadeComponent::UAIRECombatEvadeComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -17,8 +28,24 @@ UAIRECombatEvadeComponent::UAIRECombatEvadeComponent()
 
 bool UAIRECombatEvadeComponent::TryStartLateralDash(AActor* ThreatActor)
 {
-	ACharacter* Character = OwnerCharacter.Get();
+	FAIRECombatEvadePlan Plan;
+	return BuildLateralDashPlan(ThreatActor, FGuid(), Plan)
+		&& TryStartLateralDashPlan(Plan);
+}
+
+bool UAIRECombatEvadeComponent::BuildLateralDashPlan(
+	const AActor* ThreatActor,
+	const FGuid& TriggerExecutionId,
+	FAIRECombatEvadePlan& OutPlan) const
+{
+	OutPlan = FAIRECombatEvadePlan();
+	const ACharacter* Character = OwnerCharacter.Get();
 	if (!CanStartLateralDash(ThreatActor))
+	{
+		return false;
+	}
+	const UWorld* World = GetWorld();
+	if (!IsValid(World))
 	{
 		return false;
 	}
@@ -49,7 +76,9 @@ bool UAIRECombatEvadeComponent::TryStartLateralDash(AActor* ThreatActor)
 	const FCollisionShape CollisionShape = FCollisionShape::MakeCapsule(
 		CapsuleRadius,
 		CapsuleHalfHeight);
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(AIREAggroSwapEvade), false);
+	FCollisionQueryParams QueryParams(
+		SCENE_QUERY_STAT(AIRECombatEvade),
+		false);
 	QueryParams.AddIgnoredActor(Character);
 	auto MeasureClearance = [Character, &StartLocation, &CollisionShape,
 		&QueryParams, this](const FVector& Direction)
@@ -70,10 +99,35 @@ bool UAIRECombatEvadeComponent::TryStartLateralDash(AActor* ThreatActor)
 	const float RightClearance = MeasureClearance(RightDirection);
 	const float LeftClearance = MeasureClearance(LeftDirection);
 	const bool bChooseRight = RightClearance >= LeftClearance;
-	const FVector LateralDirection = bChooseRight
+	OutPlan.Side = bChooseRight
+		? EAIRECombatEvadeSide::Right
+		: EAIRECombatEvadeSide::Left;
+	OutPlan.Direction = bChooseRight
 		? RightDirection
 		: LeftDirection;
-	ActiveDashDistance = bChooseRight ? RightClearance : LeftClearance;
+	OutPlan.AvailableDistance = bChooseRight
+		? RightClearance
+		: LeftClearance;
+	OutPlan.ThreatActor = const_cast<AActor*>(ThreatActor);
+	OutPlan.TriggerExecutionId = TriggerExecutionId;
+	return OutPlan.IsValid();
+}
+
+bool UAIRECombatEvadeComponent::TryStartLateralDashPlan(
+	const FAIRECombatEvadePlan& Plan,
+	UGameplayAbility* IgnoredAbility)
+{
+	ACharacter* Character = OwnerCharacter.Get();
+	if (!CanStartLateralDash(Plan.ThreatActor.Get())
+		|| !Plan.IsValid()
+		|| Plan.AvailableDistance > DashDistance
+		|| !FMath::IsNearlyEqual(
+			Plan.Direction.SizeSquared2D(),
+			1.0f,
+			KINDA_SMALL_NUMBER))
+	{
+		return false;
+	}
 
 	if (AController* Controller = Character->GetController())
 	{
@@ -85,7 +139,10 @@ bool UAIRECombatEvadeComponent::TryStartLateralDash(AActor* ThreatActor)
 		if (UAbilitySystemComponent* AbilitySystem =
 			AbilitySystemOwner->GetAbilitySystemComponent())
 		{
-			AbilitySystem->CancelAllAbilities();
+			AbilitySystem->CancelAbilities(
+				nullptr,
+				nullptr,
+				IgnoredAbility);
 		}
 	}
 	if (UCharacterMovementComponent* Movement =
@@ -97,14 +154,46 @@ bool UAIRECombatEvadeComponent::TryStartLateralDash(AActor* ThreatActor)
 		Movement->DisableMovement();
 	}
 
-	DashDirection = LateralDirection;
+	ActiveThreatActor = Plan.ThreatActor.Get();
+	ActiveTriggerExecutionId = Plan.TriggerExecutionId;
+	DashDirection = Plan.Direction;
+	ActiveDashDistance = Plan.AvailableDistance;
 	ElapsedTime = 0.0f;
 	MovedDistance = 0.0f;
 	bEvading = true;
 	SetComponentTickEnabled(true);
 	if (IsValid(EvadeMontage))
 	{
-		Character->PlayAnimMontage(EvadeMontage);
+		const FName MontageSection = Plan.Side
+			== EAIRECombatEvadeSide::Right
+			? TEXT("Evade_R")
+			: TEXT("Evade_L");
+		if (EvadeMontage->HasRootMotion())
+		{
+			UE_LOG(
+				LogAIRECombatEvade,
+				Error,
+				TEXT("Evade montage must be in-place; presentation skipped to avoid duplicate movement. Owner=%s Montage=%s"),
+				*GetNameSafe(Character),
+				*GetNameSafe(EvadeMontage));
+		}
+		else if (!EvadeMontage->IsValidSectionName(MontageSection))
+		{
+			UE_LOG(
+				LogAIRECombatEvade,
+				Warning,
+				TEXT("Evade montage is missing section %s; presentation skipped. Owner=%s Montage=%s"),
+				*MontageSection.ToString(),
+				*GetNameSafe(Character),
+				*GetNameSafe(EvadeMontage));
+		}
+		else
+		{
+			Character->PlayAnimMontage(
+				EvadeMontage,
+				1.0f,
+				MontageSection);
+		}
 	}
 	OnEvadeStarted.Broadcast();
 	return true;
@@ -116,6 +205,7 @@ bool UAIRECombatEvadeComponent::CanStartLateralDash(
 	const ACharacter* Character = OwnerCharacter.Get();
 	if (bEvading
 		|| !IsValid(Character)
+		|| !IsValid(GetWorld())
 		|| !IsValid(ThreatActor)
 		|| ThreatActor == Character
 		|| !FMath::IsFinite(DashDistance)
@@ -133,13 +223,28 @@ void UAIRECombatEvadeComponent::CancelEvade()
 {
 	if (bEvading)
 	{
-		FinishEvade();
+		FinishEvade(true);
+	}
+	else
+	{
+		StopEvadePresentation();
 	}
 }
 
 bool UAIRECombatEvadeComponent::IsEvading() const
 {
 	return bEvading;
+}
+
+bool UAIRECombatEvadeComponent::IsEvadingFrom(
+	const AActor* ThreatActor,
+	const FGuid& TriggerExecutionId) const
+{
+	return bEvading
+		&& IsValid(ThreatActor)
+		&& TriggerExecutionId.IsValid()
+		&& ActiveThreatActor.Get() == ThreatActor
+		&& ActiveTriggerExecutionId == TriggerExecutionId;
 }
 
 void UAIRECombatEvadeComponent::BeginPlay()
@@ -166,9 +271,11 @@ void UAIRECombatEvadeComponent::TickComponent(
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	ACharacter* Character = OwnerCharacter.Get();
-	if (!bEvading || !IsValid(Character))
+	if (!bEvading
+		|| !IsValid(Character)
+		|| !ActiveThreatActor.IsValid())
 	{
-		FinishEvade();
+		FinishEvade(true);
 		return;
 	}
 
@@ -186,27 +293,35 @@ void UAIRECombatEvadeComponent::TickComponent(
 	MovedDistance += FVector::Dist2D(
 		PreviousLocation,
 		Character->GetActorLocation());
-	if (HitResult.bBlockingHit || ElapsedTime >= DashDuration)
+	if (HitResult.bBlockingHit)
 	{
-		FinishEvade();
+		FinishEvade(true);
+	}
+	else if (ElapsedTime >= DashDuration)
+	{
+		FinishEvade(false);
 	}
 }
 
-void UAIRECombatEvadeComponent::FinishEvade()
+void UAIRECombatEvadeComponent::FinishEvade(const bool bStopPresentation)
 {
 	if (!bEvading)
 	{
+		if (bStopPresentation)
+		{
+			StopEvadePresentation();
+		}
 		SetComponentTickEnabled(false);
 		return;
 	}
 	bEvading = false;
 	SetComponentTickEnabled(false);
+	if (bStopPresentation)
+	{
+		StopEvadePresentation();
+	}
 	if (ACharacter* Character = OwnerCharacter.Get())
 	{
-		if (IsValid(EvadeMontage))
-		{
-			Character->StopAnimMontage(EvadeMontage);
-		}
 		if (UCharacterMovementComponent* Movement =
 			Character->GetCharacterMovement())
 		{
@@ -222,5 +337,20 @@ void UAIRECombatEvadeComponent::FinishEvade()
 			}
 		}
 	}
+	ActiveThreatActor.Reset();
+	ActiveTriggerExecutionId.Invalidate();
+	DashDirection = FVector::ZeroVector;
+	ElapsedTime = 0.0f;
+	MovedDistance = 0.0f;
+	ActiveDashDistance = 0.0f;
 	OnEvadeFinished.Broadcast();
+}
+
+void UAIRECombatEvadeComponent::StopEvadePresentation()
+{
+	if (ACharacter* Character = OwnerCharacter.Get();
+		IsValid(Character) && IsValid(EvadeMontage))
+	{
+		Character->StopAnimMontage(EvadeMontage);
+	}
 }

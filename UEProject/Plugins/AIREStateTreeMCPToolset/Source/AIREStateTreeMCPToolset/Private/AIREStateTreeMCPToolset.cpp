@@ -25,7 +25,7 @@
 
 namespace
 {
-	constexpr TCHAR AllowedAssetRoot[] = TEXT("/Game/Work/LMK/");
+	constexpr TCHAR StateTreeAllowedAssetRoot[] = TEXT("/Game/Work/LMK/");
 	constexpr int32 MaximumPropertyTextLength = 4096;
 
 	struct FAIRELocatedStateTreeNode
@@ -62,12 +62,12 @@ namespace
 			return false;
 		}
 
-		if (!StateTree->GetPathName().StartsWith(AllowedAssetRoot))
+		if (!StateTree->GetPathName().StartsWith(StateTreeAllowedAssetRoot))
 		{
 			OutError = FString::Printf(
 				TEXT("Asset '%s' is outside the allowed root '%s'."),
 				*StateTree->GetPathName(),
-				AllowedAssetRoot);
+				StateTreeAllowedAssetRoot);
 			return false;
 		}
 
@@ -431,12 +431,12 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::CreateEnemyStateTree(
 	const FString& FolderPath,
 	const FName AssetName)
 {
-	if (!FolderPath.StartsWith(AllowedAssetRoot))
+	if (!FolderPath.StartsWith(StateTreeAllowedAssetRoot))
 	{
 		return MakeFailure(FString::Printf(
 			TEXT("Folder '%s' is outside the allowed root '%s'."),
 			*FolderPath,
-			AllowedAssetRoot));
+			StateTreeAllowedAssetRoot));
 	}
 	if (AssetName.IsNone()
 		|| AssetName.ToString().Contains(TEXT("/")))

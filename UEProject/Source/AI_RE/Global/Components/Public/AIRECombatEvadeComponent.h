@@ -5,8 +5,40 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "AIRECombatEvadeComponent.generated.h"
 
+class AActor;
 class ACharacter;
 class UAnimMontage;
+class UGameplayAbility;
+
+UENUM(BlueprintType)
+enum class EAIRECombatEvadeSide : uint8
+{
+	Left,
+	Right
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIRECombatEvadePlan
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Combat|Evade")
+	EAIRECombatEvadeSide Side = EAIRECombatEvadeSide::Right;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Combat|Evade")
+	FVector Direction = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Combat|Evade")
+	float AvailableDistance = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Combat|Evade")
+	TObjectPtr<AActor> ThreatActor;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Combat|Evade")
+	FGuid TriggerExecutionId;
+
+	bool IsValid() const;
+};
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAIRECombatEvadeSignature);
 
@@ -21,6 +53,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Combat|Evade")
 	bool TryStartLateralDash(AActor* ThreatActor);
 
+	bool BuildLateralDashPlan(
+		const AActor* ThreatActor,
+		const FGuid& TriggerExecutionId,
+		FAIRECombatEvadePlan& OutPlan) const;
+
+	bool TryStartLateralDashPlan(
+		const FAIRECombatEvadePlan& Plan,
+		UGameplayAbility* IgnoredAbility = nullptr);
+
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Evade")
 	bool CanStartLateralDash(const AActor* ThreatActor) const;
 
@@ -29,6 +70,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Evade")
 	bool IsEvading() const;
+
+	bool IsEvadingFrom(
+		const AActor* ThreatActor,
+		const FGuid& TriggerExecutionId) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "AIRE|Combat|Evade")
 	FAIRECombatEvadeSignature OnEvadeStarted;
@@ -45,7 +90,8 @@ protected:
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
-	void FinishEvade();
+	void FinishEvade(bool bStopPresentation);
+	void StopEvadePresentation();
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Evade", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
 	float DashDistance = 300.0f;
@@ -58,6 +104,8 @@ private:
 	TObjectPtr<UAnimMontage> EvadeMontage;
 
 	TWeakObjectPtr<ACharacter> OwnerCharacter;
+	TWeakObjectPtr<AActor> ActiveThreatActor;
+	FGuid ActiveTriggerExecutionId;
 	FVector DashDirection = FVector::ZeroVector;
 	float ElapsedTime = 0.0f;
 	float MovedDistance = 0.0f;

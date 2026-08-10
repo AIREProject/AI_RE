@@ -1,5 +1,6 @@
 #include "Core/AIRECompanionAIController.h"
 
+#include "AIRECombatEvadeComponent.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Components/StateTreeAIComponent.h"
@@ -99,6 +100,15 @@ void AAIRECompanionAIController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 
 void AAIRECompanionAIController::ResetCompanionState()
 {
+	if (AAIRECompanionCharacter* Companion = CompanionCharacter.Get())
+	{
+		if (UAIRECombatEvadeComponent* Evade =
+			Companion->GetCombatEvadeComponent())
+		{
+			Evade->CancelEvade();
+		}
+	}
+
 	if (IsValid(ThreatComponent))
 	{
 		ThreatComponent->StopThreatDetection();

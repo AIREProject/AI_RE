@@ -79,6 +79,7 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 	AActor* CurrentTarget = Attack.Target.Get();
 	AActor* NewTarget = nullptr;
 	UAIRECombatEvadeComponent* Evade = nullptr;
+	FAIRECombatEvadePlan EvadePlan;
 	if (CurrentTarget == PlayerPawn)
 	{
 		NewTarget = OtherPartyActor;
@@ -90,13 +91,20 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 		Evade = OtherPartyActor->FindComponentByClass<
 			UAIRECombatEvadeComponent>();
 	}
+	const bool bReuseActiveEvade = IsValid(Evade)
+		&& Evade->IsEvadingFrom(Enemy.Get(), Attack.ExecutionId);
+	const bool bCanStartNewEvade = IsValid(Evade)
+		&& Evade->BuildLateralDashPlan(
+			Enemy.Get(),
+			Attack.ExecutionId,
+			EvadePlan);
 	if (!IsValid(Aggro)
 		|| !FMath::IsFinite(CooldownDuration)
 		|| CooldownDuration < 0.0f
 		|| !AIRECombatDamageTarget::IsAlive(CurrentTarget)
 		|| !AIRECombatDamageTarget::IsAlive(NewTarget)
 		|| !IsValid(Evade)
-		|| !Evade->CanStartLateralDash(Enemy.Get()))
+		|| (!bReuseActiveEvade && !bCanStartNewEvade))
 	{
 		return EAIREAggroSwapResult::InvalidPartyState;
 	}
@@ -115,8 +123,10 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 		return EAIREAggroSwapResult::CommitRejected;
 	}
 	BossController->ClearFocus(EAIFocusPriority::Gameplay);
-	// The evade component owns movement and active GAS ability cancellation.
-	if (!Evade->TryStartLateralDash(Enemy.Get()))
+	// Reuse an autonomous dash only for the exact Boss execution that opened Q.
+	// Otherwise the evade component owns a new movement and GAS cancellation.
+	if (!bReuseActiveEvade
+		&& !Evade->TryStartLateralDashPlan(EvadePlan))
 	{
 		return EAIREAggroSwapResult::EvadeRejected;
 	}
@@ -128,11 +138,12 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 	UE_LOG(
 		LogAIREAggroSwap,
 		Log,
-		TEXT("Boss aggro swap applied. Boss=%s PreviousTarget=%s NewTarget=%s ExecutionId=%s"),
+		TEXT("Boss aggro swap applied. Boss=%s PreviousTarget=%s NewTarget=%s ExecutionId=%s ReusedEvade=%s"),
 		*GetNameSafe(Enemy.Get()),
 		*GetNameSafe(CurrentTarget),
 		*GetNameSafe(NewTarget),
-		*Attack.ExecutionId.ToString());
+		*Attack.ExecutionId.ToString(),
+		bReuseActiveEvade ? TEXT("true") : TEXT("false"));
 	return EAIREAggroSwapResult::Applied;
 }
 

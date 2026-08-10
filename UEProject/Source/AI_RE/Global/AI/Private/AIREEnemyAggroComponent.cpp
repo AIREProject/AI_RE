@@ -6,6 +6,10 @@
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
 
+#if !UE_BUILD_SHIPPING
+DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAggro, Log, All);
+#endif
+
 UAIREEnemyAggroComponent::UAIREEnemyAggroComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -84,6 +88,7 @@ void UAIREEnemyAggroComponent::RefreshSelection()
 		return;
 	}
 	if (HighestEntry != CurrentEntry
+		&& !HasRecentSightEvidence(*CurrentEntry)
 		&& HighestEntry->Threat >= CurrentEntry->Threat + RetargetMargin)
 	{
 		SelectTarget(HighestEntry->Actor.Get());
@@ -124,7 +129,7 @@ bool UAIREEnemyAggroComponent::PromoteTargetAboveCurrentMaximum(
 	FAggroEntry& Entry = FindOrAddEntry(Target);
 	Entry.Threat = MaximumThreat + SwapLeadMargin;
 	Entry.LastKnownLocation = Target->GetActorLocation();
-	RefreshSelection();
+	SelectTarget(Target);
 	return SelectedTarget.Get() == Target;
 }
 
@@ -170,6 +175,12 @@ bool UAIREEnemyAggroComponent::IsSelectedTargetVisible() const
 {
 	const FAggroEntry* Entry = FindEntry(SelectedTarget.Get());
 	return Entry && Entry->bVisible;
+}
+
+bool UAIREEnemyAggroComponent::SelectedTargetHasRecentSightEvidence() const
+{
+	const FAggroEntry* Entry = FindEntry(SelectedTarget.Get());
+	return Entry && HasRecentSightEvidence(*Entry);
 }
 
 bool UAIREEnemyAggroComponent::SelectedTargetHasRecentDamageEvidence() const
@@ -221,7 +232,14 @@ void UAIREEnemyAggroComponent::HandleTargetPerceptionUpdated(
 		return;
 	}
 	FAggroEntry& Entry = FindOrAddEntry(Actor);
+	const bool bWasVisible = Entry.bVisible;
 	Entry.bVisible = Stimulus.WasSuccessfullySensed();
+	if (Entry.bVisible || bWasVisible)
+	{
+		Entry.LastSightTime = GetWorld()
+			? GetWorld()->GetTimeSeconds()
+			: -1.0;
+	}
 	if (Entry.bVisible)
 	{
 		Entry.Threat = FMath::Max(Entry.Threat, InitialSightThreat);
@@ -232,6 +250,18 @@ void UAIREEnemyAggroComponent::HandleTargetPerceptionUpdated(
 		Entry.LastKnownLocation = Stimulus.StimulusLocation;
 	}
 	RefreshSelection();
+#if !UE_BUILD_SHIPPING
+	UE_LOG(
+		LogAIREEnemyAggro,
+		Log,
+		TEXT("Perception update Candidate=%s SelectedTarget=%s Sensed=%d StimulusAge=%.3f StimulusLocation=%s TargetRevision=%lld"),
+		*GetNameSafe(Actor),
+		*GetNameSafe(SelectedTarget.Get()),
+		Stimulus.WasSuccessfullySensed(),
+		Stimulus.GetAge(),
+		*Stimulus.StimulusLocation.ToCompactString(),
+		TargetRevision);
+#endif
 }
 
 void UAIREEnemyAggroComponent::HandleCandidateDestroyed(
@@ -322,6 +352,20 @@ void UAIREEnemyAggroComponent::SelectTarget(AActor* Target)
 	}
 	SelectedTarget = Target;
 	++TargetRevision;
+}
+
+bool UAIREEnemyAggroComponent::HasRecentSightEvidence(
+	const FAggroEntry& Entry) const
+{
+	if (Entry.bVisible)
+	{
+		return true;
+	}
+	const UWorld* World = GetWorld();
+	return IsValid(World)
+		&& Entry.LastSightTime >= 0.0
+		&& World->GetTimeSeconds() - Entry.LastSightTime
+			<= SightEvidenceDuration;
 }
 
 void UAIREEnemyAggroComponent::ConfigureSight()

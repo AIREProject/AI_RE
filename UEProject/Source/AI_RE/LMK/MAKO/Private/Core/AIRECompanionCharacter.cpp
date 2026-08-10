@@ -2,6 +2,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "Core/AIRECompanionAIController.h"
+#include "AbilitySystem/Combat/Abilities/AIRECompanionAutonomousEvadeAbility.h"
+#include "AbilitySystem/Combat/Effects/AIRECompanionAutonomousEvadeGameplayEffects.h"
 #include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Chat/AIRECompanionChatComponent.h"
@@ -9,6 +11,7 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Interaction/AIRECompanionInventoryInteractionComponent.h"
 #include "AIREGameplayInventorySubsystem.h"
+#include "AIRECombatGameplayTags.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Support/AIRECompanionSupportComponent.h"
 #include "Work/AIRECompanionStorageAutomationComponent.h"
@@ -16,6 +19,7 @@
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "AIRECombatEvadeComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -24,6 +28,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCharacter, Log, All);
 namespace
 {
 	constexpr TCHAR CompanionId[] = TEXT("MAKO");
+	const FName SoxMaterialSlotName(TEXT("UE_MIMI_BootCuff"));
+	const FName ShoesMaterialSlotName(TEXT("UE_MIMI_Shoes"));
+	constexpr float StaminaRegenPeriod = 0.1f;
 }
 
 AAIRECompanionCharacter::AAIRECompanionCharacter()
@@ -214,6 +221,17 @@ AAIRECompanionCharacter::GetCombatEvadeComponent() const
 	return CombatEvadeComponent;
 }
 
+void AAIRECompanionCharacter::SetSoxAndShoesVisible(const bool bVisible)
+{
+	bSoxAndShoesVisible = bVisible;
+	ApplySoxAndShoesVisibility();
+}
+
+bool AAIRECompanionCharacter::AreSoxAndShoesVisible() const
+{
+	return bSoxAndShoesVisible;
+}
+
 FString AAIRECompanionCharacter::GetCompanionId() const
 {
 	return CompanionId;
@@ -233,14 +251,29 @@ const UAIRECompanionConfigDataAsset* AAIRECompanionCharacter::GetCompanionConfig
 	return GetDefault<UAIRECompanionConfigDataAsset>();
 }
 
+void AAIRECompanionCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	ApplySoxAndShoesVisibility();
+}
+
 void AAIRECompanionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplySoxAndShoesVisibility();
 
 	check(AbilitySystemComponent);
 	check(CompanionAttributeSet);
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	ResetAttributesToConfiguredDefaults();
+	if (!InitializeAutonomousEvadeRuntime())
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Error,
+			TEXT("Companion autonomous evade runtime initialization failed. Companion=%s"),
+			*GetNameSafe(this));
+	}
 	const UAIRECompanionConfigDataAsset* CompanionConfigData =
 		GetCompanionConfig();
 	const bool bUseInventoryLoadout =
@@ -291,6 +324,20 @@ void AAIRECompanionCharacter::BeginPlay()
 	HealthChangedDelegateHandle = AbilitySystemComponent
 		->GetGameplayAttributeValueChangeDelegate(UAIRECompanionAttributeSet::GetHealthAttribute())
 		.AddUObject(this, &AAIRECompanionCharacter::HandleHealthChanged);
+	InvulnerableStateChangedDelegateHandle = AbilitySystemComponent
+		->RegisterGameplayTagEvent(
+			AIRECombatGameplayTags::StateInvulnerable,
+			EGameplayTagEventType::NewOrRemoved)
+		.AddUObject(
+			this,
+			&AAIRECompanionCharacter::HandleInvulnerableStateChanged);
+	UE_LOG(
+		LogAIRECompanionCharacter,
+		Log,
+		TEXT("[MAKO HEALTH] Initialized Companion=%s Health=%.2f/%.2f"),
+		*GetNameSafe(this),
+		CompanionAttributeSet->GetHealth(),
+		CompanionAttributeSet->GetMaxHealth());
 
 	if (!IsValid(CompanionConfig))
 	{
@@ -311,8 +358,55 @@ void AAIRECompanionCharacter::BeginPlay()
 	}
 }
 
+void AAIRECompanionCharacter::ApplySoxAndShoesVisibility()
+{
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!IsValid(MeshComponent))
+	{
+		return;
+	}
+
+	const int32 SoxMaterialIndex =
+		MeshComponent->GetMaterialIndex(SoxMaterialSlotName);
+	const int32 ShoesMaterialIndex =
+		MeshComponent->GetMaterialIndex(ShoesMaterialSlotName);
+	if (SoxMaterialIndex == INDEX_NONE
+		|| ShoesMaterialIndex == INDEX_NONE
+		|| SoxMaterialIndex == ShoesMaterialIndex)
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Warning,
+			TEXT("Companion mesh %s must provide distinct %s and %s footwear slots."),
+			*GetNameSafe(MeshComponent->GetSkeletalMeshAsset()),
+			*SoxMaterialSlotName.ToString(),
+			*ShoesMaterialSlotName.ToString());
+		return;
+	}
+
+	const int32 FootwearMaterialIndices[] =
+	{
+		SoxMaterialIndex,
+		ShoesMaterialIndex
+	};
+	const int32 LODCount = MeshComponent->GetNumLODs();
+	for (const int32 MaterialIndex : FootwearMaterialIndices)
+	{
+		for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
+		{
+			MeshComponent->ShowMaterialSection(
+				MaterialIndex,
+				INDEX_NONE,
+				bSoxAndShoesVisible,
+				LODIndex);
+		}
+	}
+}
+
 void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ShutdownAutonomousEvadeRuntime();
+
 	if (IsValid(StorageAutomationComponent))
 	{
 		StorageAutomationComponent->ShutdownAutomation();
@@ -346,6 +440,14 @@ void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 				->GetGameplayAttributeValueChangeDelegate(UAIRECompanionAttributeSet::GetHealthAttribute())
 				.Remove(HealthChangedDelegateHandle);
 			HealthChangedDelegateHandle.Reset();
+		}
+		if (InvulnerableStateChangedDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				InvulnerableStateChangedDelegateHandle,
+				AIRECombatGameplayTags::StateInvulnerable,
+				EGameplayTagEventType::NewOrRemoved);
+			InvulnerableStateChangedDelegateHandle.Reset();
 		}
 
 		AbilitySystemComponent->ClearActorInfo();
@@ -394,17 +496,124 @@ bool AAIRECompanionCharacter::ResetAttributesToConfiguredDefaults()
 	return true;
 }
 
+bool AAIRECompanionCharacter::InitializeAutonomousEvadeRuntime()
+{
+	ShutdownAutonomousEvadeRuntime();
+	if (!IsValid(AbilitySystemComponent))
+	{
+		return false;
+	}
+
+	const UAIRECompanionConfigDataAsset* CompanionConfigData =
+		GetCompanionConfig();
+	if (!IsValid(CompanionConfigData)
+		|| !CompanionConfigData->AutonomousEvade.IsValid())
+	{
+		return false;
+	}
+
+	FGameplayAbilitySpec EvadeAbilitySpec(
+		UAIRECompanionAutonomousEvadeAbility::StaticClass(),
+		1,
+		INDEX_NONE,
+		this);
+	AutonomousEvadeAbilityHandle =
+		AbilitySystemComponent->GiveAbility(EvadeAbilitySpec);
+	if (!AutonomousEvadeAbilityHandle.IsValid())
+	{
+		return false;
+	}
+
+	FGameplayEffectContextHandle EffectContext =
+		AbilitySystemComponent->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+	FGameplayEffectSpecHandle RegenSpec =
+		AbilitySystemComponent->MakeOutgoingSpec(
+			UAIRECompanionStaminaRegenGameplayEffect::StaticClass(),
+			1.0f,
+			EffectContext);
+	if (!RegenSpec.IsValid())
+	{
+		ShutdownAutonomousEvadeRuntime();
+		return false;
+	}
+	RegenSpec.Data->SetSetByCallerMagnitude(
+		AIRECompanionGameplayTags::DataStaminaRegenPerTick,
+		CompanionConfigData->AutonomousEvade.StaminaRegenRate
+			* StaminaRegenPeriod);
+	StaminaRegenEffectHandle =
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(
+			*RegenSpec.Data.Get());
+	if (!StaminaRegenEffectHandle.WasSuccessfullyApplied())
+	{
+		StaminaRegenEffectHandle.Invalidate();
+		ShutdownAutonomousEvadeRuntime();
+		return false;
+	}
+	return true;
+}
+
+void AAIRECompanionCharacter::ShutdownAutonomousEvadeRuntime()
+{
+	if (!IsValid(AbilitySystemComponent))
+	{
+		AutonomousEvadeAbilityHandle = FGameplayAbilitySpecHandle();
+		StaminaRegenEffectHandle.Invalidate();
+		return;
+	}
+
+	if (AutonomousEvadeAbilityHandle.IsValid())
+	{
+		AbilitySystemComponent->CancelAbilityHandle(
+			AutonomousEvadeAbilityHandle);
+		AbilitySystemComponent->ClearAbility(
+			AutonomousEvadeAbilityHandle);
+		AutonomousEvadeAbilityHandle = FGameplayAbilitySpecHandle();
+	}
+	if (StaminaRegenEffectHandle.IsValid())
+	{
+		AbilitySystemComponent->RemoveActiveGameplayEffect(
+			StaminaRegenEffectHandle);
+		StaminaRegenEffectHandle.Invalidate();
+	}
+}
+
 void AAIRECompanionCharacter::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
 {
 	SynchronizeDeadState(ChangeData.NewValue);
+	const float Delta = ChangeData.NewValue - ChangeData.OldValue;
+	const TCHAR* ChangeType = Delta < -KINDA_SMALL_NUMBER
+		? TEXT("Damage")
+		: Delta > KINDA_SMALL_NUMBER
+			? TEXT("Healing")
+			: TEXT("Unchanged");
+	const float MaxHealth = IsValid(CompanionAttributeSet)
+		? CompanionAttributeSet->GetMaxHealth()
+		: 0.0f;
 	UE_LOG(
 		LogAIRECompanionCharacter,
 		Log,
-		TEXT("Companion health changed. Companion=%s OldHealth=%.2f NewHealth=%.2f Dead=%s"),
+		TEXT("[MAKO HEALTH] Companion=%s Change=%s Delta=%+.2f Health=%.2f/%.2f Previous=%.2f Dead=%s"),
 		*GetNameSafe(this),
-		ChangeData.OldValue,
+		ChangeType,
+		Delta,
 		ChangeData.NewValue,
+		MaxHealth,
+		ChangeData.OldValue,
 		ChangeData.NewValue <= 0.0f ? TEXT("true") : TEXT("false"));
+}
+
+void AAIRECompanionCharacter::HandleInvulnerableStateChanged(
+	const FGameplayTag,
+	const int32 NewCount)
+{
+	UE_LOG(
+		LogAIRECompanionCharacter,
+		Log,
+		TEXT("[MAKO EVADE] Invulnerable=%s Companion=%s TagCount=%d"),
+		NewCount > 0 ? TEXT("ON") : TEXT("OFF"),
+		*GetNameSafe(this),
+		NewCount);
 }
 
 void AAIRECompanionCharacter::SynchronizeDeadState(const float CurrentHealth)
@@ -417,4 +626,16 @@ void AAIRECompanionCharacter::SynchronizeDeadState(const float CurrentHealth)
 	AbilitySystemComponent->SetLooseGameplayTagCount(
 		AIRECompanionGameplayTags::StateDisabledDead,
 		CurrentHealth <= 0.0f ? 1 : 0);
+	if (CurrentHealth <= 0.0f)
+	{
+		if (AutonomousEvadeAbilityHandle.IsValid())
+		{
+			AbilitySystemComponent->CancelAbilityHandle(
+				AutonomousEvadeAbilityHandle);
+		}
+		if (IsValid(CombatEvadeComponent))
+		{
+			CombatEvadeComponent->CancelEvade();
+		}
+	}
 }
