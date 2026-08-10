@@ -8,7 +8,7 @@
     "predev": "npm run presentation:sync",
     "dev": "vite --host 0.0.0.0",
     "prebuild": "npm run presentation:sync",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/prepare-sites-dist.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },

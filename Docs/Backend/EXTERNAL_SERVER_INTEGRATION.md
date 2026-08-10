@@ -66,6 +66,18 @@ fail-closed 검증하고, 실제 런타임 응답이 그 계약과 다르면 계
 `Event`, `Command`, Command Result 및 전체 M04 계약 Gate는 여전히 해결되지 않았습니다.
 이 항목들의 DTO·인증·매핑은 별도 계약 확인 전까지 확정하지 않습니다.
 
+## 2026-08-10 AX-W01 Web 배포 기준
+
+AX-W01 WebApp은 pairing 및 브라우저 credential 저장 없이 `AIRE_WEB` 고정 신원으로
+`POST /api/v1/chat`을 호출합니다. 로컬 개발과 GPT Sites 배포 모두 브라우저에서는
+same-origin `/api/*`를 사용하며, 개발 Vite proxy와 Sites Worker가 각각
+`https://traip.mtvs2026.work`로 전달합니다.
+
+현재 private GPT Sites 배포의 루트 HTML, JavaScript asset 및 `/health` Backend proxy가
+HTTP 200으로 확인됐습니다. 이 배포 확인은 Mobile Chat 정상 응답과 전체 실패 매트릭스의
+실제 휴대폰 검증을 대신하지 않습니다. `AIRE_WEB`은 공개 고정 제품 값이므로 사이트를
+public access로 전환할 때는 Backend의 단일-player demo 보안 경계를 별도로 검토해야 합니다.
+
 ## 연동 Gate
 
 UE/Web 클라이언트의 새 서버 연동을 완료하려면 Backend 담당자가 다음 중 하나를 확정해야 합니다.
