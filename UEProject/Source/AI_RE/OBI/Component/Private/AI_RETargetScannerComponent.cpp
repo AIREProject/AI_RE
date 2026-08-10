@@ -5,6 +5,9 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "AI_REInteractableInterface.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystemComponent.h"
+#include "GameFramework/Pawn.h"
 
 UAI_RETargetScannerComponent::UAI_RETargetScannerComponent()
 {
@@ -76,6 +79,17 @@ AActor* UAI_RETargetScannerComponent::ScanForwardForTarget(float Radius, float D
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
+			// 전투 타겟팅용 스캔일 때 바닥(지형)이 잡히는 것을 방지합니다.
+			// 폰이거나 AbilitySystemComponent를 가진 개체(나무, 자원 등)만 타겟으로 인정합니다.
+			if (TraceChannel == ECC_Pawn)
+			{
+				bool bHasASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitActor) != nullptr;
+				if (!bHasASC && !HitActor->IsA(APawn::StaticClass()))
+				{
+					continue; // 폰도 아니고 ASC도 없다면 (예: 일반 바닥) 무시
+				}
+			}
+
 			return HitActor;
 		}
 	}

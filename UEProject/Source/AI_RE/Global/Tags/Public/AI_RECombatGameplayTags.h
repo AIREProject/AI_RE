@@ -12,5 +12,10 @@ namespace AI_RECombatGameplayTags
 	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_ComboWindowClose);
 	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_ComboInput);
 
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_ActiveHit_Start);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Combat_ActiveHit_End);
+
 	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Player_Melee);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Player_Melee_Sword);
+	AI_RE_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Player_Melee_Fist);
 }

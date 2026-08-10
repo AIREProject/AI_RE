@@ -26,15 +26,33 @@ UAIRECompanionWeaponDefinitionDataAsset::UAIRECompanionWeaponDefinitionDataAsset
 bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
-	if (!WeaponTag.IsValid()
-		|| !WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanionMelee))
+	if (!WeaponTag.IsValid())
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionWeaponDefinition", "InvalidWeaponTag", "Weapon Tag is invalid.");
+		return false;
+	}
+
+	bool bIsCompanionWeapon = WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanion);
+	bool bIsPlayerWeapon = WeaponTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("Weapon.Player")));
+
+	if (!bIsCompanionWeapon && !bIsPlayerWeapon)
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionWeaponDefinition",
 			"InvalidWeaponTag",
-			"Weapon Tag must be a concrete child of Weapon.Companion.");
+			"Weapon Tag must be a child of Weapon.Companion or Weapon.Player.");
+		return false;
+	}
+
+	if (WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanion) ||
+		WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanionMelee) ||
+		WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Player"))) ||
+		WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Player.Melee"))))
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidWeaponTag",
+			"Weapon Tag must be a concrete child (e.g. Weapon.Player.Melee.GreatSword), not a base category.");
 		return false;
 	}
 

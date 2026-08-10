@@ -68,6 +68,7 @@ private:
 	void HandleComboInput(FGameplayEventData Payload);
 
 	void PerformTraceHit();
+	void ProcessHit(AActor* HitActor, float Dmg, ACharacter* Character);
 
 	int32 CurrentComboIndex = 1;
 	bool bIsComboWindowOpen = false;

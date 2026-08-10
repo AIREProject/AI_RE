@@ -15,6 +15,7 @@
 #include "AI_RETargetScannerComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UAI_REPlayerCombatComponent::UAI_REPlayerCombatComponent()
 {
@@ -36,6 +37,15 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 	AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
 	if (OwnerChar)
 	{
+		// 점프/체공 중에는 기본 공격(혹은 콤보)을 막습니다. (추후 공중 찍기 공격 추가 전까지)
+		if (UCharacterMovementComponent* MoveComp = OwnerChar->GetCharacterMovement())
+		{
+			if (MoveComp->IsFalling())
+			{
+				return;
+			}
+		}
+
 		// [소프트 타겟팅] 공격 스킬 발동 직전 1틱 스캔 (TargetScannerComponent 사용)
 		if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(OwnerChar))
 		{
@@ -140,6 +150,7 @@ void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)
 					if (UStaticMeshComponent* WeaponMeshComp = PlayerChar->GetWeaponMeshComponent())
 					{
 						WeaponMeshComp->SetStaticMesh(WeaponItem->WeaponMesh);
+						WeaponMeshComp->AttachToComponent(PlayerChar->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("WeaponSocket_R"));
 					}
 
 					// 2. 레이어드 애니메이션(Linked Anim Layers) 적용 (오버라이드)
