@@ -39,12 +39,7 @@ public class AI_RE : ModuleRules
 		}
 
 		PublicIncludePaths.AddRange(new string[] {
-			"AI_RE/OBI/ThirdPerson",
-			"AI_RE/OBI/ThirdPerson/Variant_Combat",
-			"AI_RE/OBI/ThirdPerson/Variant_Combat/AI",
-			"AI_RE/OBI/ThirdPerson/Variant_Combat/Animation",
-			"AI_RE/OBI/ThirdPerson/Variant_Combat/Gameplay",
-			"AI_RE/OBI/ThirdPerson/Variant_Combat/Interfaces",
+			"AI_RE/OBI/Player",
 			"AI_RE/OBI/Component/Public",
 			"AI_RE/OBI/Abilities/Public",
 			"AI_RE/OBI/Animation/Public",

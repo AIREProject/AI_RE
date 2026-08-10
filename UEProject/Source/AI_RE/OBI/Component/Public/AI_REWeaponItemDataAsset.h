@@ -21,4 +21,8 @@ public:
 	// 무기 전투 스펙 (대미지, 몽타주 등)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UAIRECompanionWeaponDefinitionDataAsset> WeaponDefinition;
+
+	// 무기의 실제 외형 메시 (캐릭터 손에 들려질 모델링)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
+	TObjectPtr<class UStaticMesh> WeaponMesh;
 };
