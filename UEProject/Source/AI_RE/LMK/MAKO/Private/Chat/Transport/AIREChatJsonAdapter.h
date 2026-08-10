@@ -18,6 +18,15 @@ struct FAIREParsedChatFrame
 	FAIREChatError Error;
 };
 
+struct FAIREChatResponseCorrelation
+{
+	FString RequestId;
+	FString MessageId;
+	FString SessionId;
+	FString SaveSlotId;
+	FString CompanionId;
+};
+
 class FAIREChatJsonAdapter
 {
 public:
@@ -34,11 +43,11 @@ public:
 
 	static FAIREParsedChatFrame ParseWebSocketFrame(
 		const FString& Message,
-		const FString& ExpectedRequestId);
+		const FAIREChatResponseCorrelation& ExpectedCorrelation);
 
 	static FAIREParsedChatFrame ParseHttpBody(
 		const FString& Message,
-		const FString& ExpectedRequestId,
+		const FAIREChatResponseCorrelation& ExpectedCorrelation,
 		bool bIsErrorResponse);
 
 	static bool IsStableId(const FString& Value);

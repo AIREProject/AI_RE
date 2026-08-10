@@ -10,6 +10,11 @@ namespace
 	constexpr int32 MaxStableIdLength = 128;
 	constexpr int32 MaxUserMessageLength = 2000;
 	constexpr int32 MaxDisplayTextLength = 4000;
+	constexpr int32 MaxAIProviderLength = 64;
+	constexpr int32 MaxAIModelVersionLength = 128;
+	constexpr int32 MaxAIPromptVersionLength = 128;
+	constexpr int32 MaxErrorCodeLength = 128;
+	constexpr int32 MaxErrorMessageLength = 512;
 
 	FString GetPeriodName(const EAIREGameWorldPeriod Period)
 	{
@@ -57,39 +62,92 @@ namespace
 		return Frame;
 	}
 
+	bool IsValidAIMetadata(const TSharedPtr<FJsonObject>& Metadata)
+	{
+		if (!Metadata.IsValid())
+		{
+			return false;
+		}
+
+		FString Provider;
+		FString ModelVersion;
+		FString PromptVersion;
+		return Metadata->TryGetStringField(TEXT("provider"), Provider)
+			&& !Provider.TrimStartAndEnd().IsEmpty()
+			&& Provider.Len() <= MaxAIProviderLength
+			&& Metadata->TryGetStringField(TEXT("model_version"), ModelVersion)
+			&& !ModelVersion.TrimStartAndEnd().IsEmpty()
+			&& ModelVersion.Len() <= MaxAIModelVersionLength
+			&& Metadata->TryGetStringField(TEXT("prompt_version"), PromptVersion)
+			&& !PromptVersion.TrimStartAndEnd().IsEmpty()
+			&& PromptVersion.Len() <= MaxAIPromptVersionLength;
+	}
+
 	FAIREParsedChatFrame ParseResponsePayload(
 		const TSharedPtr<FJsonObject>& Payload,
-		const FString& ExpectedRequestId)
+		const FAIREChatResponseCorrelation& ExpectedCorrelation,
+		const bool bIgnoreCorrelationMismatch)
 	{
 		if (!Payload.IsValid())
 		{
-			return InvalidFrame(ExpectedRequestId, TEXT("InvalidChatResponse"), TEXT("Chat response payload is missing."));
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidChatResponse"), TEXT("Chat response payload is missing."));
 		}
 
-		int32 ParsedSchemaVersion = 0;
 		FString RequestId;
 		FString ResponseId;
-		FString InteractionMode;
+		FString SessionId;
+		FString SaveSlotId;
+		FString CompanionId;
 		FString DisplayText;
-		if (!Payload->TryGetNumberField(TEXT("schema_version"), ParsedSchemaVersion)
-			|| ParsedSchemaVersion != SchemaVersion
-			|| !Payload->TryGetStringField(TEXT("request_id"), RequestId)
+		const TSharedPtr<FJsonObject>* AIMetadata = nullptr;
+		if (!Payload->TryGetStringField(TEXT("request_id"), RequestId)
 			|| !FAIREChatJsonAdapter::IsStableId(RequestId)
+			|| !Payload->TryGetStringField(TEXT("session_id"), SessionId)
+			|| !FAIREChatJsonAdapter::IsStableId(SessionId)
+			|| !Payload->TryGetStringField(TEXT("save_slot_id"), SaveSlotId)
+			|| !FAIREChatJsonAdapter::IsStableId(SaveSlotId)
+			|| !Payload->TryGetStringField(TEXT("companion_id"), CompanionId)
+			|| !FAIREChatJsonAdapter::IsStableId(CompanionId)
 			|| !Payload->TryGetStringField(TEXT("response_id"), ResponseId)
 			|| !FAIREChatJsonAdapter::IsStableId(ResponseId)
-			|| !Payload->TryGetStringField(TEXT("interaction_mode"), InteractionMode)
-			|| InteractionMode != TEXT("InGame")
 			|| !Payload->TryGetStringField(TEXT("display_text"), DisplayText)
 			|| DisplayText.TrimStartAndEnd().IsEmpty()
-			|| DisplayText.Len() > MaxDisplayTextLength)
+			|| DisplayText.Len() > MaxDisplayTextLength
+			|| !Payload->TryGetObjectField(TEXT("ai_metadata"), AIMetadata)
+			|| AIMetadata == nullptr
+			|| !IsValidAIMetadata(*AIMetadata))
 		{
-			return InvalidFrame(ExpectedRequestId, TEXT("InvalidChatResponse"), TEXT("Chat response validation failed."));
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidChatResponse"), TEXT("Chat response validation failed."));
 		}
-		if (RequestId != ExpectedRequestId)
+
+		FString MessageId;
+		const TSharedPtr<FJsonValue> MessageIdValue = Payload->TryGetField(TEXT("message_id"));
+		if (MessageIdValue.IsValid()
+			&& MessageIdValue->Type != EJson::Null
+			&& (!Payload->TryGetStringField(TEXT("message_id"), MessageId)
+				|| !FAIREChatJsonAdapter::IsStableId(MessageId)))
 		{
-			FAIREParsedChatFrame Frame;
-			Frame.Kind = EAIREParsedChatFrameKind::Ignored;
-			return Frame;
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidChatResponse"), TEXT("Chat response message_id is invalid."));
+		}
+
+		const bool bHasCorrelationMismatch = RequestId != ExpectedCorrelation.RequestId
+			|| SessionId != ExpectedCorrelation.SessionId
+			|| SaveSlotId != ExpectedCorrelation.SaveSlotId
+			|| CompanionId != ExpectedCorrelation.CompanionId
+			|| (!MessageId.IsEmpty() && MessageId != ExpectedCorrelation.MessageId);
+		if (bHasCorrelationMismatch)
+		{
+			if (bIgnoreCorrelationMismatch)
+			{
+				FAIREParsedChatFrame Frame;
+				Frame.Kind = EAIREParsedChatFrameKind::Ignored;
+				return Frame;
+			}
+
+			return InvalidFrame(
+				ExpectedCorrelation.RequestId,
+				TEXT("ResponseCorrelationMismatch"),
+				TEXT("HTTP Chat response does not match the active request."));
 		}
 
 		FAIREParsedChatFrame Frame;
@@ -102,43 +160,55 @@ namespace
 
 	FAIREParsedChatFrame ParseErrorPayload(
 		const TSharedPtr<FJsonObject>& Payload,
-		const FString& ExpectedRequestId)
+		const FAIREChatResponseCorrelation& ExpectedCorrelation,
+		const bool bIgnoreCorrelationMismatch)
 	{
 		if (!Payload.IsValid())
 		{
-			return InvalidFrame(ExpectedRequestId, TEXT("InvalidErrorResponse"), TEXT("Error payload is missing."));
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidErrorResponse"), TEXT("Error payload is missing."));
 		}
 
-		int32 ParsedSchemaVersion = 0;
 		FString RequestId;
 		const TSharedPtr<FJsonObject>* ErrorObject = nullptr;
-		if (!Payload->TryGetNumberField(TEXT("schema_version"), ParsedSchemaVersion)
-			|| ParsedSchemaVersion != SchemaVersion
-			|| !Payload->TryGetStringField(TEXT("request_id"), RequestId)
+		if (!Payload->TryGetStringField(TEXT("request_id"), RequestId)
 			|| !FAIREChatJsonAdapter::IsStableId(RequestId)
 			|| !Payload->TryGetObjectField(TEXT("error"), ErrorObject)
 			|| ErrorObject == nullptr
 			|| !ErrorObject->IsValid())
 		{
-			return InvalidFrame(ExpectedRequestId, TEXT("InvalidErrorResponse"), TEXT("Error response validation failed."));
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidErrorResponse"), TEXT("Error response validation failed."));
 		}
-		if (RequestId != ExpectedRequestId)
+		if (RequestId != ExpectedCorrelation.RequestId)
 		{
-			FAIREParsedChatFrame Frame;
-			Frame.Kind = EAIREParsedChatFrameKind::Ignored;
-			return Frame;
+			if (bIgnoreCorrelationMismatch)
+			{
+				FAIREParsedChatFrame Frame;
+				Frame.Kind = EAIREParsedChatFrameKind::Ignored;
+				return Frame;
+			}
+
+			return InvalidFrame(
+				ExpectedCorrelation.RequestId,
+				TEXT("ResponseCorrelationMismatch"),
+				TEXT("HTTP Chat error does not match the active request."));
 		}
 
 		FString Code;
 		FString Message;
 		bool bRetryable = false;
+		const TSharedPtr<FJsonObject>* Details = nullptr;
 		if (!(*ErrorObject)->TryGetStringField(TEXT("code"), Code)
-			|| Code.IsEmpty()
+			|| Code.TrimStartAndEnd().IsEmpty()
+			|| Code.Len() > MaxErrorCodeLength
 			|| !(*ErrorObject)->TryGetStringField(TEXT("message"), Message)
-			|| Message.IsEmpty()
-			|| !(*ErrorObject)->TryGetBoolField(TEXT("retryable"), bRetryable))
+			|| Message.TrimStartAndEnd().IsEmpty()
+			|| Message.Len() > MaxErrorMessageLength
+			|| !(*ErrorObject)->TryGetBoolField(TEXT("retryable"), bRetryable)
+			|| !(*ErrorObject)->TryGetObjectField(TEXT("details"), Details)
+			|| Details == nullptr
+			|| !Details->IsValid())
 		{
-			return InvalidFrame(ExpectedRequestId, TEXT("InvalidErrorResponse"), TEXT("Error response validation failed."));
+			return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidErrorResponse"), TEXT("Error response validation failed."));
 		}
 
 		FAIREParsedChatFrame Frame;
@@ -185,7 +255,7 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 	const TSharedRef<FJsonObject> TimeContext = MakeShared<FJsonObject>();
 	TimeContext->SetStringField(TEXT("source"), TEXT("GameWorld"));
 	TimeContext->SetNumberField(TEXT("day"), Context.Day);
-	TimeContext->SetNumberField(TEXT("hour"), Context.Hour);
+	TimeContext->SetNumberField(TEXT("hour"), FMath::FloorToInt(Context.Hour));
 	TimeContext->SetStringField(TEXT("period"), PeriodName);
 
 	const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
@@ -194,7 +264,7 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 	Payload->SetStringField(TEXT("save_slot_id"), Context.SaveSlotId);
 	Payload->SetStringField(TEXT("companion_id"), CompanionId);
 	Payload->SetStringField(TEXT("session_id"), SessionId);
-	Payload->SetStringField(TEXT("interaction_mode"), TEXT("InGame"));
+	Payload->SetStringField(TEXT("surface"), TEXT("game"));
 	Payload->SetStringField(TEXT("message_id"), MessageId);
 	Payload->SetStringField(TEXT("user_message"), TrimmedMessage);
 	Payload->SetObjectField(TEXT("time_context"), TimeContext);
@@ -225,18 +295,18 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 
 FAIREParsedChatFrame FAIREChatJsonAdapter::ParseWebSocketFrame(
 	const FString& Message,
-	const FString& ExpectedRequestId)
+	const FAIREChatResponseCorrelation& ExpectedCorrelation)
 {
 	TSharedPtr<FJsonObject> FrameObject;
 	if (!DeserializeChatObject(Message, FrameObject))
 	{
-		return InvalidFrame(ExpectedRequestId, TEXT("MalformedJson"), TEXT("WebSocket response is not valid JSON."));
+		return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("MalformedJson"), TEXT("WebSocket response is not valid JSON."));
 	}
 
 	FString Type;
 	if (!FrameObject->TryGetStringField(TEXT("type"), Type) || Type.IsEmpty())
 	{
-		return InvalidFrame(ExpectedRequestId, TEXT("InvalidFrame"), TEXT("WebSocket response type is missing."));
+		return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidFrame"), TEXT("WebSocket response type is missing."));
 	}
 
 	if (Type != TEXT("chat_response") && Type != TEXT("error"))
@@ -249,28 +319,28 @@ FAIREParsedChatFrame FAIREChatJsonAdapter::ParseWebSocketFrame(
 	const TSharedPtr<FJsonObject>* Payload = nullptr;
 	if (!FrameObject->TryGetObjectField(TEXT("payload"), Payload) || Payload == nullptr)
 	{
-		return InvalidFrame(ExpectedRequestId, TEXT("InvalidFrame"), TEXT("WebSocket response payload is missing."));
+		return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("InvalidFrame"), TEXT("WebSocket response payload is missing."));
 	}
 
 	return Type == TEXT("chat_response")
-		? ParseResponsePayload(*Payload, ExpectedRequestId)
-		: ParseErrorPayload(*Payload, ExpectedRequestId);
+		? ParseResponsePayload(*Payload, ExpectedCorrelation, true)
+		: ParseErrorPayload(*Payload, ExpectedCorrelation, true);
 }
 
 FAIREParsedChatFrame FAIREChatJsonAdapter::ParseHttpBody(
 	const FString& Message,
-	const FString& ExpectedRequestId,
+	const FAIREChatResponseCorrelation& ExpectedCorrelation,
 	const bool bIsErrorResponse)
 {
 	TSharedPtr<FJsonObject> Body;
 	if (!DeserializeChatObject(Message, Body))
 	{
-		return InvalidFrame(ExpectedRequestId, TEXT("MalformedJson"), TEXT("HTTP response is not valid JSON."));
+		return InvalidFrame(ExpectedCorrelation.RequestId, TEXT("MalformedJson"), TEXT("HTTP response is not valid JSON."));
 	}
 
 	return bIsErrorResponse
-		? ParseErrorPayload(Body, ExpectedRequestId)
-		: ParseResponsePayload(Body, ExpectedRequestId);
+		? ParseErrorPayload(Body, ExpectedCorrelation, false)
+		: ParseResponsePayload(Body, ExpectedCorrelation, false);
 }
 
 bool FAIREChatJsonAdapter::IsStableId(const FString& Value)

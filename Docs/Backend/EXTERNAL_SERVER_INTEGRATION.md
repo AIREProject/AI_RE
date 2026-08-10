@@ -6,9 +6,9 @@
 워크스페이스의 별도 Git 저장소 `ai_companion_server/`를 채택하고, 실제 서비스 호출은
 다음 배포 서버를 사용합니다.
 
-- Base URL: [https://api.mtvs2026.work](https://api.mtvs2026.work)
-- Swagger UI: [https://api.mtvs2026.work/docs](https://api.mtvs2026.work/docs)
-- OpenAPI: [https://api.mtvs2026.work/openapi.json](https://api.mtvs2026.work/openapi.json)
+- Base URL: [https://traip.mtvs2026.work](https://traip.mtvs2026.work)
+- Swagger UI: [https://traip.mtvs2026.work/docs](https://traip.mtvs2026.work/docs)
+- OpenAPI: [https://traip.mtvs2026.work/openapi.json](https://traip.mtvs2026.work/openapi.json)
 
 파트너는 당분간 Backend, DB, LLM Provider와 배포 코드를 개발하거나 운영하지 않습니다.
 파트너의 범위는 UE/Web 클라이언트 연동, 외부 응답 검증, timeout·오류·미접속 처리와
@@ -52,6 +52,19 @@ DELETE /api/v1/devices/{device_id}
 `ai_mode=companion`을 반환했습니다. 그러나 배포 Swagger에는
 `/v1/companion/message`와 `/v1/companion/event`가 없으므로 두 서버 계약이 현재
 동일하다고 간주할 수 없습니다.
+
+## 2026-08-10 AX-I02 HTTP Chat 재확인
+
+배포 OpenAPI는 `POST /api/v1/chat`와 현재 `ChatRequest`/`ChatResponse`를 제공합니다.
+따라서 AX-I02의 HTTP Chat tactical subset에서는 기존 path/DTO blocker가 해소되었습니다.
+이 확인은 Chat 요청·응답 범위에만 적용하며, 클라이언트는 배포 OpenAPI에 맞춰 호출합니다.
+
+`ErrorEnvelope` custom 오류 형식은 배포 OpenAPI에 명시되어 있지 않습니다. AX-I02
+클라이언트는 현재 `ai_server` code snapshot의 후보 계약을 기준으로 오류 응답을
+fail-closed 검증하고, 실제 런타임 응답이 그 계약과 다르면 계약 불일치로 보고합니다.
+
+`Event`, `Command`, Command Result 및 전체 M04 계약 Gate는 여전히 해결되지 않았습니다.
+이 항목들의 DTO·인증·매핑은 별도 계약 확인 전까지 확정하지 않습니다.
 
 ## 연동 Gate
 

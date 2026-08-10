@@ -8,7 +8,7 @@
 
 - 2026-07-27 재시작 저장소에는 Backend 구현 디렉터리가 없으며, `Docs/Backend/`에는 외부 서버 연동 기준만 둡니다.
 - Backend 구현은 워크스페이스의 별도 Git 저장소 `ai_companion_server/`를 채택합니다.
-- 배포 Backend는 [https://api.mtvs2026.work](https://api.mtvs2026.work)를 사용합니다.
+- 배포 Backend는 [https://traip.mtvs2026.work](https://traip.mtvs2026.work)를 사용합니다.
 - 파트너는 Backend를 개발·운영하지 않고 UE/Web 클라이언트 연동을 담당합니다.
 - 기존 [`Contracts/`](../Contracts/README.md)는 새 서버와 대조가 끝날 때까지 레거시 참고 자료입니다.
 

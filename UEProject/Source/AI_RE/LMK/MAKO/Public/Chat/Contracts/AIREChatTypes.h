@@ -23,7 +23,7 @@ enum class EAIREChatRequestState : uint8
 {
 	Idle,
 	Sending,
-	RetryableFailed,
+	RetryableFailed UMETA(Hidden),
 	Failed,
 	Cancelled
 };
@@ -48,7 +48,8 @@ enum class EAIREChatFakeScenario : uint8
 	Error,
 	Timeout,
 	MalformedResponse,
-	DelayedSuccess
+	DelayedSuccess,
+	Forbidden
 };
 
 USTRUCT(BlueprintType)

@@ -23,7 +23,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
 	bool SendPlayerMessage(const FString& UserMessage);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "AIRE|Chat",
+		meta = (DeprecatedFunction, DeprecationMessage = "Chat retries are not supported. Send a new message instead."))
 	bool RetryLastRequest();
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat")
@@ -35,7 +38,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat|Testing")
 	void SetFakeScenario(EAIREChatFakeScenario InScenario);
 
-	UFUNCTION(BlueprintCallable, Category = "AIRE|Chat|Credentials")
+	UFUNCTION(
+		BlueprintCallable,
+		Category = "AIRE|Chat|Credentials",
+		meta = (DeprecatedFunction, DeprecationMessage = "AIRE_GAME uses no stored client credential."))
 	bool ClearStoredGameClientCredential();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
@@ -59,7 +65,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "AIRE|Chat")
 	FAIREChatRequestFailed OnRequestFailed;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Chat|Credentials")
+	UPROPERTY(
+		EditAnywhere,
+		BlueprintReadWrite,
+		Category = "AIRE|Chat|Credentials",
+		meta = (DeprecatedProperty, DeprecationMessage = "AIRE_GAME uses no token provider."))
 	TScriptInterface<IAIREGameClientTokenProvider> TokenProvider;
 
 protected:
@@ -69,13 +79,6 @@ protected:
 private:
 	bool ValidateContext(const FAIREInGameChatContext& Context, FString& OutError) const;
 	bool BeginActiveRequest();
-	void AcquireCredentialAndBeginRequest();
-	void RegisterGameClient();
-	void HandleRegistrationComplete(
-		FHttpRequestPtr Request,
-		FHttpResponsePtr Response,
-		bool bWasSuccessful,
-		uint64 RequestGeneration);
 	void BeginSelectedTransport(const FString& Token);
 	void ConnectWebSocket(const FString& Token);
 	void HandleWebSocketConnected();
@@ -99,8 +102,7 @@ private:
 	void HandleRequestFailure(
 		const FString& Code,
 		const FString& Message,
-		bool bRetryable,
-		bool bPreserveRequest);
+		bool bRetryable);
 	void HandleConnectionTimeout();
 	void HandleResponseTimeout();
 	void SetConnectionState(EAIREChatConnectionState NewState);
@@ -111,10 +113,6 @@ private:
 	void ClearResponseTimeout();
 	void ResetActiveRequest();
 	void ShutdownRequests();
-	bool ResolveToken(FString& OutToken) const;
-	FString GetCredentialTarget() const;
-	FString LoadOrCreateRegistrationRequestId();
-	FString GetCompanionId() const;
 
 	UPROPERTY(Transient)
 	FAIREInGameChatContext ChatContext;
@@ -132,7 +130,6 @@ private:
 	EAIREChatFakeScenario FakeScenario = EAIREChatFakeScenario::Disabled;
 
 	TSharedPtr<IWebSocket> WebSocket;
-	FHttpRequestPtr RegistrationRequest;
 	FHttpRequestPtr HttpChatRequest;
 	FTimerHandle ConnectionTimeoutHandle;
 	FTimerHandle ResponseTimeoutHandle;
@@ -144,4 +141,5 @@ private:
 	FString ActiveHttpBody;
 	uint64 Generation = 0;
 	bool bIsEndingPlay = false;
+	bool bIsCancellingRequest = false;
 };

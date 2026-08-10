@@ -51,7 +51,7 @@ void UAIREChatHUDWidget::NativeConstruct()
 					&& !CompanionChat->HasInGameContext())
 				{
 					FAIREInGameChatContext DefaultContext;
-					DefaultContext.SaveSlotId = TEXT("test-slot-01");
+					DefaultContext.SaveSlotId = TEXT("demo-slot-1");
 					DefaultContext.Day = 1;
 					DefaultContext.Hour = 12.0f;
 					DefaultContext.Period =

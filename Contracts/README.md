@@ -3,7 +3,7 @@
 > **Status: Legacy reference**
 >
 > As of 2026-07-27, Backend implementation is sourced from the separate
-> `ai_companion_server/` repository and deployed at `https://api.mtvs2026.work`.
+> `ai_companion_server/` repository and deployed at `https://traip.mtvs2026.work`.
 > These schemas and fixtures are not authoritative until reconciled with both
 > `ai_companion_server/docs/current/` and the deployed `/openapi.json`.
 
