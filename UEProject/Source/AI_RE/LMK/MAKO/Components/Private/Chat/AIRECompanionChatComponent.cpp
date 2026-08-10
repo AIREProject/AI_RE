@@ -28,7 +28,7 @@ namespace
 	constexpr int32 PolicyViolationCode = 1008;
 	constexpr uint64 MaxWebSocketMessageBytes = 262144;
 	constexpr TCHAR BootstrapTokenEnvironmentVariable[] = TEXT("AIRE_GAME_BOOTSTRAP_TOKEN");
-	constexpr TCHAR DeviceTokenEnvironmentVariable[] = TEXT("AIRE_GAME_DEVICE_TOKEN");
+	constexpr TCHAR FixedGameClientToken[] = TEXT("AIRE_GAME");
 
 	FString NewStableId(const TCHAR* Prefix)
 	{
@@ -1055,43 +1055,7 @@ void UAIRECompanionChatComponent::ShutdownRequests()
 
 bool UAIRECompanionChatComponent::ResolveToken(FString& OutToken) const
 {
-	OutToken.Reset();
-	bool bShouldPersistRuntimeToken = false;
-	if (TokenProvider.GetObject() != nullptr)
-	{
-		if (!IAIREGameClientTokenProvider::Execute_GetGameClientToken(
-			TokenProvider.GetObject(),
-			OutToken))
-		{
-			OutToken.Reset();
-			return false;
-		}
-	}
-	else
-	{
-		OutToken = FPlatformMisc::GetEnvironmentVariable(DeviceTokenEnvironmentVariable);
-		bShouldPersistRuntimeToken = !OutToken.IsEmpty();
-		if (!bShouldPersistRuntimeToken
-			&& !FAIREGameClientCredentialStore::Load(GetCredentialTarget(), OutToken))
-		{
-			return false;
-		}
-	}
-
-	if (OutToken.Len() < 32 || OutToken.Len() > 512)
-	{
-		OutToken.Reset();
-		return false;
-	}
-
-	if (bShouldPersistRuntimeToken
-		&& !FAIREGameClientCredentialStore::Save(GetCredentialTarget(), OutToken))
-	{
-		UE_LOG(
-			LogAIRECompanionChat,
-			Warning,
-			TEXT("Could not persist the runtime GameClient credential."));
-	}
+	OutToken = FixedGameClientToken;
 	return true;
 }
 
