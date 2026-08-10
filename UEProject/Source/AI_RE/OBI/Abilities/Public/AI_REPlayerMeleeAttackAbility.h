@@ -53,6 +53,12 @@ private:
 	void HandleHitEvent(FGameplayEventData Payload);
 
 	UFUNCTION()
+	void HandleActiveHitStart(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void HandleActiveHitEnd(FGameplayEventData Payload);
+
+	UFUNCTION()
 	void HandleComboWindowOpen(FGameplayEventData Payload);
 
 	UFUNCTION()
@@ -70,15 +76,31 @@ private:
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;
 
-	UPROPERTY()
-	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitEventTask;
+	// 콤보 윈도우 타이밍 감지 태스크
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ComboWindowOpenTask;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ComboWindowCloseTask;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ComboInputTask;
 
-	UPROPERTY()
-	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboWindowOpenTask;
+	// 연속 타격(Active Hit) 감지 태스크
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitStartTask;
 
-	UPROPERTY()
-	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboWindowCloseTask;
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitEndTask;
 
-	UPROPERTY()
-	TObjectPtr<UAbilityTask_WaitGameplayEvent> ComboInputTask;
+	// 지속 판정용 타이머 핸들
+	FTimerHandle ActiveHitTimerHandle;
+
+	// 현재 스윙에서 이미 타격한 적들을 기억하는 배열 (중복 타격 방지)
+	UPROPERTY(Transient)
+	TSet<TWeakObjectPtr<AActor>> HitActorsThisSwing;
+
+	// 기존의 단발성 타격 이벤트 (가벼운 무기/맨손용)
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> HitEventTask;
 };

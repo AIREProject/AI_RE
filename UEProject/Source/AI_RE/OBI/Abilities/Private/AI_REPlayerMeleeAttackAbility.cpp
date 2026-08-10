@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
@@ -12,7 +13,7 @@
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REWeaponItemDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "../../LMK/MAKO/Public/Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 
 UAI_REPlayerMeleeAttackAbility::UAI_REPlayerMeleeAttackAbility()
 {
@@ -47,6 +48,21 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 	{
 		HitEventTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleHitEvent);
 		HitEventTask->ReadyForActivation();
+	}
+
+	// 연속 판정용 이벤트 수신 대기 (다단 히트/트레이스)
+	ActiveHitStartTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.Start")), nullptr, false, false);
+	if (ActiveHitStartTask)
+	{
+		ActiveHitStartTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleActiveHitStart);
+		ActiveHitStartTask->ReadyForActivation();
+	}
+
+	ActiveHitEndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.End")), nullptr, false, false);
+	if (ActiveHitEndTask)
+	{
+		ActiveHitEndTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleActiveHitEnd);
+		ActiveHitEndTask->ReadyForActivation();
 	}
 
 	ComboWindowOpenTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboWindowOpen")), nullptr, false, false);
@@ -119,8 +135,16 @@ void UAI_REPlayerMeleeAttackAbility::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ActiveHitTimerHandle);
+	}
+	HitActorsThisSwing.Empty();
+
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
+	ActiveHitStartTask = nullptr;
+	ActiveHitEndTask = nullptr;
 	ComboWindowOpenTask = nullptr;
 	ComboWindowCloseTask = nullptr;
 	ComboInputTask = nullptr;
@@ -140,7 +164,31 @@ void UAI_REPlayerMeleeAttackAbility::HandleMontageInterrupted()
 
 void UAI_REPlayerMeleeAttackAbility::HandleHitEvent(FGameplayEventData Payload)
 {
+	// 기존 단발성 타격 처리 (한 번만 검사)
+	HitActorsThisSwing.Empty();
 	PerformTraceHit();
+}
+
+void UAI_REPlayerMeleeAttackAbility::HandleActiveHitStart(FGameplayEventData Payload)
+{
+	// 연속 판정 시작 (배열 비우고 타이머 시작)
+	HitActorsThisSwing.Empty();
+
+	if (GetWorld())
+	{
+		// 0.05초마다 PerformTraceHit 실행
+		GetWorld()->GetTimerManager().SetTimer(ActiveHitTimerHandle, this, &UAI_REPlayerMeleeAttackAbility::PerformTraceHit, 0.05f, true);
+	}
+}
+
+void UAI_REPlayerMeleeAttackAbility::HandleActiveHitEnd(FGameplayEventData Payload)
+{
+	// 연속 판정 끝 (타이머 정지 및 배열 비우기)
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ActiveHitTimerHandle);
+	}
+	HitActorsThisSwing.Empty();
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen(FGameplayEventData Payload)
@@ -153,19 +201,22 @@ void UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose(FGameplayEventData P
 {
 	bIsComboWindowOpen = false;
 	
-	if (bHasComboInput)
+	if (!bHasComboInput)
 	{
-		// 콤보 입력이 성공했다면, Close 노티파이가 있는 이 시점에 '즉시' 다음 모션으로 강제 점프!
+		// 유저가 입력하지 않았다면, 여기서 몽타주를 멈춰서 Idle로 부드럽게 넘어가게 함 (후딜레이 모션이 없으므로)
 		ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
 		if (Character && Character->GetMesh() && Character->GetMesh()->GetAnimInstance())
 		{
 			UAnimInstance* AnimInst = Character->GetMesh()->GetAnimInstance();
-			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex); // HandleComboInput에서 이미 1 증가됨
-			
-			AnimInst->Montage_JumpToSection(FName(*NextSectionStr), CurrentMontage);
+			// 0.25초의 Blend Out 시간을 주어 뚝 끊기지 않고 부드럽게 멈춥니다.
+			AnimInst->Montage_Stop(0.25f, CurrentMontage);
 		}
-		
-		// 점프 후 다시 다음 입력을 받기 위해 초기화
+	}
+	else
+	{
+		// 콤보 입력이 성공했다면, 점프하지 않고 '가만히' 둡니다!
+		// 몽타주에 Linked 세팅이 되어있으므로 물 흐르듯 자연스럽게 다음 타격으로 넘어갑니다.
+		// 다음 입력을 받기 위해 상태만 초기화합니다.
 		bHasComboInput = false;
 	}
 }
@@ -231,11 +282,14 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 	{
 		AActor* HitActor = HitResult.GetActor();
 		// 구체 트레이스 시각화 (빨간색 -> 닿으면 초록색)
-		DrawDebugCapsule(GetWorld(), TraceStart + (TraceEnd - TraceStart) * HitResult.Time, 45.0f, 45.0f, FQuat::Identity, FColor::Green, false, 2.0f);
-		DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 15.0f, FColor::Red, false, 2.0f);
+		// DrawDebugCapsule(GetWorld(), TraceStart + (TraceEnd - TraceStart) * HitResult.Time, 45.0f, 45.0f, FQuat::Identity, FColor::Green, false, 2.0f);
+		// DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 15.0f, FColor::Red, false, 2.0f);
 
-		if (HitActor)
+		if (HitActor && !HitActorsThisSwing.Contains(HitActor))
 		{
+			// 이번 스윙에 처음 맞은 놈이라면 기록
+			HitActorsThisSwing.Add(HitActor);
+
 			if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, FString::Printf(TEXT("💥 [Debug] 타격 성공! 대상: %s, 데미지: %.1f"), *HitActor->GetName(), Dmg));
 
 			// 하이브리드 최적화 분기: ASC가 있는 대상 vs 단순 자원(나무/돌)
