@@ -93,6 +93,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance")
 	bool AreSoxAndShoesVisible() const;
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance")
+	void SetHoodVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance")
+	bool IsHoodVisible() const;
+
 	bool ResetAttributesToConfiguredDefaults();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE")
@@ -108,6 +114,7 @@ protected:
 
 private:
 	void ApplySoxAndShoesVisibility();
+	void ApplyHoodVisibility();
 	bool InitializeAutonomousEvadeRuntime();
 	void ShutdownAutonomousEvadeRuntime();
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
@@ -158,6 +165,9 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
 	bool bSoxAndShoesVisible = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
+	bool bHoodVisible = true;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle InvulnerableStateChangedDelegateHandle;

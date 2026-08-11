@@ -31,6 +31,14 @@ namespace
 	constexpr TCHAR CompanionId[] = TEXT("MAKO");
 	const FName SoxMaterialSlotName(TEXT("UE_MIMI_BootCuff"));
 	const FName ShoesMaterialSlotName(TEXT("UE_MIMI_Shoes"));
+	const FName HoodMaterialSlotNames[] =
+	{
+		FName(TEXT("MIMI_Hood_CoolSlate_v003")),
+		FName(TEXT("MIMI_HoodRim_AntiqueGold_v003")),
+		FName(TEXT("MIMI_CrestGlowTeal_v003")),
+		FName(TEXT("MIMI_CrestGold_v003")),
+		FName(TEXT("MIMI_CrestSlate_v003"))
+	};
 	constexpr float StaminaRegenPeriod = 0.1f;
 }
 
@@ -244,6 +252,17 @@ bool AAIRECompanionCharacter::AreSoxAndShoesVisible() const
 	return bSoxAndShoesVisible;
 }
 
+void AAIRECompanionCharacter::SetHoodVisible(const bool bVisible)
+{
+	bHoodVisible = bVisible;
+	ApplyHoodVisibility();
+}
+
+bool AAIRECompanionCharacter::IsHoodVisible() const
+{
+	return bHoodVisible;
+}
+
 FString AAIRECompanionCharacter::GetCompanionId() const
 {
 	return CompanionId;
@@ -267,12 +286,14 @@ void AAIRECompanionCharacter::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 	ApplySoxAndShoesVisibility();
+	ApplyHoodVisibility();
 }
 
 void AAIRECompanionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	ApplySoxAndShoesVisibility();
+	ApplyHoodVisibility();
 
 	check(AbilitySystemComponent);
 	check(CompanionAttributeSet);
@@ -412,6 +433,45 @@ void AAIRECompanionCharacter::ApplySoxAndShoesVisibility()
 				bSoxAndShoesVisible,
 				LODIndex);
 		}
+	}
+}
+
+void AAIRECompanionCharacter::ApplyHoodVisibility()
+{
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (!IsValid(MeshComponent))
+	{
+		return;
+	}
+
+	bool bFoundHoodSlot = false;
+	const int32 LODCount = MeshComponent->GetNumLODs();
+	for (const FName& HoodMaterialSlotName : HoodMaterialSlotNames)
+	{
+		const int32 HoodMaterialIndex = MeshComponent->GetMaterialIndex(HoodMaterialSlotName);
+		if (HoodMaterialIndex == INDEX_NONE)
+		{
+			continue;
+		}
+
+		bFoundHoodSlot = true;
+		for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
+		{
+			MeshComponent->ShowMaterialSection(
+				HoodMaterialIndex,
+				INDEX_NONE,
+				bHoodVisible,
+				LODIndex);
+		}
+	}
+
+	if (!bFoundHoodSlot)
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Warning,
+			TEXT("Companion mesh %s does not provide a hood material slot."),
+			*GetNameSafe(MeshComponent->GetSkeletalMeshAsset()));
 	}
 }
 
