@@ -73,10 +73,25 @@ AX-W01 WebApp은 pairing 및 브라우저 credential 저장 없이 `AIRE_WEB` �
 same-origin `/api/*`를 사용하며, 개발 Vite proxy와 Sites Worker가 각각
 `https://traip.mtvs2026.work`로 전달합니다.
 
-현재 private GPT Sites 배포의 루트 HTML, JavaScript asset 및 `/health` Backend proxy가
-HTTP 200으로 확인됐습니다. 이 배포 확인은 Mobile Chat 정상 응답과 전체 실패 매트릭스의
-실제 휴대폰 검증을 대신하지 않습니다. `AIRE_WEB`은 공개 고정 제품 값이므로 사이트를
-public access로 전환할 때는 Backend의 단일-player demo 보안 경계를 별도로 검토해야 합니다.
+2026-08-10 당시 private GPT Sites 배포의 루트 HTML, JavaScript asset 및 `/health` Backend
+proxy가 HTTP 200으로 확인됐습니다. 이 배포 확인은 Mobile Chat 정상 응답과 전체 실패
+매트릭스의 실제 휴대폰 검증을 대신하지 않습니다.
+
+## 2026-08-11 AX-W02 Offline Task Web 배포
+
+배포 OpenAPI의 `POST /api/v1/tasks`, `GET /api/v1/tasks`와 로컬 `AIRE_SERVER`의 Offline
+Task DTO가 일치함을 확인하고, WebApp에 Gathering/Crafting 생성과 Task 목록 조회를
+추가했습니다. WebClient는 GameClient 전용 start/complete/claim 및 `/collect`를 호출하지
+않으며, `Completed`와 `Claimed`를 UE Inventory 지급 완료로 표시하지 않습니다.
+
+사용자 승인에 따라 GPT Sites 접근 정책은 public으로 전환된 현재 상태를 유지합니다.
+2026-08-11 배포 뒤 루트 HTML, 배포 JavaScript와 `/health` same-origin proxy가 확인됐고,
+배포 JavaScript는 사용자 성공 빌드 산출물과 SHA-256이 일치했습니다. 이 public 운영은
+고정 `AIRE_WEB` 신원을 사용하는 단일-player demo 경계이며 production 인증을 제공하지
+않습니다.
+
+실제 모바일 Gathering/Crafting 생성·목록 확인, 동일 request ID 멱등성, 네 status filter와
+401/403·timeout·network·invalid/malformed JSON UI 매트릭스는 아직 Review 항목입니다.
 
 ## 연동 Gate
 
