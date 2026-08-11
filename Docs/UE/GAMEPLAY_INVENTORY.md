@@ -1,8 +1,10 @@
 # Gameplay Inventory와 Shared Storage(공유 보관함) 계약
 
 - 관련 Milestone: `M03 Companion Local AI`
-- 관련 Task: `M03-E08-T01`, `M03-E07-T02`, `M03-E08-T02`, `M03-E08-T05`
-- 현재 상태: M03-E08-T01·M03-E07-T02·M03-E08-T02·M03-E08-T05 Review.
+- 관련 Task: `M03-E08-T01`, `M03-E07-T02`, `M03-E08-T02`, `M03-E08-T03`, `M03-E08-T05`, `M03-E08-T06`
+- 현재 상태: M03-E08-T01·M03-E07-T02·M03-E08-T05 Review,
+  M03-E08-T02·M03-E08-T06 In Progress, M03-E08-T03 Review
+  (SaveGame 계약·구현 범위 반영 완료, 사용자 Build/Automation/PIE 대기).
   최신 UI·물리적 Shared Storage Work C++의 사용자 UBT와 세 Inventory WBP 및
   `BP_AIRESharedStorage` Compile/Save는 통과했습니다. 리네임 이후 PIE 정상·실패 경로,
   Storage Rule·Preferred Storage 연결과 두 번째 MAKO 무기 검증은 대기 중입니다.
@@ -15,6 +17,12 @@
 - `AIRE.Inventory.MAKO`: 일반 Item Stack 20칸과 별도 Weapon Equipment 1칸
 - `AIRE.Inventory.SharedStorage`: Player·MAKO 공용 occupied Stack 50칸
 - Container별 revision, 성공한 mutation ID와 장착 예약
+
+Player 일반 Inventory 30칸은 기존 `UAI_REPlayerInventoryComponent`가 계속 소유합니다.
+Component는 일반 Inventory revision과 별도 Weapon Equipment 1칸의 안정 Item ID를
+소유하고, Gameplay Inventory Subsystem은 MAKO↔Player 직접 Transfer와 Player 장착 요청의
+Session·mutation 중복 방지 경계를 제공합니다. Player Quick Slot 100~109는 이 직접
+Transfer와 Equipment Slot에 포함하지 않습니다.
 
 Subsystem은 Actor, ASC 또는 Equipment Component를 저장하지 않습니다. Item 상태에는
 안정 `ItemId`, Slot Index와 Count만 저장하고 정적 Definition과 MaxStack은 기존
@@ -31,6 +39,10 @@ Add·Remove·Move·Transfer는 Session ID, mutation GUID와 expected revision을
 성공한 mutation 재요청은 `AlreadyApplied`를 반환하고 revision이나 Delegate를 다시
 증가시키지 않습니다. Container 간 Transfer는 양쪽 값을 먼저 commit한 뒤 변경된 각
 Container의 revision과 Delegate를 한 번씩 갱신합니다.
+
+MAKO 일반 20칸은 `UAI_REItemSubsystem`에서 확인되는 일반 Item도 보관할 수 있습니다.
+MAKO 전용 Definition 요구는 Equipment 장착 호환성에만 적용하며, Player에서 옮긴 일반
+재료 Item을 SaveGame 검증이 거부해서 이전 세대로 되돌리는 일이 없어야 합니다.
 
 명시적 Session reset은 새 Session ID를 만들고 Container, revision, 장착 예약과
 in-session mutation 기록을 초기화합니다. SaveGame과 영속 중복 방지는 후속
@@ -50,6 +62,22 @@ Session·mutation 불일치 상태를 변경하지 않습니다.
 `UAIRECompanionInventoryComponent`는 Healing과 기존 호출자를 위한 Has·Add·Consume·Equip
 façade 및 Equipment/ASC Callback 수명만 유지합니다. Item 수량과 equipped·pending Item
 ID는 Subsystem과 중복 소유하지 않습니다.
+
+### Player Equipment
+
+Player Weapon Equipment는 일반 30칸 및 Quick Slot과 분리된 1칸입니다. Player 일반
+Inventory의 `UAI_REWeaponItemDataAsset` Stack 1개를 Equipment Slot에 drop하면 최신 Player
+revision·Session·mutation ID와 Source Slot을 검증합니다. `UAI_REPlayerCombatComponent`가
+Weapon Definition을 받아들인 뒤에만 새 무기를 Equipment Item ID로 commit하고, 이전
+장착 무기는 같은 Source Slot으로 원자 교환합니다. 런타임 장착이 거부되면 Item 배열과
+Equipment Item ID는 모두 유지합니다.
+
+Player Combat Component는 장착 성공 시 기존 Weapon Ability·Mesh·Linked Anim Layer를
+정리하고 새 Definition의 Ability·Mesh·Montage·Layer를 적용합니다. Montage 비동기 Load는
+Component 종료 또는 다음 장착에서 취소하며 Inventory commit을 늦게 변경하지 않습니다.
+Player 장착은 Player 전용 `UAI_REWeaponItemDataAsset`만 허용합니다. MAKO 전용 Weapon은
+Player 일반 Inventory에 보관할 수 있지만 Player Equipment Slot에는 장착할 수 없으며,
+반대 방향도 같은 호환성 규칙을 적용합니다.
 
 ## 4. 월드 Shared Storage 접근점
 
@@ -73,10 +101,11 @@ WorkOrder 상태를 소유하지 않습니다.
 
 ## 5. Inventory UI 경계
 
-Inventory UI는 두 개의 독립 화면입니다. Player가 공유 보관함 Actor와 상호작용하면
-`Player Inventory + 공유 보관함`만 표시하고, Player가 MAKO와 상호작용하면
-`MAKO Inventory 20칸 + Equipment 1칸`만 표시합니다. Shared Storage 화면에 MAKO Inventory를
-합치거나 MAKO 화면에 Storage Transfer 입력을 추가하지 않습니다.
+Inventory UI는 상호작용 대상에 따라 두 화면을 사용합니다. Player가 공유 보관함 Actor와
+상호작용하면 기존 `Player Inventory + 공유 보관함` 화면을 표시합니다. Player가 MAKO와
+상호작용하면 하나의 합성 modal에서 왼쪽 `MAKO Inventory 20칸 + Equipment 1칸`, 오른쪽
+`Player Inventory 30칸 + Equipment 1칸`을 함께 표시합니다. 합성 modal은 Shared Storage나
+StorageTransfer WorkOrder를 표시하거나 실행하지 않습니다.
 
 정식 명칭은 한국어 `공유 보관함`, 영문 `Shared Storage`입니다. C++ 계약은
 `AAIRESharedStorageActor`, `UAIREStorageInventoryPanelWidget`, `StorageTransfer`,
@@ -91,23 +120,47 @@ redirector로 이전하며, 신규 코드·UI 문구·자산 이름에는 정식
 mutation·Delegate binding은 C++ 책임입니다. WBP는 BindWidget 이름에 맞춘 배치·색상·
 폰트·크기와 `SlotWidgetClass` 지정만 소유하며 Graph에서 Inventory 상태를 변경하지 않습니다.
 
+`WBP_AIRECompanionInventoryPanel`의 합성 화면 필수 BindWidget은 `MakoGrid`,
+`EquipmentGrid`, `PlayerGrid`, `PlayerEquipmentGrid`, `QuantityPicker`,
+`QuantitySpinBox`, `QuantityConfirmButton`, `QuantityCancelButton`, `CloseButton`,
+`StatusText`입니다. 기존 `EquipButton`은 사용하지 않으며 Equipment 장착은 Slot drop으로만
+요청합니다.
+
 Player와 Shared Storage 사이의 일반 drag는 최신 Source Stack 전체를 이동합니다. `Shift+drag`는
 WBP 수량 선택기를 열어 정확한 수량을 입력받습니다. 반대편 Grid에 drop한 경우만 처리하고
 목적 Slot은 지정하지 않으며, 기존 Stack 병합 뒤 첫 빈 Slot을 사용하는 자동 배치를 유지합니다.
 요청 수량 전체를 수용하지 못하면 양쪽 상태를 모두 보존합니다. 구형 Deposit·Withdraw 버튼과
 항상 노출된 수량 입력은 사용하지 않습니다.
 
+MAKO 합성 modal의 MAKO↔Player 일반 Grid drag도 같은 전체 Stack·`Shift+drag` 정확 수량·
+자동 Stack 병합·첫 빈 Slot 규칙을 사용합니다. 요청은 Player revision과 MAKO revision,
+Session·mutation ID 및 최신 Source Stack을 검증하고, 전량 수용할 수 있을 때만 양쪽을
+한 번에 commit합니다. Full·stale revision·invalid Source·중복 mutation에서는 Item을
+부분 이동하지 않습니다. Equipment Slot은 일반 Transfer Source 또는 Destination이 아니며,
+MAKO 일반 Slot→MAKO Equipment와 Player 일반 Slot→Player Equipment drop만 장착 요청으로
+처리합니다. 상대 Inventory의 Weapon을 바로 Equipment Slot으로 drop하는 이동+장착 결합은
+지원하지 않습니다.
+
 Storage Panel은 Player `OnInventoryChanged`와 Shared Storage `OnContainerChanged`를,
-MAKO Panel은 `OnInventoryChanged`와 `OnWeaponEquipResult`를 구독합니다. 같은 프레임 신호는
+MAKO 합성 Panel은 MAKO·Player `OnInventoryChanged`와 각 `OnWeaponEquipResult`를 구독합니다. 같은 프레임 신호는
 다음 Tick 한 번의 Refresh로 합치며, UI는 mutation 성공 전에 수량을 바꾸거나 실제 배열·
 Session·revision을 소유하지 않습니다. Conflict·Session 변경에서는 자동 재시도하지 않고
 최신 Snapshot과 실제 Player Inventory를 다시 표시합니다.
+
+합성 Panel은 Item 아이콘·이름·Stack 수량과 Equipment 상태만 표시합니다. Item 상세 카드,
+무게 수치·무게 제한·무게 Progress Bar는 구현하거나 표시하지 않습니다.
 
 ## 6. Player와 테스트 경계
 
 Player 개인 Inventory와 Quick Slot은 기존 Actor Component가 계속 소유합니다.
 Shared Storage Transfer는 일반 Slot만 대상으로 post-state를 먼저 준비하고 Player·Shared Storage를 함께
 commit합니다. 기존 `AddItem`의 부분 성공 동작, Quick Slot과 `UseItem`은 바꾸지 않습니다.
+
+Player Inventory revision은 일반 Item 변경, Shared Storage/MAKO 원자 Transfer와 Player
+Equipment commit에서 증가합니다. MAKO↔Player 직접 Transfer는 기존 Actor Component의
+exact prepare/commit 경계를 사용하며 Player Quick Slot과 장착 Item을 Source로 사용하지
+않습니다. 정상 Item은 양쪽 일반 Inventory에 보관할 수 있지만 실제 장착은 각 소유자의
+호환 Weapon Data Asset만 허용합니다.
 
 Player 제작은 `Player Inventory → Shared Storage`, MAKO 제작은
 `MAKO Inventory → Shared Storage` 우선순위로 각 로컬 Inventory와 Shared Storage를 하나의 재료
@@ -166,3 +219,53 @@ profile/save/companion scope, Session·Container, base revision, candidate/opera
 Add·Remove batch를 검증한 뒤 한 번만 적용합니다. 현재 Backend에는 Inventory·Snapshot·
 Offline settlement 계약이 없으므로 HTTP, JSON 필드와 재시도 정책은 확정하지 않습니다.
 실제 연동은 Backend 계약과 배포 OpenAPI가 일치한 뒤 `M03-E08-T04`에서 구현합니다.
+
+## 8. AX-I07 로컬 SaveGame 경계
+
+`M03-E08-T03`은 Backend 동기화가 아닌 Player·MAKO·Shared Storage의 로컬 영속성을
+다룹니다. SaveGame은 다음 canonical scope를 사용합니다.
+
+- `profile_id=AIRE_OPEN`, `save_slot_id=demo-slot-1`, `companion_id=mako`
+- `save_format_version=2`, `item_content_version=1`, `UserIndex=0`을 사용합니다. 콘텐츠
+  호환성이 깨질 때 persistence 코드 상수를 수동 증가합니다.
+- `local_format_version`과 현재 빌드의 `content_version`을 envelope에 함께 기록하고,
+  둘 중 하나라도 지원되지 않으면 해당 세대를 무효로 처리합니다.
+- 두 Container의 안정 ID·capacity·revision·Slot/ItemId/Count와 MAKO의 안정
+  `EquippedItemId`만 값으로 저장합니다. Actor·ASC·Component·Equipment 포인터와
+  Item Definition 경로는 저장하지 않습니다.
+- MAKO 일반 Stack은 Player에서 전달된 일반 Item을 포함해 현재 Item catalog에 존재하고
+  MaxStack을 만족하면 유효합니다. MAKO Equipment만 MAKO 호환 Weapon Definition을 요구합니다.
+- Player는 기존 `UAI_REPlayerInventoryComponent`가 계속 소유하며, 일반 Inventory
+  capacity 30, 일반 Slot 0~29, Quick Slot 100~109의 Slot/ItemId/Count, revision과 안정된
+  Player `EquippedWeaponItemId`를 같은 envelope 세대에 값으로 저장합니다. 저장된 Player
+  값은 비동기 load 검증 뒤 Player Component가 등록될 때 한 번 적용하고 Combat Component에
+  runtime weapon restore를 요청합니다.
+- Player 필드가 추가된 format 2는 format 1과 호환되지 않습니다. 부분 migration 없이
+  format 1 세대를 무효로 처리하고 다른 유효 세대로 fallback하거나 빈 안전 상태를 사용합니다.
+- MAKO `Equipping`·`Recovering` transition과 pending/previous/reserved callback 상태는
+  직렬화하지 않습니다. `RecoveryFailed`도 transition은 복원하지 않고 마지막 안정
+  `EquippedItemId`만 저장하며, active transition 중 dirty 요청은 전환이 끝날 때까지
+  새 세대 저장을 미룹니다.
+
+SaveGame은 `AIRE.Inventory.Local.Primary`와 `AIRE.Inventory.Local.Previous` 두 개의 교대
+세대 슬롯을 사용합니다. 각 envelope의 단조 증가
+`generation`과 payload 검증 결과를 함께 확인하고, 유효한 세대 중 가장 높은 generation을
+선택합니다. 최신 세대가 손상·구버전·scope mismatch·content mismatch·검증 실패면 다른
+세대로 fallback합니다. 두 슬롯이 모두 존재하지 않을 때만 load 결과 확정 뒤 Config seed를
+한 번 적용하고, 유효한 복원본에는 seed를 다시 합치지 않습니다. 하나라도 존재하지만 두
+세대가 모두 유효하지 않으면 seed 없이 빈 안전 상태로 준비합니다.
+
+영속 중복 방지 ledger는 mutation result, Work result, import candidate와 import operation을
+각각 최대 256개로 제한하고 deterministic eviction을 사용합니다. 저장된 안정 ID는 다음
+실행에서도 `AlreadyApplied` 판정에 사용하며, 재전송은 수량·revision·Delegate를 다시
+변경하지 않습니다. `WorldDrop`처럼 성공한 보상 ledger에 기록하지 않는 기존 계약은
+그대로 유지합니다.
+
+성공한 로컬 mutation·Work·Import·Equipment commit은 dirty 상태를 만들고, 저장 요청은
+single-flight로 병합합니다. 진행 중인 저장이 있으면 최신 값만 다음 저장으로 합치며,
+실패·취소·종료 중 callback이 현재 또는 새 Session을 되돌리지 않습니다. 저장 실패는
+이전 유효 세대를 보존하고 Local Work·Inventory·Combat를 중단시키지 않습니다.
+
+Backend HTTP, Outbox, Offline Settlement와 모바일 상태 조회는 포함하지 않으며, 실제 외부
+정산은 후속 계약 Gate 이후 별도 Task에서 다룹니다. 즉 이 저장은 PC 로컬 SaveGame이며
+Backend Inventory 동기화를 의미하지 않습니다.

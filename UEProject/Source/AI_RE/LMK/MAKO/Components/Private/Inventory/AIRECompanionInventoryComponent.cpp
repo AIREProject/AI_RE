@@ -36,9 +36,7 @@ bool UAIRECompanionInventoryComponent::InitializeInventory(
 		IsValid(GameInstance)
 		? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
 		: nullptr;
-	if (!IsValid(InventorySubsystem)
-		|| !InventorySubsystem->EnsureMakoInventoryInitialized(
-			CompanionConfig))
+	if (!IsValid(InventorySubsystem))
 	{
 		return false;
 	}
@@ -51,39 +49,25 @@ bool UAIRECompanionInventoryComponent::InitializeInventory(
 		.AddUObject(
 			this,
 			&UAIRECompanionInventoryComponent::HandleWeaponEquipCompleted);
-	GameplayInventory->OnContainerChanged.AddUniqueDynamic(
-		this,
-		&UAIRECompanionInventoryComponent::HandleContainerChanged);
-	bIsInitialized = true;
-
-	FAIREInventoryContainerSnapshot Snapshot;
-	if (!GetInventorySnapshot(Snapshot))
+	if (!GameplayInventory->EnsureMakoInventoryInitialized(CompanionConfig))
 	{
 		ShutdownInventory();
 		return false;
 	}
-	BoundInventorySessionId = Snapshot.SessionId;
-	if (!Snapshot.Equipment.EquippedItemId.IsNone())
+
+	if (GameplayInventory->IsPersistenceReady())
 	{
-		const bool bAccepted = RequestRuntimeEquipment(
-			Snapshot.Equipment.EquippedItemId,
-			EAIREEquipmentCallbackMode::RestoreCurrent,
-			Snapshot.SessionId,
-			FGuid());
-		if (!bAccepted
-			&& EquipmentCallbackMode
-				== EAIREEquipmentCallbackMode::RestoreCurrent)
+		if (CompleteInventoryInitialization())
 		{
-			const FName FailedItemId =
-				Snapshot.Equipment.EquippedItemId;
-			GameplayInventory->CompleteMakoEquipmentRuntimeRestore(
-				Snapshot.SessionId,
-				FailedItemId,
-				false);
-			ClearActiveEquipmentRequest();
-			OnWeaponEquipResult.Broadcast(FailedItemId, false);
+			return true;
 		}
+		ShutdownInventory();
+		return false;
 	}
+	PersistenceReadyDelegateHandle = GameplayInventory->OnPersistenceReady()
+		.AddUObject(
+			this,
+			&UAIRECompanionInventoryComponent::HandlePersistenceReady);
 
 	return true;
 }
@@ -104,10 +88,16 @@ void UAIRECompanionInventoryComponent::ShutdownInventory()
 
 	if (GameplayInventory.IsValid())
 	{
+		if (PersistenceReadyDelegateHandle.IsValid())
+		{
+			GameplayInventory->OnPersistenceReady().Remove(
+				PersistenceReadyDelegateHandle);
+		}
 		GameplayInventory->OnContainerChanged.RemoveDynamic(
 			this,
 			&UAIRECompanionInventoryComponent::HandleContainerChanged);
 	}
+	PersistenceReadyDelegateHandle.Reset();
 	if (WeaponEquipCompletedDelegateHandle.IsValid()
 		&& EquipmentComponent.IsValid())
 	{
@@ -130,6 +120,80 @@ void UAIRECompanionInventoryComponent::ShutdownInventory()
 	bIsInitialized = false;
 	OnInventoryChanged.Clear();
 	OnWeaponEquipResult.Clear();
+}
+
+void UAIRECompanionInventoryComponent::HandlePersistenceReady(
+	const FAIREInventoryPersistenceResult& Result)
+{
+	(void)Result;
+	if (!CompleteInventoryInitialization())
+	{
+		UE_LOG(
+			LogAIRECompanionInventory,
+			Error,
+			TEXT("Inventory persistence became ready but MAKO initialization failed."));
+		ShutdownInventory();
+	}
+}
+
+bool UAIRECompanionInventoryComponent::CompleteInventoryInitialization()
+{
+	if (bIsInitialized)
+	{
+		return true;
+	}
+	if (!GameplayInventory.IsValid()
+		|| !EquipmentComponent.IsValid()
+		|| !AbilitySystem.IsValid()
+		|| !GameplayInventory->IsPersistenceReady())
+	{
+		return false;
+	}
+
+	if (PersistenceReadyDelegateHandle.IsValid())
+	{
+		GameplayInventory->OnPersistenceReady().Remove(
+			PersistenceReadyDelegateHandle);
+		PersistenceReadyDelegateHandle.Reset();
+	}
+	GameplayInventory->OnContainerChanged.AddUniqueDynamic(
+		this,
+		&UAIRECompanionInventoryComponent::HandleContainerChanged);
+	bIsInitialized = true;
+
+	FAIREInventoryContainerSnapshot Snapshot;
+	if (!GetInventorySnapshot(Snapshot))
+	{
+		bIsInitialized = false;
+		GameplayInventory->OnContainerChanged.RemoveDynamic(
+			this,
+			&UAIRECompanionInventoryComponent::HandleContainerChanged);
+		return false;
+	}
+	BoundInventorySessionId = Snapshot.SessionId;
+	if (Snapshot.Equipment.EquippedItemId.IsNone())
+	{
+		return true;
+	}
+
+	const bool bAccepted = RequestRuntimeEquipment(
+		Snapshot.Equipment.EquippedItemId,
+		EAIREEquipmentCallbackMode::RestoreCurrent,
+		Snapshot.SessionId,
+		FGuid());
+	if (!bAccepted
+		&& EquipmentCallbackMode
+			== EAIREEquipmentCallbackMode::RestoreCurrent)
+	{
+		const FName FailedItemId = Snapshot.Equipment.EquippedItemId;
+		GameplayInventory->CompleteMakoEquipmentRuntimeRestore(
+			Snapshot.SessionId,
+			FailedItemId,
+			false);
+		ClearActiveEquipmentRequest();
+		OnWeaponEquipResult.Broadcast(FailedItemId, false);
+	}
+	return true;
 }
 
 bool UAIRECompanionInventoryComponent::HasItem(

@@ -84,92 +84,159 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 
 void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)
 {
-	if (WeaponData)
+	TryEquipWeapon(WeaponData);
+}
+
+bool UAI_REPlayerCombatComponent::TryEquipWeapon(
+	UAI_REItemDataAsset* WeaponData)
+{
+	UAI_REWeaponItemDataAsset* WeaponItem =
+		Cast<UAI_REWeaponItemDataAsset>(WeaponData);
+	if (!IsValid(WeaponItem)
+		|| !IsValid(WeaponItem->WeaponDefinition.Get()))
 	{
-		EquippedWeapon = WeaponData;
-		GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Green, FString::Printf(TEXT("Equipped Weapon: %s"), *WeaponData->DisplayName.ToString()));
-		
-		// 비동기 로딩 초기화
-		CachedAttackMontage = nullptr;
-		if (MontageLoadHandle.IsValid())
-		{
-			MontageLoadHandle->CancelHandle();
-			MontageLoadHandle.Reset();
-		}
+		return false;
+	}
 
-		// 1. 기존 장착 무기가 있다면 해제 (스킬 회수 및 외형 리셋)
-		if (EquippedWeapon != nullptr)
-		{
-			ClearWeaponAbilities();
-			ClearWeaponVisuals();
-		}
-		
-		EquippedWeapon = WeaponData;
+	AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetOwner());
+	IAbilitySystemInterface* AbilitySystemOwner =
+		Cast<IAbilitySystemInterface>(PlayerCharacter);
+	UAbilitySystemComponent* AbilitySystem = AbilitySystemOwner
+		? AbilitySystemOwner->GetAbilitySystemComponent()
+		: nullptr;
+	UStaticMeshComponent* WeaponMesh = IsValid(PlayerCharacter)
+		? PlayerCharacter->GetWeaponMeshComponent()
+		: nullptr;
+	if (!IsValid(PlayerCharacter)
+		|| !IsValid(AbilitySystem)
+		|| !IsValid(WeaponMesh)
+		|| !IsValid(PlayerCharacter->GetMesh()))
+	{
+		return false;
+	}
 
-		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(WeaponData))
+	UAI_REAbilitySetDataAsset* LoadedAbilitySet = nullptr;
+	if (!WeaponItem->WeaponDefinition->AbilitySet.IsNull())
+	{
+		LoadedAbilitySet =
+			WeaponItem->WeaponDefinition->AbilitySet.LoadSynchronous();
+		if (!IsValid(LoadedAbilitySet))
 		{
-			if (WeaponItem->WeaponDefinition)
+			return false;
+		}
+	}
+
+	UClass* LoadedLayerClass = nullptr;
+	if (!WeaponItem->WeaponDefinition->LinkedAnimLayerClass.IsNull())
+	{
+		LoadedLayerClass = WeaponItem->WeaponDefinition
+			->LinkedAnimLayerClass.LoadSynchronous();
+		if (!IsValid(LoadedLayerClass))
+		{
+			return false;
+		}
+	}
+
+	CachedAttackMontage = nullptr;
+	++MontageLoadRequestId;
+	if (MontageLoadHandle.IsValid())
+	{
+		MontageLoadHandle->CancelHandle();
+		MontageLoadHandle.Reset();
+	}
+
+	if (IsValid(EquippedWeapon))
+	{
+		ClearWeaponAbilities();
+		ClearWeaponVisuals();
+	}
+
+	EquippedWeapon = WeaponData;
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			2.0f,
+			FColor::Green,
+			FString::Printf(
+				TEXT("Equipped Weapon: %s"),
+				*WeaponData->DisplayName.ToString()));
+	}
+
+	if (IsValid(LoadedAbilitySet))
+	{
+		for (const FAIRECompanionAbilitySetEntry& Entry :
+			LoadedAbilitySet->Abilities)
+		{
+			if (Entry.AbilityClass)
 			{
-				// 무기에 정의된 AbilitySet 스킬들 실제로 부여하기 (중요!)
-				if (!WeaponItem->WeaponDefinition->AbilitySet.IsNull())
-				{
-					if (UAI_REAbilitySetDataAsset* LoadedAbilitySet = WeaponItem->WeaponDefinition->AbilitySet.LoadSynchronous())
-					{
-						AActor* OwnerActor = GetOwner();
-						if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(OwnerActor))
-						{
-							if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
-							{
-								for (const FAIRECompanionAbilitySetEntry& Entry : LoadedAbilitySet->Abilities)
-								{
-									if (Entry.AbilityClass)
-									{
-										FGameplayAbilitySpec Spec(Entry.AbilityClass, Entry.AbilityLevel, -1, OwnerActor);
-										FGameplayAbilitySpecHandle Handle = ASC->GiveAbility(Spec);
-										GrantedWeaponAbilities.Add(Handle);
-									}
-								}
-							}
-						}
-					}
-				}
-
-				TSoftObjectPtr<UAnimMontage> SoftMontage = WeaponItem->WeaponDefinition->AttackMontage;
-				if (!SoftMontage.IsNull())
-				{
-					UAssetManager& AssetManager = UAssetManager::Get();
-					FStreamableManager& StreamableManager = AssetManager.GetStreamableManager();
-					
-					MontageLoadHandle = StreamableManager.RequestAsyncLoad(SoftMontage.ToSoftObjectPath(), 
-						FStreamableDelegate::CreateUObject(this, &UAI_REPlayerCombatComponent::OnWeaponMontageLoaded));
-				}
-				
-				// 1. 무기 외형(Mesh) 장착
-				if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(GetOwner()))
-				{
-					if (UStaticMeshComponent* WeaponMeshComp = PlayerChar->GetWeaponMeshComponent())
-					{
-						WeaponMeshComp->SetStaticMesh(WeaponItem->WeaponMesh);
-						WeaponMeshComp->AttachToComponent(PlayerChar->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("WeaponSocket_R"));
-					}
-
-					// 2. 레이어드 애니메이션(Linked Anim Layers) 적용 (오버라이드)
-					if (!WeaponItem->WeaponDefinition->LinkedAnimLayerClass.IsNull())
-					{
-						UClass* LayerClass = WeaponItem->WeaponDefinition->LinkedAnimLayerClass.LoadSynchronous();
-						if (LayerClass)
-						{
-							PlayerChar->GetMesh()->LinkAnimClassLayers(LayerClass);
-						}
-					}
-				}
+				FGameplayAbilitySpec Spec(
+					Entry.AbilityClass,
+					Entry.AbilityLevel,
+					-1,
+					PlayerCharacter);
+				GrantedWeaponAbilities.Add(AbilitySystem->GiveAbility(Spec));
 			}
 		}
 	}
+
+	const TSoftObjectPtr<UAnimMontage> SoftMontage =
+		WeaponItem->WeaponDefinition->AttackMontage;
+	if (!SoftMontage.IsNull())
+	{
+		const uint32 RequestId = MontageLoadRequestId;
+		const TWeakObjectPtr<UAI_REItemDataAsset> ExpectedWeapon(WeaponData);
+		FStreamableManager& StreamableManager =
+			UAssetManager::Get().GetStreamableManager();
+		MontageLoadHandle = StreamableManager.RequestAsyncLoad(
+			SoftMontage.ToSoftObjectPath(),
+			FStreamableDelegate::CreateUObject(
+				this,
+				&UAI_REPlayerCombatComponent::OnWeaponMontageLoaded,
+				RequestId,
+				ExpectedWeapon));
+	}
+
+	WeaponMesh->SetStaticMesh(WeaponItem->WeaponMesh);
+	WeaponMesh->AttachToComponent(
+		PlayerCharacter->GetMesh(),
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		FName(TEXT("WeaponSocket_R")));
+	if (IsValid(LoadedLayerClass))
+	{
+		PlayerCharacter->GetMesh()->LinkAnimClassLayers(LoadedLayerClass);
+	}
+
+	return true;
 }
 
-void UAI_REPlayerCombatComponent::OnWeaponMontageLoaded()
+void UAI_REPlayerCombatComponent::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
 {
+	++MontageLoadRequestId;
+	if (MontageLoadHandle.IsValid())
+	{
+		MontageLoadHandle->CancelHandle();
+		MontageLoadHandle.Reset();
+	}
+	ClearWeaponAbilities();
+	ClearWeaponVisuals();
+	EquippedWeapon = nullptr;
+	CachedAttackMontage = nullptr;
+	Super::EndPlay(EndPlayReason);
+}
+
+void UAI_REPlayerCombatComponent::OnWeaponMontageLoaded(
+	const uint32 RequestId,
+	const TWeakObjectPtr<UAI_REItemDataAsset> ExpectedWeapon)
+{
+	if (RequestId != MontageLoadRequestId
+		|| !ExpectedWeapon.IsValid()
+		|| EquippedWeapon != ExpectedWeapon.Get())
+	{
+		return;
+	}
+
 	if (EquippedWeapon)
 	{
 		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(EquippedWeapon))
@@ -193,6 +260,7 @@ void UAI_REPlayerCombatComponent::UnequipWeapon()
 	
 	EquippedWeapon = nullptr;
 	CachedAttackMontage = nullptr;
+	++MontageLoadRequestId;
 	if (MontageLoadHandle.IsValid())
 	{
 		MontageLoadHandle->CancelHandle();

@@ -11,6 +11,7 @@ class UAIRECompanionItemDefinitionDataAsset;
 class UAIRECompanionWeaponDefinitionDataAsset;
 class UAIREGameplayInventorySubsystem;
 class UAbilitySystemComponent;
+struct FAIREInventoryPersistenceResult;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAIRECompanionInventoryChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -97,6 +98,9 @@ private:
 	void HandleWeaponEquipCompleted(
 		UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition,
 		bool bSucceeded);
+	void HandlePersistenceReady(
+		const FAIREInventoryPersistenceResult& Result);
+	bool CompleteInventoryInitialization();
 	UFUNCTION()
 	void HandleContainerChanged(FName ContainerId, int64 Revision);
 	bool RequestRuntimeEquipment(
@@ -110,6 +114,7 @@ private:
 	TWeakObjectPtr<UAIRECompanionEquipmentComponent> EquipmentComponent;
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
 	FDelegateHandle WeaponEquipCompletedDelegateHandle;
+	FDelegateHandle PersistenceReadyDelegateHandle;
 	FGuid BoundInventorySessionId;
 	FGuid ActiveEquipmentSessionId;
 	FGuid ActiveEquipmentMutationId;

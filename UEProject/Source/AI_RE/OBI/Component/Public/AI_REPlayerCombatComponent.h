@@ -24,6 +24,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
 	void EquipWeapon(UAI_REItemDataAsset* WeaponData);
 
+	bool TryEquipWeapon(UAI_REItemDataAsset* WeaponData);
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
 	void UnequipWeapon();
 
@@ -47,6 +49,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// 비동기 로딩이 완료된 애니메이션 몽타주 캐싱
 	UPROPERTY(Transient)
@@ -54,11 +57,15 @@ protected:
 	
 	TSharedPtr<FStreamableHandle> MontageLoadHandle;
 	
-	void OnWeaponMontageLoaded();
+	void OnWeaponMontageLoaded(
+		uint32 RequestId,
+		TWeakObjectPtr<UAI_REItemDataAsset> ExpectedWeapon);
 
 	/** 장착된 무기가 부여한 스킬(어빌리티)들을 회수합니다. */
 	void ClearWeaponAbilities();
 
 	/** 손에 쥐고 있는 무기 외형과 레이어드 애니메이션을 해제하여 맨손 상태로 되돌립니다. */
 	void ClearWeaponVisuals();
+
+	uint32 MontageLoadRequestId = 0;
 };

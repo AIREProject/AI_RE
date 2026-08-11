@@ -64,6 +64,13 @@ enum class EAIREPlayerStorageTransferDirection : uint8
 	WithdrawStorageToPlayer
 };
 
+UENUM(BlueprintType)
+enum class EAIREPlayerMakoTransferDirection : uint8
+{
+	PlayerToMako,
+	MakoToPlayer
+};
+
 USTRUCT(BlueprintType)
 struct AI_RE_API FAIREInventoryItemStackSnapshot
 {
@@ -223,6 +230,52 @@ struct AI_RE_API FAIREPlayerStorageTransferRequest
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
 	int32 Count = 0;
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREPlayerMakoTransferRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid SessionId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid MutationId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	EAIREPlayerMakoTransferDirection Direction =
+		EAIREPlayerMakoTransferDirection::PlayerToMako;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int64 ExpectedPlayerRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int64 ExpectedMakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int32 SourceSlotIndex = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int32 Count = 0;
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREPlayerWeaponEquipRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid SessionId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid MutationId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int64 ExpectedPlayerRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int32 SourceSlotIndex = INDEX_NONE;
 };
 
 USTRUCT(BlueprintType)

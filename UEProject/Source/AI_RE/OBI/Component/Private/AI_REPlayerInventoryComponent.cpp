@@ -1,6 +1,8 @@
 // Copyright MixUpProject. All Rights Reserved.
 
 #include "AI_REPlayerInventoryComponent.h"
+#include "AIREGameplayInventorySubsystem.h"
+#include "AI_REPlayerCombatComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "AI_REItemSubsystem.h"
@@ -8,6 +10,7 @@
 #include "AI_REItemEffect.h"
 #include "AI_RECharacterBase.h"
 #include "Engine/Engine.h"
+#include "GameFramework/Actor.h"
 
 UAI_REPlayerInventoryComponent::UAI_REPlayerInventoryComponent()
 {
@@ -17,6 +20,26 @@ UAI_REPlayerInventoryComponent::UAI_REPlayerInventoryComponent()
 void UAI_REPlayerInventoryComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	bPersistenceReadyForGameplay = false;
+	RegisterWithGameplayInventory();
+}
+
+void UAI_REPlayerInventoryComponent::EndPlay(
+	const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UAIREGameplayInventorySubsystem* InventorySubsystem =
+				GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>())
+			{
+				InventorySubsystem->UnregisterPlayerInventory(this);
+			}
+		}
+	}
+	bPersistenceReadyForGameplay = false;
+	Super::EndPlay(EndPlayReason);
 }
 
 bool UAI_REPlayerInventoryComponent::HasItem(FName ItemId, int32 Amount) const
@@ -31,7 +54,10 @@ bool UAI_REPlayerInventoryComponent::SwapSlots(int32 SlotIndexA, int32 SlotIndex
 
 bool UAI_REPlayerInventoryComponent::AddItem(FName ItemId, int32 Count)
 {
-	if (ItemId.IsNone() || Count <= 0) return false;
+	if (!bPersistenceReadyForGameplay || ItemId.IsNone() || Count <= 0)
+	{
+		return false;
+	}
 
 	const int32 MaxStack = GetMaxStackForItem(ItemId);
 	int32 RemainingCount = Count;
@@ -63,6 +89,11 @@ bool UAI_REPlayerInventoryComponent::AddItem(FName ItemId, int32 Count)
 		RemainingCount -= AddCount;
 	}
 
+	if (RemainingCount < Count)
+	{
+		++Revision;
+		NotifyPersistenceMutation();
+	}
 	OnInventoryChanged.Broadcast();
 	return RemainingCount <= 0;
 }
@@ -245,16 +276,37 @@ void UAI_REPlayerInventoryComponent::CommitExactInventoryState(
 	TArray<FInventoryItemStack>&& NewItems)
 {
 	Items = MoveTemp(NewItems);
+	++Revision;
+}
+
+void UAI_REPlayerInventoryComponent::CommitExactInventoryAndEquipmentState(
+	TArray<FInventoryItemStack>&& NewItems,
+	const FName NewEquippedWeaponItemId)
+{
+	Items = MoveTemp(NewItems);
+	EquippedWeaponItemId = NewEquippedWeaponItemId;
+	++Revision;
 }
 
 void UAI_REPlayerInventoryComponent::NotifyExactInventoryMutation()
 {
+	NotifyPersistenceMutation();
 	OnInventoryChanged.Broadcast();
+}
+
+void UAI_REPlayerInventoryComponent::NotifyWeaponEquipResult(
+	const FName WeaponItemId,
+	const bool bSucceeded)
+{
+	OnWeaponEquipResult.Broadcast(WeaponItemId, bSucceeded);
 }
 
 bool UAI_REPlayerInventoryComponent::ConsumeItem(FName ItemId, int32 Count)
 {
-	if (ItemId.IsNone() || Count <= 0) return false;
+	if (!bPersistenceReadyForGameplay || ItemId.IsNone() || Count <= 0)
+	{
+		return false;
+	}
 	if (GetItemCount(ItemId) < Count) return false;
 
 	int32 RemainingCount = Count;
@@ -273,12 +325,18 @@ bool UAI_REPlayerInventoryComponent::ConsumeItem(FName ItemId, int32 Count)
 		}
 	}
 
+	++Revision;
+	NotifyPersistenceMutation();
 	OnInventoryChanged.Broadcast();
 	return true;
 }
 
 bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 {
+	if (!bPersistenceReadyForGameplay)
+	{
+		return false;
+	}
 	int32 Idx = FindStackIndexBySlot(SlotIndex);
 	if (Idx == INDEX_NONE || Items[Idx].Count <= 0 || Items[Idx].ItemId.IsNone())
 	{
@@ -325,6 +383,8 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 		{
 			Items.RemoveAtSwap(Idx);
 		}
+		++Revision;
+		NotifyPersistenceMutation();
 		OnInventoryChanged.Broadcast();
 		return true;
 	}
@@ -333,7 +393,10 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 }
 bool UAI_REPlayerInventoryComponent::MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex)
 {
-	if (FromSlotIndex == ToSlotIndex || !IsSlotIndexValid(FromSlotIndex) || !IsSlotIndexValid(ToSlotIndex))
+	if (!bPersistenceReadyForGameplay
+		|| FromSlotIndex == ToSlotIndex
+		|| !IsSlotIndexValid(FromSlotIndex)
+		|| !IsSlotIndexValid(ToSlotIndex))
 		return false;
 
 	int32 FromIdx = FindStackIndexBySlot(FromSlotIndex);
@@ -343,6 +406,8 @@ bool UAI_REPlayerInventoryComponent::MoveItemSlot(int32 FromSlotIndex, int32 ToS
 	if (ToIdx == INDEX_NONE)
 	{
 		Items[FromIdx].SlotIndex = ToSlotIndex;
+		++Revision;
+		NotifyPersistenceMutation();
 		OnInventoryChanged.Broadcast();
 		return true;
 	}
@@ -359,18 +424,26 @@ bool UAI_REPlayerInventoryComponent::MoveItemSlot(int32 FromSlotIndex, int32 ToS
 			{
 				Items.RemoveAtSwap(FromIdx);
 			}
+			++Revision;
+			NotifyPersistenceMutation();
 			OnInventoryChanged.Broadcast();
 			return true;
 		}
 	}
 
 	Swap(Items[FromIdx].SlotIndex, Items[ToIdx].SlotIndex);
+	++Revision;
+	NotifyPersistenceMutation();
 	OnInventoryChanged.Broadcast();
 	return true;
 }
 
 bool UAI_REPlayerInventoryComponent::DropItemFromSlot(int32 SlotIndex, int32 Count)
 {
+	if (!bPersistenceReadyForGameplay)
+	{
+		return false;
+	}
 	int32 Idx = FindStackIndexBySlot(SlotIndex);
 	if (Idx == INDEX_NONE || Items[Idx].ItemId.IsNone() || Items[Idx].Count <= 0) return false;
 
@@ -383,7 +456,9 @@ bool UAI_REPlayerInventoryComponent::DropItemFromSlot(int32 SlotIndex, int32 Cou
 	}
 
 	// TODO: Spawn physical item in the world.
-	
+
+	++Revision;
+	NotifyPersistenceMutation();
 	OnInventoryChanged.Broadcast();
 	return true;
 }
@@ -413,8 +488,56 @@ bool UAI_REPlayerInventoryComponent::IsInventoryFull() const
 bool UAI_REPlayerInventoryComponent::IsSlotIndexValid(int32 SlotIndex) const
 {
 	// 0 ~ MaxSlots-1: 일반 인벤토리 슬롯
-	// 100 ~ 110: 퀵슬롯
+	// 100 ~ 109: 퀵슬롯
 	return (SlotIndex >= 0 && SlotIndex < MaxSlots) || (SlotIndex >= 100 && SlotIndex < 110);
+}
+
+int64 UAI_REPlayerInventoryComponent::GetInventoryRevision() const
+{
+	return Revision;
+}
+
+FName UAI_REPlayerInventoryComponent::GetEquippedWeaponItemId() const
+{
+	return EquippedWeaponItemId;
+}
+
+void UAI_REPlayerInventoryComponent::RegisterWithGameplayInventory()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = IsValid(World)
+		? World->GetGameInstance()
+		: nullptr;
+	UAIREGameplayInventorySubsystem* InventorySubsystem =
+		IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+		: nullptr;
+	UAI_REPlayerCombatComponent* CombatComponent = IsValid(GetOwner())
+		? GetOwner()->FindComponentByClass<UAI_REPlayerCombatComponent>()
+		: nullptr;
+	if (!IsValid(InventorySubsystem)
+		|| !InventorySubsystem->RegisterPlayerInventory(
+			this,
+			CombatComponent))
+	{
+		bPersistenceReadyForGameplay = true;
+	}
+}
+
+void UAI_REPlayerInventoryComponent::NotifyPersistenceMutation()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = IsValid(World)
+		? World->GetGameInstance()
+		: nullptr;
+	UAIREGameplayInventorySubsystem* InventorySubsystem =
+		IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+		: nullptr;
+	if (IsValid(InventorySubsystem))
+	{
+		InventorySubsystem->NotifyPlayerInventoryChanged(this);
+	}
 }
 
 int32 UAI_REPlayerInventoryComponent::FindStackIndexBySlot(int32 SlotIndex) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AIREGameplayInventoryPersistenceTypes.h"
 #include "AIREGameplayInventoryTypes.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "AIREGameplayInventorySubsystem.generated.h"
@@ -8,7 +9,10 @@
 class UAIRECompanionConfigDataAsset;
 class UAIRECompanionInventoryComponent;
 class UAIRECompanionItemDefinitionDataAsset;
+class UAI_REPlayerCombatComponent;
 class UAI_REPlayerInventoryComponent;
+class UAIREGameplayInventorySaveGame;
+class USaveGame;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FAIREInventoryContainerChanged,
@@ -16,6 +20,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	ContainerId,
 	int64,
 	Revision);
+
+DECLARE_MULTICAST_DELEGATE_OneParam(
+	FAIREInventoryPersistenceReady,
+	const FAIREInventoryPersistenceResult&);
 
 UCLASS()
 class AI_RE_API UAIREGameplayInventorySubsystem : public UGameInstanceSubsystem
@@ -25,6 +33,28 @@ class AI_RE_API UAIREGameplayInventorySubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory|Persistence")
+	bool IsPersistenceReady() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory|Persistence")
+	FAIREInventoryPersistenceResult GetLastPersistenceLoadResult() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory|Persistence")
+	FAIREInventoryPersistenceResult GetLastPersistenceSaveResult() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory|Persistence")
+	FAIREInventoryPersistenceResult RequestInventorySave();
+
+	FAIREInventoryPersistenceReady& OnPersistenceReady();
+
+	bool RegisterPlayerInventory(
+		UAI_REPlayerInventoryComponent* PlayerInventory,
+		UAI_REPlayerCombatComponent* PlayerCombat);
+	void UnregisterPlayerInventory(
+		UAI_REPlayerInventoryComponent* PlayerInventory);
+	void NotifyPlayerInventoryChanged(
+		UAI_REPlayerInventoryComponent* PlayerInventory);
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Inventory")
 	FGuid GetInventorySessionId() const;
@@ -60,6 +90,17 @@ public:
 	FAIREInventoryMutationResult TryTransferPlayerStorage(
 		UAI_REPlayerInventoryComponent* PlayerInventory,
 		const FAIREPlayerStorageTransferRequest& Request);
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
+	FAIREInventoryMutationResult TryTransferPlayerMako(
+		UAI_REPlayerInventoryComponent* PlayerInventory,
+		const FAIREPlayerMakoTransferRequest& Request);
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
+	FAIREInventoryMutationResult TryEquipPlayerWeapon(
+		UAI_REPlayerInventoryComponent* PlayerInventory,
+		UAI_REPlayerCombatComponent* PlayerCombat,
+		const FAIREPlayerWeaponEquipRequest& Request);
 
 	/** Validates Player + SharedStorage craft settlement without mutation. */
 	bool CanCompletePlayerCraft(
@@ -105,6 +146,7 @@ private:
 	friend class UAIRECompanionInventoryComponent;
 	friend class FAIREGameplayInventorySubsystemContractTest;
 	friend class FAIREGameplayInventoryMakoCraftWorkTest;
+	friend class FAIREGameplayInventoryPersistenceTestAccess;
 
 	struct FAIREContainerState
 	{
@@ -128,6 +170,17 @@ private:
 		bool bIsWeapon = false;
 	};
 
+	struct FAIREPersistenceLoadSlotState
+	{
+		FString SlotName;
+		bool bCompleted = false;
+		bool bExists = false;
+		bool bIoFailure = false;
+		TOptional<FAIREInventorySaveEnvelope> LoadedEnvelope;
+		EAIREInventoryPersistenceResultCode ValidationCode =
+			EAIREInventoryPersistenceResultCode::NotStarted;
+	};
+
 	void CreateEmptyContainers();
 	FAIREContainerState* FindContainer(FName ContainerId);
 	const FAIREContainerState* FindContainer(FName ContainerId) const;
@@ -137,6 +190,7 @@ private:
 		FAIREItemRules& OutRules) const;
 	bool IsEquipmentTransitionActive(const FAIREContainerState& State) const;
 	bool IsSessionScopeValid(const FAIREInventorySessionScope& Scope) const;
+	static FAIREInventorySessionScope MakeCanonicalPersistenceScope();
 
 	FAIREInventoryMutationResult ValidateMutation(
 		const FGuid& RequestSessionId,
@@ -151,7 +205,16 @@ private:
 	bool FindAppliedMutation(
 		const FGuid& MutationId,
 		FAIREInventoryMutationResult& OutResult) const;
-	void RecordAppliedMutation(const FAIREInventoryMutationResult& Result);
+	void RecordAppliedMutation(
+		const FAIREInventoryMutationResult& Result,
+		bool bPersistent);
+	void RemoveAppliedMutation(const FGuid& MutationId);
+	void RecordAppliedWorkResult(
+		const FGuid& OperationId,
+		const FAIREInventoryWorkResult& Result,
+		bool bPersistent = true);
+	void RecordAppliedImportCandidateId(const FString& CandidateId);
+	void RecordAppliedImportOperationIds(const TArray<FString>& OperationIds);
 	void BroadcastContainerChanged(const FAIREContainerState& Container);
 	bool AggregateWorkIngredients(
 		const TArray<FAIREInventoryItemQuantity>& Ingredients,
@@ -163,6 +226,55 @@ private:
 	bool FindAppliedWorkResult(
 		const FGuid& MutationId,
 		FAIREInventoryWorkResult& OutResult) const;
+
+	void BeginPersistenceLoad();
+	void BeginLoadForSlot(int32 SlotIndex, uint64 LoadEpoch);
+	void HandleSlotExistenceResult(
+		int32 SlotIndex,
+		uint64 LoadEpoch,
+		bool bExists,
+		bool bIoFailure);
+	void HandleSlotLoaded(
+		int32 SlotIndex,
+		uint64 LoadEpoch,
+		USaveGame* LoadedGame);
+	void FinalizePersistenceLoad(uint64 LoadEpoch);
+	bool ValidatePersistenceEnvelope(
+		const FAIREInventorySaveEnvelope& Envelope,
+		FAIREInventorySaveEnvelope& OutNormalizedEnvelope,
+		EAIREInventoryPersistenceResultCode& OutCode) const;
+	bool CommitPersistenceEnvelope(
+		const FAIREInventorySaveEnvelope& Envelope);
+	void FinalizeFreshPersistenceStateIfPossible();
+	void CompletePersistenceStartup(
+		const FAIREInventoryPersistenceResult& Result);
+	bool BuildPersistenceEnvelope(
+		int64 Generation,
+		FAIREInventorySaveEnvelope& OutEnvelope,
+		EAIREInventoryPersistenceResultCode& OutCode) const;
+	bool CapturePlayerPersistenceState(
+		const UAI_REPlayerInventoryComponent& PlayerInventory,
+		FAIREInventoryPersistedPlayerState& OutState,
+		EAIREInventoryPersistenceResultCode& OutCode) const;
+	bool ValidatePlayerPersistenceState(
+		const FAIREInventoryPersistedPlayerState& State,
+		FAIREInventoryPersistedPlayerState& OutNormalizedState,
+		EAIREInventoryPersistenceResultCode& OutCode) const;
+	void ApplyOrInitializeRegisteredPlayerState();
+	void MarkPersistenceDirty();
+	FAIREInventoryPersistenceResult TryStartPersistenceSave();
+	void HandlePersistenceSaveCompleted(
+		const FString& SlotName,
+		uint64 SaveEpoch,
+		const FGuid& SaveSessionId,
+		int64 Generation,
+		bool bSucceeded);
+	FString GetNextPersistenceSlotName() const;
+	FAIREInventoryPersistenceResult MakePersistenceResult(
+		EAIREInventoryPersistenceOperation Operation,
+		EAIREInventoryPersistenceResultCode Code,
+		int64 Generation = 0,
+		bool bUsedFallback = false) const;
 
 	FAIREInventoryMutationResult ReserveMakoEquipmentSwap(
 		const FAIREInventoryEquipRequest& Request);
@@ -188,8 +300,39 @@ private:
 	FAIREInventorySessionScope SessionScope;
 	TMap<FName, FAIREContainerState> Containers;
 	TMap<FGuid, FAIREInventoryMutationResult> AppliedMutations;
+	TArray<FGuid> AppliedMutationOrder;
+	TMap<FGuid, FAIREInventoryMutationResult> TransientAppliedMutations;
+	TArray<FGuid> TransientAppliedMutationOrder;
 	TMap<FGuid, FAIREInventoryWorkResult> AppliedWorkResults;
+	TArray<FGuid> AppliedWorkResultOrder;
+	TMap<FGuid, FAIREInventoryWorkResult> TransientAppliedWorkResults;
+	TArray<FGuid> TransientAppliedWorkResultOrder;
 	TSet<FString> AppliedImportCandidateIds;
+	TArray<FString> AppliedImportCandidateOrder;
 	TSet<FString> AppliedImportOperationIds;
+	TArray<FString> AppliedImportOperationOrder;
+	TArray<FAIREPersistenceLoadSlotState> PersistenceLoadSlots;
+	TWeakObjectPtr<const UAIRECompanionConfigDataAsset> PendingCompanionConfig;
+	TWeakObjectPtr<UAI_REPlayerInventoryComponent> RegisteredPlayerInventory;
+	TWeakObjectPtr<UAI_REPlayerCombatComponent> RegisteredPlayerCombat;
+	FAIREInventoryPersistedPlayerState CachedPlayerPersistenceState;
+	FAIREInventoryPersistenceReady PersistenceReadyDelegate;
+	FAIREInventoryPersistenceResult LastPersistenceLoadResult;
+	FAIREInventoryPersistenceResult LastPersistenceSaveResult;
+	uint64 PersistenceEpoch = 0;
+	uint64 ActiveSaveEpoch = 0;
+	int64 LatestPersistenceGeneration = 0;
+	int64 HighestIssuedPersistenceGeneration = 0;
+	FString LatestPersistenceSlotName;
+	FString LastIssuedPersistenceSlotName;
+	bool bPersistenceLoadComplete = false;
+	bool bPersistenceReady = false;
+	bool bPersistenceDirty = false;
+	bool bPersistenceSaveInFlight = false;
+	bool bSuppressPersistenceDirty = false;
+	bool bPersistenceShuttingDown = false;
+	bool bPersistenceLifecycleInitialized = false;
+	bool bHasPlayerPersistenceState = false;
+	bool bApplyingPlayerPersistenceState = false;
 	bool bMakoInventoryInitialized = false;
 };
