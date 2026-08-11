@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AI_REItemActor.h"
+#include "Command/AIRECompanionCommandTypes.h"
 #include "StateTreeEvaluatorBase.h"
 #include "StateTreeTaskBase.h"
 #include "Work/AIRECompanionWorkOrderTypes.h"
@@ -11,6 +12,7 @@ class AAIRECompanionCharacter;
 class AAIRECompanionAIController;
 class AActor;
 class APawn;
+class UAIRECompanionCommandGatewayComponent;
 class UAIRECompanionEquipmentComponent;
 class UAIRECompanionInventoryComponent;
 class UAIRECompanionSupportComponent;
@@ -66,6 +68,12 @@ struct FAIRECompanionContextEvaluatorInstanceData
 	TObjectPtr<UAIRECompanionSupportComponent> SupportComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
+	TObjectPtr<UAIRECompanionCommandGatewayComponent> DirectCommandComponent;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output")
+	FAIREDirectCommandSnapshot DirectCommandSnapshot;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output")
 	TObjectPtr<UAIRECompanionWorkOrderComponent> WorkOrderComponent;
 
 	UPROPERTY(VisibleAnywhere, Category = "Output")
@@ -108,6 +116,27 @@ struct FAIRECompanionContextEvaluatorInstanceData
 
 	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
 	float ReturnStopDistance = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
+	float IdleWanderMinDistance = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
+	float IdleWanderMaxDistance = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "s"))
+	float IdleWanderWaitMin = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "s"))
+	float IdleWanderWaitMax = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output")
+	int32 IdleWanderSampleCount = 0;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "cm"))
+	float IdleWanderAcceptanceRadius = 0.0f;
+
+	UPROPERTY(VisibleAnywhere, Category = "Output", meta = (Units = "s"))
+	float IdleWanderRetryDelay = 0.0f;
 
 	/** Deprecated StateTree binding retained for existing asset compatibility. */
 	UPROPERTY(
@@ -173,6 +202,16 @@ struct FAIRECompanionContextEvaluatorInstanceData
 
 	UPROPERTY(Transient)
 	FGuid PreviousWorkOrderId;
+
+	UPROPERTY(Transient)
+	FString PreviousDirectCommandId;
+
+	UPROPERTY(Transient)
+	int64 PreviousDirectCommandGeneration = 0;
+
+	UPROPERTY(Transient)
+	EAIREDirectCommandIntent PreviousDirectCommandIntent =
+		EAIREDirectCommandIntent::None;
 };
 
 USTRUCT(meta = (DisplayName = "AIRE Companion Context", Category = "AIRE|Companion"))
@@ -287,6 +326,168 @@ struct FAIRECompanionBehaviorDebugTask : public FStateTreeTaskCommonBase
 	virtual void ExitState(
 		FStateTreeExecutionContext& Context,
 		const FStateTreeTransitionResult& Transition) const override;
+};
+
+USTRUCT()
+struct FAIRECompanionDirectCommandTaskInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Context")
+	TObjectPtr<AAIRECompanionCharacter> CompanionCharacter;
+
+	UPROPERTY(EditAnywhere, Category = "Context")
+	TObjectPtr<AAIRECompanionAIController> CompanionController;
+
+	UPROPERTY(EditAnywhere, Category = "Context")
+	TObjectPtr<UAIRECompanionCommandGatewayComponent> DirectCommandComponent;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	FAIREDirectCommandSnapshot DirectCommandSnapshot;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<APawn> PlayerPawn;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "cm", ClampMin = "0.0"))
+	float FollowStopDistance = 200.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "cm", ClampMin = "0.0"))
+	float ReturnStopDistance = 400.0f;
+
+	UPROPERTY(Transient)
+	FString ActiveCommandId;
+
+	UPROPERTY(Transient)
+	int64 ActiveCommandGeneration = 0;
+
+	UPROPERTY(Transient)
+	EAIREDirectCommandIntent ActiveIntent = EAIREDirectCommandIntent::None;
+
+	UPROPERTY(Transient)
+	bool bMoveRequested = false;
+
+	UPROPERTY(Transient)
+	bool bLeaseExpired = false;
+};
+
+USTRUCT(meta = (DisplayName = "Execute Companion Direct Command", Category = "AIRE|Companion"))
+struct FAIRECompanionDirectCommandTask : public FStateTreeTaskCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FAIRECompanionDirectCommandTaskInstanceData;
+
+	FAIRECompanionDirectCommandTask();
+
+	virtual const UStruct* GetInstanceDataType() const override
+	{
+		return FInstanceDataType::StaticStruct();
+	}
+
+	virtual EStateTreeRunStatus EnterState(
+		FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	virtual EStateTreeRunStatus Tick(
+		FStateTreeExecutionContext& Context,
+		float DeltaTime) const override;
+
+	virtual void ExitState(
+		FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+private:
+	static void CancelOwnedMovement(FInstanceDataType& InstanceData);
+	static bool IsOwnedSnapshot(
+		const FInstanceDataType& InstanceData,
+		const FAIREDirectCommandSnapshot& Snapshot);
+	static bool IsLeaseValid(const FAIREDirectCommandSnapshot& Snapshot);
+};
+
+USTRUCT()
+struct FAIRECompanionIdleNearPlayerTaskInstanceData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Context")
+	TObjectPtr<AAIRECompanionCharacter> CompanionCharacter;
+
+	UPROPERTY(EditAnywhere, Category = "Context")
+	TObjectPtr<AAIRECompanionAIController> CompanionController;
+
+	UPROPERTY(EditAnywhere, Category = "Input")
+	TObjectPtr<APawn> PlayerPawn;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "cm", ClampMin = "0.0"))
+	float WanderMinDistance = 150.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "cm", ClampMin = "0.0"))
+	float WanderMaxDistance = 350.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "s", ClampMin = "0.0"))
+	float WanderWaitMin = 3.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "s", ClampMin = "0.0"))
+	float WanderWaitMax = 6.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 WanderSampleCount = 8;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "cm", ClampMin = "0.0"))
+	float WanderAcceptanceRadius = 75.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Input", meta = (Units = "s", ClampMin = "0.0"))
+	float WanderRetryDelay = 1.0f;
+
+	UPROPERTY(Transient)
+	TWeakObjectPtr<APawn> ActivePlayerPawn;
+
+	UPROPERTY(Transient)
+	FVector ActiveDestination = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	float WaitTimeRemaining = 0.0f;
+
+	UPROPERTY(Transient)
+	int32 RetryCount = 0;
+
+	UPROPERTY(Transient)
+	bool bMoveRequested = false;
+};
+
+USTRUCT(meta = (DisplayName = "Idle Near Player", Category = "AIRE|Companion"))
+struct FAIRECompanionIdleNearPlayerTask : public FStateTreeTaskCommonBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FAIRECompanionIdleNearPlayerTaskInstanceData;
+
+	FAIRECompanionIdleNearPlayerTask();
+
+	virtual const UStruct* GetInstanceDataType() const override
+	{
+		return FInstanceDataType::StaticStruct();
+	}
+
+	virtual EStateTreeRunStatus EnterState(
+		FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	virtual EStateTreeRunStatus Tick(
+		FStateTreeExecutionContext& Context,
+		float DeltaTime) const override;
+
+	virtual void ExitState(
+		FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+private:
+	static bool TrySampleReachableDestination(
+		const FInstanceDataType& InstanceData,
+		FVector& OutDestination);
+	static float ChooseWaitDuration(const FInstanceDataType& InstanceData);
+	static void CancelOwnedMovement(FInstanceDataType& InstanceData);
+	static bool IsMovementActive(const AAIRECompanionAIController& Controller);
 };
 
 USTRUCT()

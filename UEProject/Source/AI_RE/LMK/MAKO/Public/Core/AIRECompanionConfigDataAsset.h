@@ -114,6 +114,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (UIMin = "0.0", Units = "cm"))
 	float ReturnStopDistance = 400.0f;
 
+	/** Minimum player-centered radius used by the idle-near-player wander task. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float IdleWanderMinDistance = 150.0f;
+
+	/** Maximum player-centered radius used by the idle-near-player wander task. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float IdleWanderMaxDistance = 350.0f;
+
+	/** Minimum pause after reaching an idle-near-player wander point. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float IdleWanderWaitMin = 3.0f;
+
+	/** Maximum pause after reaching an idle-near-player wander point. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float IdleWanderWaitMax = 6.0f;
+
+	/** Maximum number of reachable points sampled for one idle-near-player move. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "1", ClampMax = "8", UIMin = "1", UIMax = "8"))
+	int32 IdleWanderSampleCount = 8;
+
+	/** Acceptance radius for an idle-near-player wander move. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float IdleWanderAcceptanceRadius = 75.0f;
+
+	/** Delay before the single additional idle-near-player move attempt after a failure. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Movement", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
+	float IdleWanderRetryDelay = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Threat", meta = (UIMin = "0.0", Units = "cm"))
 	float ThreatDetectionDistance = 1000.0f;
 

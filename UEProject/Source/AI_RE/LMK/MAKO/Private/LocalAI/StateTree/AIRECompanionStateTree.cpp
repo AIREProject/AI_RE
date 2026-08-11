@@ -3,6 +3,7 @@
 #include "Core/AIRECompanionAIController.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
+#include "Command/AIRECompanionCommandGatewayComponent.h"
 #include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
@@ -30,12 +31,15 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 #include "StateTreeExecutionContext.h"
 #include "Engine/DataTable.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
@@ -56,6 +60,13 @@ namespace
 	constexpr float WorkMovementRetryInterval = 0.5f;
 	constexpr float WorkActivationRetryInterval = 0.1f;
 	constexpr int32 MaxRememberedEvadeExecutions = 4096;
+
+	TAutoConsoleVariable<int32> CVarAIRECompanionDistanceDebug(
+		TEXT("aire.Companion.DistanceDebug"),
+		0,
+		TEXT("Draws MAKO player distance, local behavior selection, and direct command lease.\n")
+		TEXT("0: disabled, 1: enabled"),
+		ECVF_Default);
 
 	bool IsAutonomousEvadeOpportunity(
 		const FAIREEnemyAttackSnapshot& Snapshot,
@@ -515,6 +526,91 @@ namespace
 			? BehaviorStateEnum->GetNameStringByValue(static_cast<int64>(BehaviorState))
 			: TEXT("Unknown");
 	}
+
+	const TCHAR* GetSelectedBehaviorDebugName(
+		const FAIRECompanionContextEvaluatorInstanceData& InstanceData)
+	{
+		if (InstanceData.bIsDisabledRequested)
+		{
+			return TEXT("Disabled");
+		}
+		if (InstanceData.bIsSurvivalRequested)
+		{
+			return TEXT("Survival");
+		}
+		if (InstanceData.bIsCombatRequested)
+		{
+			return TEXT("Combat");
+		}
+		if (InstanceData.bIsSupportRequested)
+		{
+			return TEXT("Support");
+		}
+		if (InstanceData.bIsDirectCommandRequested)
+		{
+			return TEXT("DirectCommand");
+		}
+		if (InstanceData.bIsWorkRequested)
+		{
+			return TEXT("Work");
+		}
+		if (InstanceData.bShouldReturn)
+		{
+			return TEXT("ReturnToPlayer");
+		}
+		return InstanceData.bHasPlayer
+			? TEXT("IdleNearPlayer")
+			: TEXT("Idle");
+	}
+
+	void DrawCompanionDistanceDebug(
+		const FAIRECompanionContextEvaluatorInstanceData& InstanceData)
+	{
+		if (CVarAIRECompanionDistanceDebug.GetValueOnGameThread() == 0
+			|| !IsValid(InstanceData.CompanionCharacter))
+		{
+			return;
+		}
+
+		const UWorld* World = InstanceData.CompanionCharacter->GetWorld();
+		if (!IsValid(World))
+		{
+			return;
+		}
+
+		const FAIREDirectCommandSnapshot& Snapshot =
+			InstanceData.DirectCommandSnapshot;
+		const UEnum* IntentEnum = StaticEnum<EAIREDirectCommandIntent>();
+		const FString IntentName = Snapshot.bIsActive && IsValid(IntentEnum)
+			? IntentEnum->GetNameStringByValue(static_cast<int64>(Snapshot.Intent))
+			: TEXT("None");
+		const double RemainingLeaseSeconds = Snapshot.bIsActive
+			? FMath::Max(
+				0.0,
+				(Snapshot.ExpiresAtUtc - FDateTime::UtcNow()).GetTotalSeconds())
+			: 0.0;
+		const FString DebugText = FString::Printf(
+			TEXT("Player %.0f cm | Return %.0f -> %.0f cm | Selected %s\n")
+			TEXT("Command %s | Active %s | Lease %.1f s"),
+			InstanceData.DistanceToPlayer,
+			InstanceData.ReturnStartDistance,
+			InstanceData.ReturnStopDistance,
+			GetSelectedBehaviorDebugName(InstanceData),
+			*IntentName,
+			Snapshot.bIsActive ? TEXT("Yes") : TEXT("No"),
+			RemainingLeaseSeconds);
+
+		DrawDebugString(
+			World,
+			InstanceData.CompanionCharacter->GetActorLocation()
+				+ FVector(0.0f, 0.0f, 150.0f),
+			DebugText,
+			nullptr,
+			Snapshot.bIsActive ? FColor::Yellow : FColor::Cyan,
+			0.0f,
+			false,
+			1.0f);
+	}
 }
 
 void FAIRECompanionContextEvaluator::TreeStart(FStateTreeExecutionContext& Context) const
@@ -531,6 +627,8 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.EquipmentComponent = nullptr;
 	InstanceData.InventoryComponent = nullptr;
 	InstanceData.SupportComponent = nullptr;
+	InstanceData.DirectCommandComponent = nullptr;
+	InstanceData.DirectCommandSnapshot = FAIREDirectCommandSnapshot();
 	InstanceData.WorkOrderComponent = nullptr;
 	InstanceData.WorkTarget = nullptr;
 	InstanceData.WorkRecipeTable = nullptr;
@@ -545,6 +643,13 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
 	InstanceData.ReturnStopDistance = 0.0f;
+	InstanceData.IdleWanderMinDistance = 0.0f;
+	InstanceData.IdleWanderMaxDistance = 0.0f;
+	InstanceData.IdleWanderWaitMin = 0.0f;
+	InstanceData.IdleWanderWaitMax = 0.0f;
+	InstanceData.IdleWanderSampleCount = 0;
+	InstanceData.IdleWanderAcceptanceRadius = 0.0f;
+	InstanceData.IdleWanderRetryDelay = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
@@ -564,6 +669,9 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.PreviousThreatTarget.Reset();
 	InstanceData.PreviousSupportTarget.Reset();
 	InstanceData.PreviousWorkOrderId.Invalidate();
+	InstanceData.PreviousDirectCommandId.Reset();
+	InstanceData.PreviousDirectCommandGeneration = 0;
+	InstanceData.PreviousDirectCommandIntent = EAIREDirectCommandIntent::None;
 }
 
 void FAIRECompanionContextEvaluator::Tick(FStateTreeExecutionContext& Context, const float) const
@@ -580,6 +688,8 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	InstanceData.EquipmentComponent = nullptr;
 	InstanceData.InventoryComponent = nullptr;
 	InstanceData.SupportComponent = nullptr;
+	InstanceData.DirectCommandComponent = nullptr;
+	InstanceData.DirectCommandSnapshot = FAIREDirectCommandSnapshot();
 	InstanceData.WorkOrderComponent = nullptr;
 	InstanceData.WorkTarget = nullptr;
 	InstanceData.WorkRecipeTable = nullptr;
@@ -593,6 +703,13 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
 	InstanceData.ReturnStopDistance = 0.0f;
+	InstanceData.IdleWanderMinDistance = 0.0f;
+	InstanceData.IdleWanderMaxDistance = 0.0f;
+	InstanceData.IdleWanderWaitMin = 0.0f;
+	InstanceData.IdleWanderWaitMax = 0.0f;
+	InstanceData.IdleWanderSampleCount = 0;
+	InstanceData.IdleWanderAcceptanceRadius = 0.0f;
+	InstanceData.IdleWanderRetryDelay = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
@@ -611,8 +728,6 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 			EAIRECompanionTestBehaviorRequest::Disabled);
 		InstanceData.bIsSurvivalRequested = InstanceData.CompanionController->IsTestBehaviorRequestActive(
 			EAIRECompanionTestBehaviorRequest::Survival);
-		InstanceData.bIsDirectCommandRequested = InstanceData.CompanionController->IsTestBehaviorRequestActive(
-			EAIRECompanionTestBehaviorRequest::DirectCommand);
 		const UAIRECompanionThreatComponent* ThreatComponent = InstanceData.CompanionController->GetThreatComponent();
 		if (IsValid(ThreatComponent))
 		{
@@ -629,6 +744,17 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 			InstanceData.CompanionCharacter->GetInventoryComponent();
 		InstanceData.SupportComponent =
 			InstanceData.CompanionCharacter->GetSupportComponent();
+		InstanceData.DirectCommandComponent =
+			InstanceData.CompanionCharacter->GetCommandGatewayComponent();
+		if (IsValid(InstanceData.DirectCommandComponent))
+		{
+			InstanceData.DirectCommandSnapshot =
+				InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+			InstanceData.bIsDirectCommandRequested =
+				InstanceData.DirectCommandSnapshot.bIsActive
+				&& InstanceData.DirectCommandSnapshot.Intent
+					!= EAIREDirectCommandIntent::None;
+		}
 		InstanceData.WorkOrderComponent =
 			InstanceData.CompanionCharacter->GetWorkOrderComponent();
 		InstanceData.AbilitySystemComponent =
@@ -676,6 +802,17 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 			InstanceData.FollowStopDistance = CompanionConfig->FollowStopDistance;
 			InstanceData.ReturnStartDistance = CompanionConfig->ReturnStartDistance;
 			InstanceData.ReturnStopDistance = CompanionConfig->ReturnStopDistance;
+			InstanceData.IdleWanderMinDistance =
+				CompanionConfig->IdleWanderMinDistance;
+			InstanceData.IdleWanderMaxDistance =
+				CompanionConfig->IdleWanderMaxDistance;
+			InstanceData.IdleWanderWaitMin = CompanionConfig->IdleWanderWaitMin;
+			InstanceData.IdleWanderWaitMax = CompanionConfig->IdleWanderWaitMax;
+			InstanceData.IdleWanderSampleCount =
+				CompanionConfig->IdleWanderSampleCount;
+			InstanceData.IdleWanderAcceptanceRadius =
+				CompanionConfig->IdleWanderAcceptanceRadius;
+			InstanceData.IdleWanderRetryDelay = CompanionConfig->IdleWanderRetryDelay;
 
 			const UWorld* World = InstanceData.CompanionCharacter->GetWorld();
 			APawn* CurrentPlayerPawn = IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
@@ -691,10 +828,17 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 						- InstanceData.CompanionCharacter->GetSimpleCollisionRadius()
 						- CurrentPlayerPawn->GetSimpleCollisionRadius());
 				InstanceData.bHasPlayer = true;
-				InstanceData.bShouldFollow = InstanceData.DistanceToPlayer > InstanceData.FollowStopDistance;
-				InstanceData.bReturnLatched = InstanceData.bReturnLatched
-					? InstanceData.DistanceToPlayer > InstanceData.ReturnStopDistance
-					: InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				InstanceData.bShouldFollow = false;
+				if (InstanceData.bIsDirectCommandRequested)
+				{
+					InstanceData.bReturnLatched = false;
+				}
+				else
+				{
+					InstanceData.bReturnLatched = InstanceData.bReturnLatched
+						? InstanceData.DistanceToPlayer > InstanceData.ReturnStopDistance
+						: InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				}
 				InstanceData.bShouldReturn = InstanceData.bReturnLatched;
 			}
 			else
@@ -732,6 +876,8 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		}
 	}
 
+	DrawCompanionDistanceDebug(InstanceData);
+
 	EAIRECompanionBehaviorInput BehaviorInputMask = static_cast<EAIRECompanionBehaviorInput>(0);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::HasPlayer, InstanceData.bHasPlayer);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::ShouldFollow, InstanceData.bShouldFollow);
@@ -751,18 +897,32 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		!= InstanceData.SupportTarget.Get();
 	const bool bWorkOrderChanged =
 		InstanceData.PreviousWorkOrderId != InstanceData.WorkOrderId;
+	const bool bDirectCommandChanged =
+		InstanceData.PreviousDirectCommandId
+			!= InstanceData.DirectCommandSnapshot.CommandId
+		|| InstanceData.PreviousDirectCommandGeneration
+			!= InstanceData.DirectCommandSnapshot.Generation
+		|| InstanceData.PreviousDirectCommandIntent
+			!= InstanceData.DirectCommandSnapshot.Intent;
 	InstanceData.bBehaviorSelectionChanged = !InstanceData.bHasPreviousBehaviorInput
 		|| InstanceData.PreviousBehaviorInputMask != CurrentBehaviorInputMask
 		|| bPlayerPawnChanged
 		|| bThreatTargetChanged
 		|| bSupportTargetChanged
-		|| bWorkOrderChanged;
+		|| bWorkOrderChanged
+		|| bDirectCommandChanged;
 	InstanceData.PreviousBehaviorInputMask = CurrentBehaviorInputMask;
 	InstanceData.bHasPreviousBehaviorInput = true;
 	InstanceData.PreviousPlayerPawn = InstanceData.PlayerPawn;
 	InstanceData.PreviousThreatTarget = InstanceData.ThreatTarget;
 	InstanceData.PreviousSupportTarget = InstanceData.SupportTarget;
 	InstanceData.PreviousWorkOrderId = InstanceData.WorkOrderId;
+	InstanceData.PreviousDirectCommandId =
+		InstanceData.DirectCommandSnapshot.CommandId;
+	InstanceData.PreviousDirectCommandGeneration =
+		InstanceData.DirectCommandSnapshot.Generation;
+	InstanceData.PreviousDirectCommandIntent =
+		InstanceData.DirectCommandSnapshot.Intent;
 }
 
 FAIREApplyCompanionMovementSettingsTask::FAIREApplyCompanionMovementSettingsTask()
@@ -856,6 +1016,556 @@ void FAIRECompanionBehaviorDebugTask::ExitState(
 		*GetNameSafe(InstanceData.TargetActor),
 		*StaticEnum<EStateTreeRunStatus>()->GetNameStringByValue(static_cast<int64>(Transition.CurrentRunStatus)),
 		InstanceData.bOwnsMovementRequest ? TEXT("StateExit") : TEXT("None"));
+}
+
+FAIRECompanionDirectCommandTask::FAIRECompanionDirectCommandTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = true;
+}
+
+EStateTreeRunStatus FAIRECompanionDirectCommandTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.ActiveCommandId.Reset();
+	InstanceData.ActiveCommandGeneration = 0;
+	InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+	InstanceData.bMoveRequested = false;
+	InstanceData.bLeaseExpired = false;
+
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.DirectCommandComponent))
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Direct command task received invalid owner bindings."));
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const FAIREDirectCommandSnapshot Snapshot =
+		InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+	if (!Snapshot.bIsActive
+		|| Snapshot.CommandId.IsEmpty()
+		|| Snapshot.Generation <= 0
+		|| Snapshot.Intent == EAIREDirectCommandIntent::None)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!IsLeaseValid(Snapshot))
+	{
+		InstanceData.bLeaseExpired = true;
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if ((Snapshot.Intent == EAIREDirectCommandIntent::Follow
+			|| Snapshot.Intent == EAIREDirectCommandIntent::ReturnToPlayer)
+		&& (!IsValid(InstanceData.PlayerPawn)
+			|| InstanceData.PlayerPawn->IsActorBeingDestroyed()))
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			Snapshot.CommandId,
+			Snapshot.Generation,
+			EAIRECommandResultReason::PlayerUnavailable);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.ActiveCommandId = Snapshot.CommandId;
+	InstanceData.ActiveCommandGeneration = Snapshot.Generation;
+	InstanceData.ActiveIntent = Snapshot.Intent;
+	if (!InstanceData.DirectCommandComponent->ReportDirectCommandRunning(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration))
+	{
+		InstanceData.ActiveCommandId.Reset();
+		InstanceData.ActiveCommandGeneration = 0;
+		InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActiveIntent == EAIREDirectCommandIntent::HoldPosition)
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+
+	UE_LOG(
+		LogAIRECompanionStateTree,
+		Log,
+		TEXT("Direct command execution started. CommandId=%s Generation=%lld Intent=%s"),
+		*InstanceData.ActiveCommandId,
+		InstanceData.ActiveCommandGeneration,
+		*StaticEnum<EAIREDirectCommandIntent>()->GetNameStringByValue(
+			static_cast<int64>(InstanceData.ActiveIntent)));
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionDirectCommandTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.DirectCommandComponent))
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const FAIREDirectCommandSnapshot Snapshot =
+		InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+	if (!IsOwnedSnapshot(InstanceData, Snapshot))
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!Snapshot.bIsActive)
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!IsLeaseValid(Snapshot))
+	{
+		InstanceData.bLeaseExpired = true;
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActiveIntent == EAIREDirectCommandIntent::HoldPosition)
+	{
+		CancelOwnedMovement(InstanceData);
+		InstanceData.CompanionController->StopMovement();
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (!IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::PlayerUnavailable);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const bool bReturnCommand =
+		InstanceData.ActiveIntent == EAIREDirectCommandIntent::ReturnToPlayer;
+	const float StopDistance = bReturnCommand
+		? InstanceData.ReturnStopDistance
+		: InstanceData.FollowStopDistance;
+	if (!FMath::IsFinite(StopDistance) || StopDistance < 0.0f)
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::InvalidParameters);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+	if (!IsValid(CompanionPawn))
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::NavigationFailed);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (IsWithinSurfaceRange(
+			*CompanionPawn,
+			*InstanceData.PlayerPawn,
+			StopDistance))
+	{
+		CancelOwnedMovement(InstanceData);
+		if (bReturnCommand)
+		{
+			const bool bReported =
+				InstanceData.DirectCommandComponent->ReportDirectCommandSucceeded(
+					InstanceData.ActiveCommandId,
+					InstanceData.ActiveCommandGeneration,
+					EAIRECommandResultReason::None);
+			return bReported
+				? EStateTreeRunStatus::Succeeded
+				: EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bMoveRequested
+		&& (InstanceData.CompanionController->GetMoveStatus()
+			== EPathFollowingStatus::Moving
+			|| InstanceData.CompanionController->GetMoveStatus()
+				== EPathFollowingStatus::Waiting
+			|| InstanceData.CompanionController->GetMoveStatus()
+				== EPathFollowingStatus::Paused))
+	{
+		return EStateTreeRunStatus::Running;
+	}
+	InstanceData.bMoveRequested = false;
+
+	const EPathFollowingRequestResult::Type MoveResult =
+		InstanceData.CompanionController->MoveToActor(
+			InstanceData.PlayerPawn,
+			StopDistance,
+			true,
+			true,
+			true,
+			nullptr,
+			true);
+	if (MoveResult == EPathFollowingRequestResult::Failed)
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::NavigationFailed);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal)
+	{
+		if (bReturnCommand
+			&& IsWithinSurfaceRange(
+				*CompanionPawn,
+				*InstanceData.PlayerPawn,
+				StopDistance))
+		{
+			const bool bReported =
+				InstanceData.DirectCommandComponent->ReportDirectCommandSucceeded(
+					InstanceData.ActiveCommandId,
+					InstanceData.ActiveCommandGeneration,
+					EAIRECommandResultReason::None);
+			return bReported
+				? EStateTreeRunStatus::Succeeded
+				: EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	InstanceData.bMoveRequested = true;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionDirectCommandTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedMovement(InstanceData);
+	if (IsValid(InstanceData.DirectCommandComponent)
+		&& !InstanceData.bLeaseExpired
+		&& !InstanceData.ActiveCommandId.IsEmpty())
+	{
+		const FAIREDirectCommandSnapshot Snapshot =
+			InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+		if (IsOwnedSnapshot(InstanceData, Snapshot)
+			&& Snapshot.bIsActive)
+		{
+			InstanceData.DirectCommandComponent->ReportDirectCommandPreempted(
+				InstanceData.ActiveCommandId,
+				InstanceData.ActiveCommandGeneration);
+		}
+	}
+	InstanceData.ActiveCommandId.Reset();
+	InstanceData.ActiveCommandGeneration = 0;
+	InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+	InstanceData.bLeaseExpired = false;
+}
+
+void FAIRECompanionDirectCommandTask::CancelOwnedMovement(
+	FInstanceDataType& InstanceData)
+{
+	if (InstanceData.bMoveRequested
+		&& IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+	InstanceData.bMoveRequested = false;
+}
+
+bool FAIRECompanionDirectCommandTask::IsOwnedSnapshot(
+	const FInstanceDataType& InstanceData,
+	const FAIREDirectCommandSnapshot& Snapshot)
+{
+	return !InstanceData.ActiveCommandId.IsEmpty()
+		&& Snapshot.CommandId == InstanceData.ActiveCommandId
+		&& Snapshot.Generation == InstanceData.ActiveCommandGeneration;
+}
+
+bool FAIRECompanionDirectCommandTask::IsLeaseValid(
+	const FAIREDirectCommandSnapshot& Snapshot)
+{
+	return Snapshot.ExpiresAtUtc > FDateTime::UtcNow();
+}
+
+FAIRECompanionIdleNearPlayerTask::FAIRECompanionIdleNearPlayerTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FAIRECompanionIdleNearPlayerTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.ActivePlayerPawn = nullptr;
+	InstanceData.ActiveDestination = FVector::ZeroVector;
+	InstanceData.WaitTimeRemaining = 0.0f;
+	InstanceData.RetryCount = 0;
+	InstanceData.bMoveRequested = false;
+
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Idle-near-player task received invalid owner or player bindings."));
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!FMath::IsFinite(InstanceData.WanderMinDistance)
+		|| InstanceData.WanderMinDistance < 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderMaxDistance)
+		|| InstanceData.WanderMaxDistance <= InstanceData.WanderMinDistance
+		|| !FMath::IsFinite(InstanceData.WanderWaitMin)
+		|| InstanceData.WanderWaitMin < 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderWaitMax)
+		|| InstanceData.WanderWaitMax < InstanceData.WanderWaitMin
+		|| InstanceData.WanderSampleCount < 1
+		|| InstanceData.WanderSampleCount > 8
+		|| !FMath::IsFinite(InstanceData.WanderAcceptanceRadius)
+		|| InstanceData.WanderAcceptanceRadius <= 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderRetryDelay)
+		|| InstanceData.WanderRetryDelay < 0.0f)
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Idle-near-player task received invalid wander settings."));
+		return EStateTreeRunStatus::Failed;
+	}
+	InstanceData.ActivePlayerPawn = InstanceData.PlayerPawn;
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionIdleNearPlayerTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActivePlayerPawn.Get() != InstanceData.PlayerPawn)
+	{
+		CancelOwnedMovement(InstanceData);
+		InstanceData.ActivePlayerPawn = InstanceData.PlayerPawn;
+		InstanceData.ActiveDestination = FVector::ZeroVector;
+		InstanceData.WaitTimeRemaining = 0.0f;
+		InstanceData.RetryCount = 0;
+	}
+
+	if (InstanceData.bMoveRequested)
+	{
+		if (IsMovementActive(*InstanceData.CompanionController))
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		InstanceData.bMoveRequested = false;
+		const APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+		if (IsValid(CompanionPawn)
+			&& FVector::Dist2D(
+					CompanionPawn->GetActorLocation(),
+					InstanceData.ActiveDestination)
+				<= InstanceData.WanderAcceptanceRadius)
+		{
+			InstanceData.RetryCount = 0;
+			InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+			return EStateTreeRunStatus::Running;
+		}
+
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		else
+		{
+			UE_LOG(
+				LogAIRECompanionStateTree,
+				Warning,
+				TEXT("Idle-near-player move did not reach its sampled destination. Companion=%s Retries=%d"),
+				*GetNameSafe(InstanceData.CompanionCharacter),
+				InstanceData.RetryCount);
+			InstanceData.RetryCount = 0;
+			InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+			return EStateTreeRunStatus::Running;
+		}
+	}
+
+	if (InstanceData.WaitTimeRemaining > 0.0f)
+	{
+		InstanceData.WaitTimeRemaining = FMath::Max(
+			0.0f,
+			InstanceData.WaitTimeRemaining - DeltaTime);
+		return EStateTreeRunStatus::Running;
+	}
+
+	FVector Destination = FVector::ZeroVector;
+	if (!TrySampleReachableDestination(InstanceData, Destination))
+	{
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	const EPathFollowingRequestResult::Type MoveResult =
+		InstanceData.CompanionController->MoveToLocation(
+			Destination,
+			InstanceData.WanderAcceptanceRadius,
+			false,
+			true,
+			true,
+			true,
+			nullptr,
+			true);
+	if (MoveResult == EPathFollowingRequestResult::Failed)
+	{
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+	if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal)
+	{
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	InstanceData.ActiveDestination = Destination;
+	InstanceData.bMoveRequested = true;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionIdleNearPlayerTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedMovement(InstanceData);
+	InstanceData.ActivePlayerPawn.Reset();
+	InstanceData.ActiveDestination = FVector::ZeroVector;
+	InstanceData.WaitTimeRemaining = 0.0f;
+	InstanceData.RetryCount = 0;
+}
+
+bool FAIRECompanionIdleNearPlayerTask::TrySampleReachableDestination(
+	const FInstanceDataType& InstanceData,
+	FVector& OutDestination)
+{
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.PlayerPawn))
+	{
+		return false;
+	}
+
+	UWorld* World = InstanceData.CompanionCharacter->GetWorld();
+	UNavigationSystemV1* NavigationSystem =
+		IsValid(World)
+		? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World)
+		: nullptr;
+	if (!IsValid(NavigationSystem))
+	{
+		return false;
+	}
+
+	for (int32 SampleIndex = 0;
+		SampleIndex < InstanceData.WanderSampleCount;
+		++SampleIndex)
+	{
+		FNavLocation NavLocation;
+		if (!NavigationSystem->GetRandomReachablePointInRadius(
+				InstanceData.PlayerPawn->GetActorLocation(),
+				InstanceData.WanderMaxDistance,
+				NavLocation))
+		{
+			continue;
+		}
+
+		const float PlayerDistance = FVector::Dist2D(
+			InstanceData.PlayerPawn->GetActorLocation(),
+			NavLocation.Location);
+		if (PlayerDistance + KINDA_SMALL_NUMBER
+			< InstanceData.WanderMinDistance
+			|| PlayerDistance - KINDA_SMALL_NUMBER
+			> InstanceData.WanderMaxDistance)
+		{
+			continue;
+		}
+
+		OutDestination = NavLocation.Location;
+		return true;
+	}
+
+	return false;
+}
+
+float FAIRECompanionIdleNearPlayerTask::ChooseWaitDuration(
+	const FInstanceDataType& InstanceData)
+{
+	return FMath::FRandRange(
+		InstanceData.WanderWaitMin,
+		InstanceData.WanderWaitMax);
+}
+
+void FAIRECompanionIdleNearPlayerTask::CancelOwnedMovement(
+	FInstanceDataType& InstanceData)
+{
+	if (InstanceData.bMoveRequested
+		&& IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+	InstanceData.bMoveRequested = false;
+}
+
+bool FAIRECompanionIdleNearPlayerTask::IsMovementActive(
+	const AAIRECompanionAIController& Controller)
+{
+	const EPathFollowingStatus::Type Status = Controller.GetMoveStatus();
+	return Status == EPathFollowingStatus::Waiting
+		|| Status == EPathFollowingStatus::Paused
+		|| Status == EPathFollowingStatus::Moving;
 }
 
 FAIRECompanionExecuteWorkOrderTask::FAIRECompanionExecuteWorkOrderTask()

@@ -15,6 +15,7 @@ class UAIRECompanionConfigDataAsset;
 class UAIRECombatEvadeComponent;
 class UAIRECompanionAttributeSet;
 class UAIRECompanionChatComponent;
+class UAIRECompanionCommandGatewayComponent;
 class UAIRECompanionEquipmentComponent;
 class UAIRECompanionInventoryComponent;
 class UAIRECompanionInventoryInteractionComponent;
@@ -72,6 +73,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Chat")
 	UAIRECompanionChatComponent* GetChatComponent() const;
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Command")
+	UAIRECompanionCommandGatewayComponent* GetCommandGatewayComponent() const;
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Work")
 	UAIRECompanionWorkOrderComponent* GetWorkOrderComponent() const;
@@ -135,6 +139,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Chat", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionChatComponent> ChatComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Command", meta = (AllowPrivateAccess = "true", NoEditInline))
+	TObjectPtr<UAIRECompanionCommandGatewayComponent> CommandGatewayComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Work", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAIRECompanionWorkOrderComponent> WorkOrderComponent;

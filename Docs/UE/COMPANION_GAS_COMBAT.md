@@ -833,6 +833,46 @@ Target을 Reset한 뒤 반복합니다.
 > Compile·Save되었습니다. 거리 포함 경계, Combat·Support 동시 요청 우선순위와 반복
 > 수명주기 항목은 별도 상세 검증 전이므로 열어 둡니다.
 
+### 9.14 자율 동행과 외부 DirectCommand Prototype
+
+- [x] 평상시에는 `ReturnStartDistance=600cm`를 넘을 때만 복귀를 시작하고
+  `ReturnStopDistance=400cm` 안에서 자율 행동으로 돌아간다.
+- [x] 상위 행동과 Work가 없으면 플레이어 기준 150~350cm NavMesh 안에서 3~6초 대기와
+  제한 배회를 반복하며, 목적지 탐색은 최대 8회로 제한된다.
+- [x] `Command.Follow`가 `FollowStopDistance=200cm` 안에서 정지하고 lease 동안 재추적한다.
+- [x] Hold와 Follow DirectCommand를 Combat이 선점한다.
+- [ ] DirectCommand 종료 후 기존 WorkOrder가 유효하면 재개된다.
+- [ ] Candidate 만료·중복·교체·Nav 실패·Player 소실과 State Exit에서 이동 요청과 늦은
+  Callback이 남지 않는다.
+- [ ] CancelCurrent는 active WorkOrder ID만 취소하고 Attack은 현재 UE-selected
+  hostile/alive Threat만 관찰한다.
+- [ ] Gather와 Engage/Distract/Move/Switch는 성공으로 가장하지 않고 로컬
+  `UnsupportedExecution`으로 종료된다.
+- [ ] Backend·LLM이 없거나 Candidate가 거부되어도 Return·배회·Combat·Work 로컬 루프가
+  계속 동작한다.
+
+`ST_AIRECompanion_Local`의 기존 Follow 거리 조건은 기본 동행 입력으로 사용하지 않습니다.
+Follow는 검증된 DirectCommand lease에서만 사용하고, 기본 동행은 Return hysteresis와
+IdleNearPlayer가 담당합니다. 외부 priority 문자열은 진단값일 뿐 StateTree 우선순위를
+변경하지 않습니다.
+
+활성 DirectCommand 동안에는 자율 Return latch를 끕니다. 따라서 HoldPosition은 플레이어가
+600cm 밖으로 이동해도 lease 동안 위치를 유지하고, lease 종료 다음 tick에 현재 거리를 다시
+평가해 600cm 밖이면 400cm 안까지 복귀합니다. PIE에서
+`aire.Companion.DistanceDebug 1`을 실행하면 MAKO 머리 위에 플레이어 표면 거리,
+600→400cm Return 경계, 현재 로컬 선택, Command intent와 남은 lease가 표시됩니다.
+검증 뒤에는 `aire.Companion.DistanceDebug 0`으로 끕니다.
+
+> 2026-08-11: Config, Context Evaluator, production DirectCommand Task,
+> IdleNearPlayer NavMesh Task와 Gateway 연동 C++ source를 구현하고 `git diff --check`를
+> 통과했습니다. 같은 날 Editor MCP로 `ST_AIRECompanion_Local`에 production
+> DirectCommand Task와 `IdleNearPlayer` State·Task·HasPlayer 조건 및 evaluator binding을
+> 적용하고 해당 asset만 Compile·Save한 뒤 재컴파일 성공을 확인했습니다. 이후 사용자가
+> 최신 source PIE에서
+> 600→400cm 복귀, 제한 배회, Hold lease, Follow 200cm 정지·재추적과 Combat 선점을
+> 확인했습니다. WorkOrder 진입 수단이 없어 Work 재개는 후속 통합으로 이관했고,
+> Level 종료·Owner 파괴 검증은 보류했으므로 나머지 수명주기 체크는 열어 둡니다.
+
 ## 10. 통과 기준과 후속 정리
 
 이번 구조 변경은 다음 조건이 모두 만족되어야 검증 완료로 간주합니다.

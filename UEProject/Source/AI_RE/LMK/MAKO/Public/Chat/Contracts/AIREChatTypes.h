@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Command/AIRECompanionCommandTypes.h"
 #include "AIREChatTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -83,6 +84,9 @@ struct AI_RE_API FAIREChatResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	FString DisplayText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
+	TArray<FAIRECommandCandidate> CommandCandidates;
 };
 
 USTRUCT(BlueprintType)

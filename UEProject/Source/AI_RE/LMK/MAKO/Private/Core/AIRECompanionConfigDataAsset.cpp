@@ -176,6 +176,60 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!FMath::IsFinite(IdleWanderMinDistance)
+		|| IdleWanderMinDistance < 0.0f
+		|| !FMath::IsFinite(IdleWanderMaxDistance)
+		|| IdleWanderMaxDistance <= IdleWanderMinDistance
+		|| IdleWanderMaxDistance >= ReturnStopDistance)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderDistances",
+			"Idle wander distances must be finite and satisfy Minimum < Maximum < Return Stop Distance.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderWaitMin)
+		|| IdleWanderWaitMin < 0.0f
+		|| !FMath::IsFinite(IdleWanderWaitMax)
+		|| IdleWanderWaitMax < IdleWanderWaitMin)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderWait",
+			"Idle wander wait times must be finite, non-negative, and ordered Minimum <= Maximum.");
+		return false;
+	}
+
+	if (IdleWanderSampleCount < 1 || IdleWanderSampleCount > 8)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderSampleCount",
+			"Idle wander sample count must be between 1 and 8.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderAcceptanceRadius)
+		|| IdleWanderAcceptanceRadius <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderAcceptanceRadius",
+			"Idle wander acceptance radius must be finite and greater than zero.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderRetryDelay)
+		|| IdleWanderRetryDelay < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderRetryDelay",
+			"Idle wander retry delay must be finite and non-negative.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(StorageWorkDuration)
 		|| StorageWorkDuration < 0.0f
 		|| !FMath::IsFinite(StorageAcceptanceRadius)

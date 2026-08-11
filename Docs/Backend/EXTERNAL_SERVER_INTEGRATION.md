@@ -66,6 +66,35 @@ fail-closed 검증하고, 실제 런타임 응답이 그 계약과 다르면 계
 `Event`, `Command`, Command Result 및 전체 M04 계약 Gate는 여전히 해결되지 않았습니다.
 이 항목들의 DTO·인증·매핑은 별도 계약 확인 전까지 확정하지 않습니다.
 
+## 2026-08-11 AX-I03 Command Candidate Prototype
+
+배포 OpenAPI의 현재 `ChatRequest`는 중복 없는 `allowed_commands`를 최대 16개까지 받고,
+`ChatResponse.command_candidates`는 최대 4개를 반환합니다. 배포 `CommandType` enum은
+Follow, HoldPosition, ReturnToPlayer, EngageTarget, DistractTarget, MoveToLocation,
+CancelCurrent, GatherResource, Attack, Switch 열 가지입니다. 워크스페이스에는 기존 문서가
+가리키는 별도 `ai_companion_server/`가 없으므로 이 확인에는 배포 OpenAPI와 현재
+`AIRE_SERVER/app` 코드만 사용했습니다. `AIRE_SERVER/old/`와 과거 `docs/current/`는
+이 범위의 런타임 권위가 아닙니다.
+
+AX-I03 UE Prototype은 LLM Command 선택 경험을 먼저 검증하기 위해 Game Chat마다 열 가지를
+모두 고정 광고합니다. 이는 실행 가능한 capability만 광고하는 최종 계약이 아니라 의도적인
+예외이며, 모든 Candidate는 UE Command Gateway에서 다시 검증합니다. 현재 로컬 실행 범위는
+Follow, HoldPosition, ReturnToPlayer, active WorkOrder Cancel과 UE-selected Threat Attack입니다.
+GatherResource와 EngageTarget, DistractTarget, MoveToLocation, Switch는 명시적인
+`UnsupportedExecution`으로 끝나며 gameplay mutation을 만들지 않습니다.
+
+Editor MCP로 `ST_AIRECompanion_Local`에 production DirectCommand Task와 property binding,
+`IdleNearPlayer`를 구성하고 Compile·Save했습니다. 사용자는 실제 Game Chat PIE에서 Hold lease,
+Follow 200cm 정지·재추적과 Combat 선점을 확인했습니다. 직접 ReturnToPlayer 후보,
+active WorkOrder Cancel/재개, Level 종료·Owner 파괴와 전체 unsupported Command 실서버 흐름은
+아직 검증되지 않았으므로 이 Prototype은 `Review`이며 전체 통합 완료로 보지 않습니다.
+
+현재 Backend brain은 복귀 발화를 `Command.Switch`로 생성하지만 UE는 이를
+`ReturnToPlayer`로 추측 변환하지 않습니다. 또한 Attack의 `parameters.target_id`는 안정
+World Entity Identity가 구현되기 전까지 선택 Threat와 대조할 수 없으므로 거부합니다.
+Command Result의 Backend 전송은 여전히 계약과 endpoint가 없어 로컬 결과로만 유지합니다.
+이 Prototype은 Event·Command Result를 포함한 전체 M04 Gate를 해제하지 않습니다.
+
 ## 2026-08-10 AX-W01 Web 배포 기준
 
 AX-W01 WebApp은 pairing 및 브라우저 credential 저장 없이 `AIRE_WEB` 고정 신원으로

@@ -7,6 +7,7 @@
 #include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Chat/AIRECompanionChatComponent.h"
+#include "Command/AIRECompanionCommandGatewayComponent.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Interaction/AIRECompanionInventoryInteractionComponent.h"
@@ -75,6 +76,11 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 
 	ChatComponent = CreateDefaultSubobject<UAIRECompanionChatComponent>(TEXT("Chat"));
 	check(ChatComponent);
+
+	CommandGatewayComponent =
+		CreateDefaultSubobject<UAIRECompanionCommandGatewayComponent>(
+			TEXT("CommandGateway"));
+	check(CommandGatewayComponent);
 
 	WorkOrderComponent = CreateDefaultSubobject<UAIRECompanionWorkOrderComponent>(TEXT("WorkOrder"));
 	check(WorkOrderComponent);
@@ -201,6 +207,12 @@ AAIRECompanionCharacter::GetLocalBehaviorPolicyComponent() const
 UAIRECompanionChatComponent* AAIRECompanionCharacter::GetChatComponent() const
 {
 	return ChatComponent;
+}
+
+UAIRECompanionCommandGatewayComponent*
+AAIRECompanionCharacter::GetCommandGatewayComponent() const
+{
+	return CommandGatewayComponent;
 }
 
 UAIRECompanionWorkOrderComponent*
@@ -406,6 +418,11 @@ void AAIRECompanionCharacter::ApplySoxAndShoesVisibility()
 void AAIRECompanionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ShutdownAutonomousEvadeRuntime();
+
+	if (IsValid(CommandGatewayComponent))
+	{
+		CommandGatewayComponent->ShutdownGateway();
+	}
 
 	if (IsValid(StorageAutomationComponent))
 	{
