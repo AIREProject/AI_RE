@@ -15,6 +15,7 @@ public class AI_RE : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"AIModule",
+			"NavigationSystem",
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",

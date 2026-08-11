@@ -2,29 +2,30 @@
 
 ## 결정
 
-2026-07-27부터 기존 `AI_RE` Backend 구현은 사용하지 않습니다. Backend 구현은
-워크스페이스의 별도 Git 저장소 `ai_companion_server/`를 채택하고, 실제 서비스 호출은
+2026-07-27부터 기존 `AI_RE` Backend 구현은 사용하지 않습니다. 현행 Backend 구현은
+워크스페이스의 별도 Git 저장소 `AIRE_SERVER/`를 사용하고, 실제 서비스 호출은
 다음 배포 서버를 사용합니다.
 
 - Base URL: [https://traip.mtvs2026.work](https://traip.mtvs2026.work)
 - Swagger UI: [https://traip.mtvs2026.work/docs](https://traip.mtvs2026.work/docs)
 - OpenAPI: [https://traip.mtvs2026.work/openapi.json](https://traip.mtvs2026.work/openapi.json)
 
-파트너는 당분간 Backend, DB, LLM Provider와 배포 코드를 개발하거나 운영하지 않습니다.
-파트너의 범위는 UE/Web 클라이언트 연동, 외부 응답 검증, timeout·오류·미접속 처리와
-로컬 Companion fallback입니다.
+2026-08-11 사용자 결정으로 별도 Backend 작업자는 없으며 이후 필요한 Backend, DB, LLM과
+배포 변경도 파트너가 직접 수행합니다. 이번 AX-P01 마감 범위는 새 Backend·LLM 기능 없이
+기존 API와 UE Local Work를 연결하는 것으로 제한합니다.
 
 ## 계약 우선순위
 
 1. 배포 서버 `/openapi.json`: 지금 호출 가능한 런타임 API의 기준
-2. `ai_companion_server/docs/current/`: 채택한 Backend의 목표 동작과 클라이언트 계약
-3. `ai_companion_server` 현재 코드와 테스트: 목표 계약의 구현 사실
+2. `AIRE_SERVER/docs/`와 현행 모델·route: 채택한 Backend의 목표 동작과 클라이언트 계약
+3. `AIRE_SERVER/app`과 `tests`: 목표 계약의 구현 사실
 4. `AI_RE/Contracts/`: 계약 재조정 전까지 레거시 참고 자료
 
 배포 OpenAPI와 채택 서버 계약이 다르면 클라이언트에서 임의로 추측하거나 양쪽 형식을
-동시에 지원하지 않습니다. 차이를 기록하고 Backend 담당자의 배포 또는 계약 결정을 기다립니다.
+동시에 지원하지 않습니다. 차이를 기록한 뒤 파트너가 `AIRE_SERVER` 계약·구현·배포 중 어느
+쪽을 갱신할지 결정합니다.
 
-## 2026-07-27 확인 결과
+## 2026-07-27 과거 확인 결과
 
 로컬 `ai_companion_server` Build 1은 다음 API를 구현합니다.
 
@@ -122,12 +123,28 @@ Task DTO가 일치함을 확인하고, WebApp에 Gathering/Crafting 생성과 Ta
 실제 모바일 Gathering/Crafting 생성·목록 확인, 동일 request ID 멱등성, 네 status filter와
 401/403·timeout·network·invalid/malformed JSON UI 매트릭스는 아직 Review 항목입니다.
 
+## 2026-08-11 AX-P01 예약 작업 UE 실행 결정
+
+2026-08-12 마감에는 새 Backend·LLM 기능을 추가하지 않고 기존 Offline Task API의 GameClient
+`start/complete/claim`을 UE Local Gathering/Crafting Work와 연결하는 Prototype을 우선합니다.
+Mobile이 생성한 Task는 게임 실행 뒤 UE가 요청 시 한 번 조회하며, allowlist된 Gathering 한
+종류와 UE에서 검증된 Crafting Recipe 한 종류만 실제 WorkOrder로 변환합니다.
+
+Local Work와 Inventory 저장이 성공한 뒤에만 Task를 complete/claim하고, 같은 `task_id`를 local
+Inventory persistence ledger에 함께 기록해 재조회·재시작 중복 지급을 막습니다. WebClient는
+계속 start/complete/claim을 호출하지 않으며 polling도 추가하지 않습니다.
+
+이 흐름은 게임이 꺼진 동안 서버가 작업과 보상을 계산하는 Offline Simulation이 아닙니다.
+`Claimed`도 계속 서버 Task 상태이며 UE Inventory settlement receipt가 아닙니다. Game State
+Snapshot, Settlement ledger, apply/ack receipt와 모바일 Inventory 표시는 AX-I09~I12 및
+AX-W03/W04에 남고, Prototype 성공만으로 AX-G3/AX-G4를 완료 처리하지 않습니다.
+
 ## 연동 Gate
 
-UE/Web 클라이언트의 새 서버 연동을 완료하려면 Backend 담당자가 다음 중 하나를 확정해야 합니다.
+UE/Web 클라이언트의 새 서버 연동을 완료하려면 파트너가 다음 중 하나로 계약을 동기화해야 합니다.
 
-1. `ai_companion_server` Build 1 계약을 배포 서버에 반영
-2. 배포 서버 계약을 목표 계약으로 채택하고 `ai_companion_server/docs/current/`를 갱신
+1. `AIRE_SERVER` 현행 계약을 배포 서버에 반영
+2. 배포 서버 계약을 목표 계약으로 채택하고 `AIRE_SERVER` 문서·코드·테스트를 갱신
 
 Gate가 해결되기 전에도 Base URL 설정, 비동기 요청 수명주기, timeout, 취소, 오류 표시와
 Backend 미접속 시 로컬 AI 유지 작업은 진행할 수 있습니다. 요청·응답 DTO와 Command 매핑은

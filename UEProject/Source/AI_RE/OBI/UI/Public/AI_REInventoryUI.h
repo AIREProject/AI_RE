@@ -20,8 +20,14 @@ public:
 	void InitializeInventory(UAI_REPlayerInventoryComponent* InInventoryComp);
 
 protected:
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+
 	UPROPERTY(meta=(BindWidgetOptional))
 	TObjectPtr<UUniformGridPanel> InventoryGrid;
+
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UUniformGridPanel> PlayerEquipmentGrid;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory")
 	TSubclassOf<UAI_REInventorySlotUI> SlotWidgetClass;
@@ -35,6 +41,12 @@ private:
 	UPROPERTY()
 	TArray<UAI_REInventorySlotUI*> SlotWidgets;
 
+	UPROPERTY()
+	TObjectPtr<UAI_REInventorySlotUI> EquipmentSlotWidget;
+
 	UFUNCTION()
 	void RefreshInventory();
+
+	UFUNCTION()
+	void HandleWeaponEquipResult(FName WeaponItemId, bool bSucceeded);
 };

@@ -7,7 +7,7 @@
 namespace
 {
 	constexpr int32 SchemaVersion = 1;
-	constexpr int32 MaxStableIdLength = 128;
+	constexpr int32 ChatMaxStableIdLength = 128;
 	constexpr int32 MaxUserMessageLength = 2000;
 	constexpr int32 MaxDisplayTextLength = 4000;
 	constexpr int32 MaxAIProviderLength = 64;
@@ -766,7 +766,7 @@ FAIREParsedChatFrame FAIREChatJsonAdapter::ParseHttpBody(
 
 bool FAIREChatJsonAdapter::IsStableId(const FString& Value)
 {
-	if (Value.IsEmpty() || Value.Len() > MaxStableIdLength)
+	if (Value.IsEmpty() || Value.Len() > ChatMaxStableIdLength)
 	{
 		return false;
 	}

@@ -3,6 +3,7 @@
 #include "AIREGameplayInventorySubsystem.h"
 #include "AIRESharedStorageActor.h"
 #include "AI_RECharacter.h"
+#include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
 #include "Components/InputComponent.h"
 #include "Core/AIRECompanionCharacter.h"
@@ -112,11 +113,28 @@ void UAIREInventoryUIWorldSubsystem::OpenCompanionInventory(
 	UWorld* World = GetWorld();
 	APlayerController* PlayerController =
 		IsValid(World) ? World->GetFirstPlayerController() : nullptr;
-	UAIRECompanionInventoryComponent* Inventory =
+	const AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(Interactor);
+	UAIRECompanionInventoryComponent* MakoInventory =
 		Companion->GetInventoryComponent();
+	UAI_REPlayerInventoryComponent* PlayerInventory =
+		IsValid(PlayerCharacter)
+			? PlayerCharacter->GetInventoryComponent().Get()
+			: nullptr;
+	UAI_REPlayerCombatComponent* PlayerCombat =
+		IsValid(PlayerCharacter)
+			? PlayerCharacter->GetCombatComponent().Get()
+			: nullptr;
+	UAIREGameplayInventorySubsystem* GameplayInventory =
+		IsValid(World) && IsValid(World->GetGameInstance())
+			? World->GetGameInstance()
+				->GetSubsystem<UAIREGameplayInventorySubsystem>()
+			: nullptr;
 	if (!IsValid(PlayerController)
 		|| !PlayerController->IsLocalController()
-		|| !IsValid(Inventory))
+		|| !IsValid(MakoInventory)
+		|| !IsValid(PlayerInventory)
+		|| !IsValid(PlayerCombat)
+		|| !IsValid(GameplayInventory))
 	{
 		return;
 	}
@@ -144,7 +162,11 @@ void UAIREInventoryUIWorldSubsystem::OpenCompanionInventory(
 	CompanionPanel->OnCloseRequested().AddUObject(
 		this,
 		&UAIREInventoryUIWorldSubsystem::CloseInventoryUI);
-	CompanionPanel->InitializePanel(Inventory);
+	CompanionPanel->InitializePanel(
+		GameplayInventory,
+		MakoInventory,
+		PlayerInventory,
+		PlayerCombat);
 	CompanionPanel->AddToViewport(130);
 	CompanionPanel->SetPanelOpen(true);
 

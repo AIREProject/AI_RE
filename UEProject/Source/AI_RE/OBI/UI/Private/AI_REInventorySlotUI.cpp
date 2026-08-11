@@ -8,7 +8,11 @@
 #include "AI_REPlayerInventoryComponent.h"
 #include "AI_REItemSubsystem.h"
 #include "AI_REItemDataAsset.h"
+#include "AI_REPlayerCombatComponent.h"
+#include "AIREGameplayInventorySubsystem.h"
+#include "AIREGameplayInventoryTypes.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/Actor.h"
 
 void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 {
@@ -67,6 +71,11 @@ void UAI_REInventorySlotUI::RefreshSlot(const FName& InItemId, int32 InCount)
 
 FReply UAI_REInventorySlotUI::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
+	if (bIsEquipmentSlot)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
 	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
 	{
 		return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
@@ -108,6 +117,36 @@ bool UAI_REInventorySlotUI::NativeOnDrop(const FGeometry& InGeometry, const FDra
 {
 	if (UAI_REItemDragDropOperation* DragOp = Cast<UAI_REItemDragDropOperation>(InOperation))
 	{
+		if (bIsEquipmentSlot)
+		{
+			if (!InventoryComp || DragOp->ItemCount != 1)
+			{
+				return false;
+			}
+
+			UGameInstance* GameInstance = GetGameInstance();
+			UAIREGameplayInventorySubsystem* GameplayInventory = GameInstance
+				? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+				: nullptr;
+			UAI_REPlayerCombatComponent* PlayerCombat = InventoryComp->GetOwner()
+				? InventoryComp->GetOwner()->FindComponentByClass<UAI_REPlayerCombatComponent>()
+				: nullptr;
+			if (!GameplayInventory || !PlayerCombat)
+			{
+				return false;
+			}
+
+			FAIREPlayerWeaponEquipRequest Request;
+			Request.SessionId = GameplayInventory->GetInventorySessionId();
+			Request.MutationId = FGuid::NewGuid();
+			Request.ExpectedPlayerRevision = InventoryComp->GetInventoryRevision();
+			Request.SourceSlotIndex = DragOp->SourceSlotIndex;
+			return GameplayInventory->TryEquipPlayerWeapon(
+				InventoryComp,
+				PlayerCombat,
+				Request).WasApplied();
+		}
+
 		if (InventoryComp && DragOp->SourceSlotIndex != SlotIndex)
 		{
 			if (bIsQuickSlot)

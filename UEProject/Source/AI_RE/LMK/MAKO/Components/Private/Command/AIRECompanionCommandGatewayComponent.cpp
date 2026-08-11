@@ -15,7 +15,7 @@
 namespace
 {
 	constexpr int32 MaxProcessedCommandIds = 256;
-	constexpr int32 MaxStableIdLength = 128;
+	constexpr int32 CommandMaxStableIdLength = 128;
 	constexpr int32 MaxGatherQuantity = 50;
 	constexpr double FutureToleranceSeconds = 2.0;
 	constexpr double MaxLeaseSeconds = 60.0;
@@ -23,7 +23,7 @@ namespace
 
 	bool IsStableCommandId(const FString& Value)
 	{
-		if (Value.IsEmpty() || Value.Len() > MaxStableIdLength)
+		if (Value.IsEmpty() || Value.Len() > CommandMaxStableIdLength)
 		{
 			return false;
 		}

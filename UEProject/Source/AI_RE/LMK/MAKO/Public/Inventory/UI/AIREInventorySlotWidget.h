@@ -16,7 +16,8 @@ enum class EAIREInventorySlotSource : uint8
 	Player,
 	Storage,
 	Mako,
-	Equipment
+	Equipment,
+	PlayerEquipment
 };
 
 DECLARE_DELEGATE_TwoParams(
@@ -53,9 +54,13 @@ public:
 	FAIREInventorySlotDropped& OnSlotDropped();
 
 protected:
+	virtual void NativeConstruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
 	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UBorder> BackgroundBorder;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> ItemIcon;

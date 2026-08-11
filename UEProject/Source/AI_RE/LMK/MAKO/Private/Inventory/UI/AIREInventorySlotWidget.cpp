@@ -7,8 +7,20 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Inventory/UI/AIREInventoryDragDropOperation.h"
+
+void UAIREInventorySlotWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	SetVisibility(ESlateVisibility::Visible);
+	if (IsValid(BackgroundBorder))
+	{
+		BackgroundBorder->SetVisibility(ESlateVisibility::Visible);
+	}
+}
 
 void UAIREInventorySlotWidget::SetSlotData(
 	const EAIREInventorySlotSource InSource,
@@ -92,7 +104,10 @@ void UAIREInventorySlotWidget::NativeOnDragDetected(
 	UDragDropOperation*& OutOperation)
 {
 	(void)InGeometry;
-	if (ItemId.IsNone() || ItemCount <= 0)
+	if (ItemId.IsNone()
+		|| ItemCount <= 0
+		|| Source == EAIREInventorySlotSource::Equipment
+		|| Source == EAIREInventorySlotSource::PlayerEquipment)
 	{
 		return;
 	}
@@ -104,6 +119,26 @@ void UAIREInventorySlotWidget::NativeOnDragDetected(
 	Operation->ItemId = ItemId;
 	Operation->ItemCount = ItemCount;
 	Operation->bExactQuantityRequested = InMouseEvent.IsShiftDown();
+	if (APlayerController* PlayerController = GetOwningPlayer())
+	{
+		if (UAIREInventorySlotWidget* DragVisual =
+				CreateWidget<UAIREInventorySlotWidget>(
+					PlayerController,
+					GetClass()))
+		{
+			DragVisual->SetSlotData(
+				Source,
+				SlotIndex,
+				ItemId,
+				ItemCount,
+				bEquipped,
+				bPending,
+				EquipmentState);
+			DragVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
+			DragVisual->SetRenderOpacity(0.85f);
+			Operation->DefaultDragVisual = DragVisual;
+		}
+	}
 	SlotDragStarted.ExecuteIfBound(Operation);
 	OutOperation = Operation;
 }
