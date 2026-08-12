@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/Context/AIREWorldContextTypes.h"
 #include "Command/AIRECompanionCommandTypes.h"
 #include "AIREChatTypes.generated.h"
 
@@ -60,6 +61,9 @@ struct AI_RE_API FAIREInGameChatContext
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat")
 	FString SaveSlotId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat")
+	FString LocationId = TEXT("forest_camp");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat", meta = (ClampMin = "0"))
 	int32 Day = 0;

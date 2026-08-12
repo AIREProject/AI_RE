@@ -1,7 +1,9 @@
 #include "Chat/AIRECompanionChatComponent.h"
 
+#include "Chat/Context/AIREWorldContextBuilder.h"
 #include "Chat/Transport/AIREChatJsonAdapter.h"
 #include "Chat/Contracts/AIREChatSettings.h"
+#include "Core/AIRECompanionCharacter.h"
 #include "Dom/JsonObject.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
@@ -153,9 +155,13 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 	++Generation;
 	ActiveRequestId = NewStableId(TEXT("request"));
 	ActiveMessageId = NewStableId(TEXT("message"));
+	const FAIREWorldContextV1 WorldContext = FAIREWorldContextBuilder::Build(
+		Cast<AAIRECompanionCharacter>(GetOwner()),
+		ChatContext.LocationId);
 	FString SerializationError;
 	if (!FAIREChatJsonAdapter::BuildInGameRequest(
 		ChatContext,
+		WorldContext,
 		CanonicalCompanionId,
 		SessionId,
 		ActiveRequestId,
@@ -323,6 +329,7 @@ bool UAIRECompanionChatComponent::ValidateContext(
 	FString& OutError) const
 {
 	if (!FAIREChatJsonAdapter::IsStableId(Context.SaveSlotId)
+		|| !FAIREChatJsonAdapter::IsStableId(Context.LocationId)
 		|| Context.Day < 0
 		|| !FMath::IsFinite(Context.Hour)
 		|| Context.Hour < 0.0f

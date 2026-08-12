@@ -29,6 +29,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Threat")
 	bool IsCombatRequested() const;
 
+	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Threat")
+	int32 GetPerceivedHostileCount() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

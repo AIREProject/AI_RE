@@ -1,6 +1,7 @@
 #include "Chat/Transport/AIREChatJsonAdapter.h"
 
 #include "Dom/JsonObject.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 
@@ -61,6 +62,278 @@ namespace
 		OutJson.Reset();
 		const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutJson);
 		return FJsonSerializer::Serialize(Object, Writer);
+	}
+
+	bool SerializeCondensedObject(
+		const TSharedRef<FJsonObject>& Object,
+		FString& OutJson)
+	{
+		OutJson.Reset();
+		const TSharedRef<
+			TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<
+				TCHAR,
+				TCondensedJsonPrintPolicy<TCHAR>>::Create(&OutJson);
+		return FJsonSerializer::Serialize(Object, Writer);
+	}
+
+	FString GetWorkTypeName(const EAIREWorldContextWorkType Type)
+	{
+		switch (Type)
+		{
+		case EAIREWorldContextWorkType::Crafting:
+			return TEXT("Crafting");
+		case EAIREWorldContextWorkType::Harvesting:
+			return TEXT("Harvesting");
+		case EAIREWorldContextWorkType::StorageTransfer:
+			return TEXT("StorageTransfer");
+		case EAIREWorldContextWorkType::None:
+		default:
+			return FString();
+		}
+	}
+
+	FString GetWorkStateName(const EAIREWorldContextWorkState State)
+	{
+		switch (State)
+		{
+		case EAIREWorldContextWorkState::Requested:
+			return TEXT("Requested");
+		case EAIREWorldContextWorkState::Moving:
+			return TEXT("Moving");
+		case EAIREWorldContextWorkState::Working:
+			return TEXT("Working");
+		case EAIREWorldContextWorkState::PausedByCombat:
+			return TEXT("PausedByCombat");
+		case EAIREWorldContextWorkState::None:
+		default:
+			return FString();
+		}
+	}
+
+	bool BuildWorldContextObject(
+		const FAIREWorldContextV1& Context,
+		TSharedPtr<FJsonObject>& OutObject,
+		FString& OutError)
+	{
+		if ((!Context.LocationId.IsEmpty()
+				&& !FAIREChatJsonAdapter::IsStableId(Context.LocationId))
+			|| Context.Threat.Count < 0
+			|| Context.Threat.Count > AIREWorldContext::MaxThreatCount
+			|| Context.Threat.bPresent != (Context.Threat.Count > 0)
+			|| (Context.Threat.Count == 0
+				&& !Context.Threat.NearestKind.IsEmpty())
+			|| (!Context.Threat.NearestKind.IsEmpty()
+				&& !FAIREChatJsonAdapter::IsStableId(
+					Context.Threat.NearestKind))
+			|| Context.NearbyResources.Num()
+				> AIREWorldContext::MaxNearbyResourceTypes
+			|| Context.AvailableWorkstations.Num()
+				> AIREWorldContext::MaxAvailableWorkstations
+			|| Context.Inventories.Num() > 2)
+		{
+			OutError = TEXT("World Context validation failed.");
+			return false;
+		}
+
+		const TSharedRef<FJsonObject> Object = MakeShared<FJsonObject>();
+		Object->SetNumberField(
+			TEXT("schema_version"),
+			AIREWorldContext::SchemaVersion);
+		if (Context.LocationId.IsEmpty())
+		{
+			Object->SetField(
+				TEXT("location_id"),
+				MakeShared<FJsonValueNull>());
+		}
+		else
+		{
+			Object->SetStringField(TEXT("location_id"), Context.LocationId);
+		}
+
+		const TSharedRef<FJsonObject> Threat = MakeShared<FJsonObject>();
+		Threat->SetBoolField(TEXT("present"), Context.Threat.bPresent);
+		Threat->SetNumberField(TEXT("count"), Context.Threat.Count);
+		if (Context.Threat.NearestKind.IsEmpty())
+		{
+			Threat->SetField(
+				TEXT("nearest_kind"),
+				MakeShared<FJsonValueNull>());
+		}
+		else
+		{
+			Threat->SetStringField(
+				TEXT("nearest_kind"),
+				Context.Threat.NearestKind);
+		}
+		Object->SetObjectField(TEXT("threat"), Threat);
+
+		TArray<FAIREWorldContextNearbyResource> SortedResources =
+			Context.NearbyResources;
+		SortedResources.Sort(
+			[](const FAIREWorldContextNearbyResource& Left,
+				const FAIREWorldContextNearbyResource& Right)
+			{
+				return Left.Kind < Right.Kind;
+			});
+		TSet<FString> ResourceKinds;
+		TArray<TSharedPtr<FJsonValue>> Resources;
+		for (const FAIREWorldContextNearbyResource& Resource : SortedResources)
+		{
+			if (!FAIREChatJsonAdapter::IsStableId(Resource.Kind)
+				|| Resource.Count < 1
+				|| Resource.Count > 32
+				|| ResourceKinds.Contains(Resource.Kind))
+			{
+				OutError = TEXT("World Context resource validation failed.");
+				return false;
+			}
+			ResourceKinds.Add(Resource.Kind);
+			const TSharedRef<FJsonObject> ResourceObject =
+				MakeShared<FJsonObject>();
+			ResourceObject->SetStringField(TEXT("kind"), Resource.Kind);
+			ResourceObject->SetNumberField(TEXT("count"), Resource.Count);
+			Resources.Add(MakeShared<FJsonValueObject>(ResourceObject));
+		}
+		Object->SetArrayField(TEXT("nearby_resources"), MoveTemp(Resources));
+
+		TArray<FString> SortedWorkstations = Context.AvailableWorkstations;
+		SortedWorkstations.Sort();
+		TSet<FString> WorkstationIds;
+		TArray<TSharedPtr<FJsonValue>> Workstations;
+		for (const FString& Workstation : SortedWorkstations)
+		{
+			if (!FAIREChatJsonAdapter::IsStableId(Workstation)
+				|| WorkstationIds.Contains(Workstation))
+			{
+				OutError = TEXT("World Context workstation validation failed.");
+				return false;
+			}
+			WorkstationIds.Add(Workstation);
+			Workstations.Add(MakeShared<FJsonValueString>(Workstation));
+		}
+		Object->SetArrayField(
+			TEXT("available_workstations"),
+			MoveTemp(Workstations));
+
+		const FString WorkType = GetWorkTypeName(Context.CurrentWork.Type);
+		const FString WorkState = GetWorkStateName(Context.CurrentWork.State);
+		if ((Context.CurrentWork.Type != EAIREWorldContextWorkType::None
+				&& WorkType.IsEmpty())
+			|| (Context.CurrentWork.State != EAIREWorldContextWorkState::None
+				&& WorkState.IsEmpty())
+			|| WorkType.IsEmpty() != WorkState.IsEmpty())
+		{
+			OutError = TEXT("World Context work validation failed.");
+			return false;
+		}
+		if (WorkType.IsEmpty())
+		{
+			Object->SetField(
+				TEXT("current_work"),
+				MakeShared<FJsonValueNull>());
+		}
+		else
+		{
+			const TSharedRef<FJsonObject> Work = MakeShared<FJsonObject>();
+			Work->SetStringField(TEXT("type"), WorkType);
+			Work->SetStringField(TEXT("state"), WorkState);
+			Object->SetObjectField(TEXT("current_work"), Work);
+		}
+
+		TArray<FAIREWorldContextInventory> SortedInventories =
+			Context.Inventories;
+		SortedInventories.Sort(
+			[](const FAIREWorldContextInventory& Left,
+				const FAIREWorldContextInventory& Right)
+			{
+				return Left.ContainerId < Right.ContainerId;
+			});
+		TSet<FString> ContainerIds;
+		TArray<TSharedPtr<FJsonValue>> Inventories;
+		for (FAIREWorldContextInventory& Inventory : SortedInventories)
+		{
+			const bool bIsMako = Inventory.ContainerId
+				== TEXT("AIRE.Inventory.MAKO");
+			const bool bIsStorage = Inventory.ContainerId
+				== TEXT("AIRE.Inventory.SharedStorage");
+			const int32 Capacity = bIsMako ? 20 : 50;
+			if ((!bIsMako && !bIsStorage)
+				|| ContainerIds.Contains(Inventory.ContainerId)
+				|| Inventory.FreeSlots < 0
+				|| Inventory.FreeSlots > Capacity
+				|| Inventory.ItemTotals.Num()
+					> AIREWorldContext::MaxInventoryItemTypes)
+			{
+				OutError = TEXT("World Context inventory validation failed.");
+				return false;
+			}
+			ContainerIds.Add(Inventory.ContainerId);
+
+			Inventory.ItemTotals.Sort(
+				[](const FAIREWorldContextInventoryItemTotal& Left,
+					const FAIREWorldContextInventoryItemTotal& Right)
+				{
+					return Left.ItemId < Right.ItemId;
+				});
+			TSet<FString> ItemIds;
+			int32 TotalItemCount = 0;
+			TArray<TSharedPtr<FJsonValue>> Items;
+			for (const FAIREWorldContextInventoryItemTotal& Item
+				: Inventory.ItemTotals)
+			{
+				if (!FAIREChatJsonAdapter::IsStableId(Item.ItemId)
+					|| Item.Count < 1
+					|| Item.Count > Capacity * 99
+					|| ItemIds.Contains(Item.ItemId))
+				{
+					OutError = TEXT("World Context item validation failed.");
+					return false;
+				}
+				ItemIds.Add(Item.ItemId);
+				TotalItemCount += Item.Count;
+				const TSharedRef<FJsonObject> ItemObject =
+					MakeShared<FJsonObject>();
+				ItemObject->SetStringField(TEXT("item_id"), Item.ItemId);
+				ItemObject->SetNumberField(TEXT("count"), Item.Count);
+				Items.Add(MakeShared<FJsonValueObject>(ItemObject));
+			}
+			if (TotalItemCount > Capacity * 99)
+			{
+				OutError = TEXT("World Context item total validation failed.");
+				return false;
+			}
+
+			const TSharedRef<FJsonObject> InventoryObject =
+				MakeShared<FJsonObject>();
+			InventoryObject->SetStringField(
+				TEXT("container_id"),
+				Inventory.ContainerId);
+			InventoryObject->SetNumberField(
+				TEXT("free_slots"),
+				Inventory.FreeSlots);
+			InventoryObject->SetArrayField(
+				TEXT("item_totals"),
+				MoveTemp(Items));
+			InventoryObject->SetBoolField(
+				TEXT("truncated"),
+				Inventory.bTruncated);
+			Inventories.Add(
+				MakeShared<FJsonValueObject>(InventoryObject));
+		}
+		Object->SetArrayField(TEXT("inventories"), MoveTemp(Inventories));
+
+		FString CondensedJson;
+		if (!SerializeCondensedObject(Object, CondensedJson)
+			|| FTCHARToUTF8(*CondensedJson).Length()
+				> AIREWorldContext::MaxContextUtf8Bytes)
+		{
+			OutError = TEXT("World Context exceeds the supported size limit.");
+			return false;
+		}
+
+		OutObject = Object;
+		return true;
 	}
 
 	bool DeserializeChatObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
@@ -640,6 +913,7 @@ namespace
 
 bool FAIREChatJsonAdapter::BuildInGameRequest(
 	const FAIREInGameChatContext& Context,
+	const FAIREWorldContextV1& WorldContext,
 	const FString& CompanionId,
 	const FString& SessionId,
 	const FString& RequestId,
@@ -669,6 +943,12 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 		return false;
 	}
 
+	TSharedPtr<FJsonObject> GameContext;
+	if (!BuildWorldContextObject(WorldContext, GameContext, OutError))
+	{
+		return false;
+	}
+
 	const TSharedRef<FJsonObject> TimeContext = MakeShared<FJsonObject>();
 	TimeContext->SetStringField(TEXT("source"), TEXT("GameWorld"));
 	TimeContext->SetNumberField(TEXT("day"), Context.Day);
@@ -688,7 +968,7 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 	Payload->SetArrayField(
 		TEXT("recent_event_ids"),
 		TArray<TSharedPtr<FJsonValue>>());
-	Payload->SetObjectField(TEXT("game_context"), MakeShared<FJsonObject>());
+	Payload->SetObjectField(TEXT("game_context"), GameContext);
 	TArray<TSharedPtr<FJsonValue>> AllowedCommands;
 	AllowedCommands.Reserve(UE_ARRAY_COUNT(FixedAllowedCommands));
 	for (const TCHAR* Command : FixedAllowedCommands)
@@ -774,12 +1054,16 @@ bool FAIREChatJsonAdapter::IsStableId(const FString& Value)
 	for (int32 Index = 0; Index < Value.Len(); ++Index)
 	{
 		const TCHAR Character = Value[Index];
-		const bool bIsAllowed = FChar::IsAlnum(Character)
+		const bool bIsAsciiAlphanumeric =
+			(Character >= TEXT('A') && Character <= TEXT('Z'))
+			|| (Character >= TEXT('a') && Character <= TEXT('z'))
+			|| (Character >= TEXT('0') && Character <= TEXT('9'));
+		const bool bIsAllowed = bIsAsciiAlphanumeric
 			|| Character == TEXT('.')
 			|| Character == TEXT('_')
 			|| Character == TEXT(':')
 			|| Character == TEXT('-');
-		if (!bIsAllowed || (Index == 0 && !FChar::IsAlnum(Character)))
+		if (!bIsAllowed || (Index == 0 && !bIsAsciiAlphanumeric))
 		{
 			return false;
 		}
