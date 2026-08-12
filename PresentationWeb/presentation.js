@@ -1,12 +1,4 @@
 (() => {
-  if (window.location.protocol === "file:") {
-    const hostedUrl = new URL("http://localhost:5173/presentation/index.html");
-    hostedUrl.search = window.location.search;
-    hostedUrl.hash = window.location.hash;
-    window.location.replace(hostedUrl.href);
-    return;
-  }
-
   const slides = [...document.querySelectorAll(".slide")];
   const menu = document.getElementById("slideMenu");
   const menuList = document.getElementById("menuList");
@@ -50,12 +42,7 @@
 
   const configureWebappEmbed = () => {
     const requestedUrl = new URLSearchParams(window.location.search).get("webapp");
-    const isSameOriginPresentation =
-      ["http:", "https:"].includes(window.location.protocol) &&
-      window.location.pathname.startsWith("/presentation/");
-    const defaultUrl = isSameOriginPresentation
-      ? new URL("/", window.location.origin)
-      : new URL("http://localhost:5173/");
+    const defaultUrl = new URL("https://aire-mako-chat.lunau1f320.chatgpt.site/");
 
     try {
       const parsedUrl = requestedUrl === null ? defaultUrl : new URL(requestedUrl);
@@ -67,7 +54,7 @@
       webappAddress.textContent = parsedUrl.host;
       webappExternalLink.href = parsedUrl.href;
     } catch {
-      // Keep the default local development URL when the override is invalid.
+      // Keep the deployed mobile URL when the override is invalid.
     }
   };
 
