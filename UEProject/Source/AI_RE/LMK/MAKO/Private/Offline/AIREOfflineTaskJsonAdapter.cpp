@@ -6,13 +6,13 @@
 
 namespace
 {
-	constexpr int32 MaxStableIdLength = 128;
-	constexpr int32 MaxTasksPerSync = 50;
-	constexpr TCHAR CanonicalSaveSlotId[] = TEXT("demo-slot-1");
+	constexpr int32 AIREOfflineTaskMaxStableIdLength = 128;
+	constexpr int32 AIREOfflineTaskMaxTasksPerSync = 50;
+	constexpr TCHAR AIREOfflineTaskAdapterSaveSlotId[] = TEXT("demo-slot-1");
 
-	bool IsStableId(const FString& Value)
+	bool IsAIREOfflineTaskStableId(const FString& Value)
 	{
-		if (Value.IsEmpty() || Value.Len() > MaxStableIdLength)
+		if (Value.IsEmpty() || Value.Len() > AIREOfflineTaskMaxStableIdLength)
 		{
 			return false;
 		}
@@ -32,7 +32,7 @@ namespace
 		return true;
 	}
 
-	bool TryGetInteger(
+	bool TryGetAIREOfflineTaskInteger(
 		const TSharedPtr<FJsonObject>& Object,
 		const TCHAR* Field,
 		const int64 Minimum,
@@ -53,7 +53,7 @@ namespace
 		return true;
 	}
 
-	bool TryGetNullableInteger(
+	bool TryGetAIREOfflineTaskNullableInteger(
 		const TSharedPtr<FJsonObject>& Object,
 		const TCHAR* Field,
 		bool& bOutHasValue,
@@ -73,7 +73,7 @@ namespace
 			return true;
 		}
 		int64 Parsed = 0;
-		if (!TryGetInteger(Object, Field, 0, MAX_int32, Parsed))
+		if (!TryGetAIREOfflineTaskInteger(Object, Field, 0, MAX_int32, Parsed))
 		{
 			return false;
 		}
@@ -82,7 +82,7 @@ namespace
 		return true;
 	}
 
-	bool TryParseStatus(
+	bool TryParseAIREOfflineTaskStatus(
 		const FString& Value,
 		EAIREOfflineTaskStatus& OutStatus)
 	{
@@ -109,7 +109,7 @@ namespace
 		return false;
 	}
 
-	bool ParseTask(
+	bool ParseAIREOfflineTask(
 		const TSharedPtr<FJsonObject>& Object,
 		FAIREOfflineTask& OutTask)
 	{
@@ -120,9 +120,9 @@ namespace
 			: nullptr;
 		if (!Object.IsValid()
 			|| !Object->TryGetStringField(TEXT("task_id"), OutTask.TaskId)
-			|| !IsStableId(OutTask.TaskId)
+			|| !IsAIREOfflineTaskStableId(OutTask.TaskId)
 			|| !Object->TryGetStringField(TEXT("save_slot_id"), OutTask.SaveSlotId)
-			|| OutTask.SaveSlotId != CanonicalSaveSlotId
+			|| OutTask.SaveSlotId != AIREOfflineTaskAdapterSaveSlotId
 			|| !ItemIdValue
 			|| !ItemIdValue->IsValid()
 			|| !Object->TryGetStringField(TEXT("task_type"), OutTask.TaskType)
@@ -130,20 +130,20 @@ namespace
 				&& OutTask.TaskType != TEXT("Crafting")
 				&& OutTask.TaskType != TEXT("Scouting"))
 			|| !Object->TryGetStringField(TEXT("status"), Status)
-			|| !TryParseStatus(Status, OutTask.Status)
+			|| !TryParseAIREOfflineTaskStatus(Status, OutTask.Status)
 			|| !Object->TryGetStringField(TEXT("started_at"), StartedAt)
 			|| !FDateTime::ParseIso8601(*StartedAt, OutTask.StartedAt)
-			|| !TryGetNullableInteger(
+			|| !TryGetAIREOfflineTaskNullableInteger(
 				Object,
 				TEXT("quantity"),
 				OutTask.bHasQuantity,
 				OutTask.Quantity)
-			|| !TryGetNullableInteger(
+			|| !TryGetAIREOfflineTaskNullableInteger(
 				Object,
 				TEXT("result_quantity"),
 				OutTask.bHasResultQuantity,
 				OutTask.ResultQuantity)
-			|| !TryGetNullableInteger(
+			|| !TryGetAIREOfflineTaskNullableInteger(
 				Object,
 				TEXT("progress_quantity"),
 				OutTask.bHasProgressQuantity,
@@ -156,7 +156,7 @@ namespace
 			OutTask.ItemId.Reset();
 		}
 		else if (!Object->TryGetStringField(TEXT("item_id"), OutTask.ItemId)
-			|| !IsStableId(OutTask.ItemId))
+			|| !IsAIREOfflineTaskStableId(OutTask.ItemId))
 		{
 			return false;
 		}
@@ -167,14 +167,16 @@ namespace
 				|| OutTask.ResultQuantity <= OutTask.Quantity);
 	}
 
-	bool DeserializeObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
+	bool DeserializeAIREOfflineTaskObject(
+		const FString& Json,
+		TSharedPtr<FJsonObject>& OutObject)
 	{
 		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
 		return FJsonSerializer::Deserialize(Reader, OutObject)
 			&& OutObject.IsValid();
 	}
 
-	bool ValidateRequestId(
+	bool ValidateAIREOfflineTaskRequestId(
 		const TSharedPtr<FJsonObject>& Root,
 		const FString& ExpectedRequestId)
 	{
@@ -192,11 +194,11 @@ FAIREParsedOfflineTaskList FAIREOfflineTaskJsonAdapter::ParseListResponse(
 	FAIREParsedOfflineTaskList Result;
 	TSharedPtr<FJsonObject> Root;
 	const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
-	if (!DeserializeObject(Json, Root)
-		|| !ValidateRequestId(Root, ExpectedRequestId)
+	if (!DeserializeAIREOfflineTaskObject(Json, Root)
+		|| !ValidateAIREOfflineTaskRequestId(Root, ExpectedRequestId)
 		|| !Root->TryGetArrayField(TEXT("tasks"), Values)
 		|| !Values
-		|| Values->Num() > MaxTasksPerSync)
+		|| Values->Num() > AIREOfflineTaskMaxTasksPerSync)
 	{
 		Result.ErrorCode = TEXT("InvalidTaskListResponse");
 		return Result;
@@ -209,7 +211,7 @@ FAIREParsedOfflineTaskList FAIREOfflineTaskJsonAdapter::ParseListResponse(
 		if (!Value.IsValid()
 			|| !Value->TryGetObject(Object)
 			|| !Object
-			|| !ParseTask(*Object, Task)
+			|| !ParseAIREOfflineTask(*Object, Task)
 			|| SeenTaskIds.Contains(Task.TaskId))
 		{
 			Result.Tasks.Reset();
@@ -232,11 +234,11 @@ FAIREParsedOfflineTask FAIREOfflineTaskJsonAdapter::ParseTaskResponse(
 	FAIREParsedOfflineTask Result;
 	TSharedPtr<FJsonObject> Root;
 	const TSharedPtr<FJsonObject>* TaskObject = nullptr;
-	if (!DeserializeObject(Json, Root)
-		|| !ValidateRequestId(Root, ExpectedRequestId)
+	if (!DeserializeAIREOfflineTaskObject(Json, Root)
+		|| !ValidateAIREOfflineTaskRequestId(Root, ExpectedRequestId)
 		|| !Root->TryGetObjectField(TEXT("task"), TaskObject)
 		|| !TaskObject
-		|| !ParseTask(*TaskObject, Result.Task)
+		|| !ParseAIREOfflineTask(*TaskObject, Result.Task)
 		|| Result.Task.TaskId != ExpectedTaskId)
 	{
 		Result.ErrorCode = TEXT("InvalidTaskTransitionResponse");

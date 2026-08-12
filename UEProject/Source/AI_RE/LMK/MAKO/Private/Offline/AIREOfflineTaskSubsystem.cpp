@@ -11,11 +11,11 @@
 
 namespace
 {
-	constexpr int32 MaxHttpResponseBytes = 262144;
-	constexpr TCHAR FixedGameClientToken[] = TEXT("AIRE_GAME");
-	constexpr TCHAR CanonicalSaveSlotId[] = TEXT("demo-slot-1");
+	constexpr int32 AIREOfflineTaskMaxHttpResponseBytes = 262144;
+	constexpr TCHAR AIREOfflineTaskGameClientToken[] = TEXT("AIRE_GAME");
+	constexpr TCHAR AIREOfflineTaskSaveSlotId[] = TEXT("demo-slot-1");
 
-	FString NewStableId(const TCHAR* Prefix)
+	FString NewAIREOfflineTaskStableId(const TCHAR* Prefix)
 	{
 		return FString::Printf(
 			TEXT("%s-%s"),
@@ -23,7 +23,7 @@ namespace
 			*FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
 	}
 
-	FString JoinUrl(const FString& BaseUrl, const FString& Path)
+	FString JoinAIREOfflineTaskUrl(const FString& BaseUrl, const FString& Path)
 	{
 		FString Result = BaseUrl;
 		Result.RemoveFromEnd(TEXT("/"));
@@ -172,7 +172,7 @@ void UAIREOfflineTaskSubsystem::SendListRequest(const uint64 RequestEpoch)
 {
 	const UAIREOfflineTaskSettings* Settings =
 		GetDefault<UAIREOfflineTaskSettings>();
-	const FString RequestId = NewStableId(TEXT("task-list"));
+	const FString RequestId = NewAIREOfflineTaskStableId(TEXT("task-list"));
 	if (!IsValid(Settings))
 	{
 		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidTaskSettings"));
@@ -182,12 +182,12 @@ void UAIREOfflineTaskSubsystem::SendListRequest(const uint64 RequestEpoch)
 	const FString Path = FString::Printf(
 		TEXT("%s?save_slot_id=%s"),
 		*Settings->TasksPath,
-		CanonicalSaveSlotId);
-	ActiveRequest->SetURL(JoinUrl(Settings->BackendBaseUrl, Path));
+		AIREOfflineTaskSaveSlotId);
+	ActiveRequest->SetURL(JoinAIREOfflineTaskUrl(Settings->BackendBaseUrl, Path));
 	ActiveRequest->SetVerb(TEXT("GET"));
 	ActiveRequest->SetHeader(
 		TEXT("Authorization"),
-		TEXT("Bearer ") + FString(FixedGameClientToken));
+		TEXT("Bearer ") + FString(AIREOfflineTaskGameClientToken));
 	ActiveRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	ActiveRequest->SetHeader(TEXT("X-Request-ID"), RequestId);
 	ActiveRequest->SetTimeout(Settings->ResponseTimeoutSeconds);
@@ -235,7 +235,7 @@ void UAIREOfflineTaskSubsystem::HandleListResponse(
 	if (!bWasSuccessful
 		|| !Response.IsValid()
 		|| !EHttpResponseCodes::IsOk(Response->GetResponseCode())
-		|| Response->GetContent().Num() > MaxHttpResponseBytes)
+		|| Response->GetContent().Num() > AIREOfflineTaskMaxHttpResponseBytes)
 	{
 		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("TaskListNetworkFailure"));
 		return;
@@ -310,7 +310,7 @@ void UAIREOfflineTaskSubsystem::SendTaskTransition(
 {
 	const UAIREOfflineTaskSettings* Settings =
 		GetDefault<UAIREOfflineTaskSettings>();
-	const FString RequestId = NewStableId(TEXT("task-transition"));
+	const FString RequestId = NewAIREOfflineTaskStableId(TEXT("task-transition"));
 	if (!IsValid(Settings))
 	{
 		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidTaskSettings"));
@@ -322,11 +322,11 @@ void UAIREOfflineTaskSubsystem::SendTaskTransition(
 		*Settings->TasksPath,
 		*ActiveTask.TaskId,
 		*Action);
-	ActiveRequest->SetURL(JoinUrl(Settings->BackendBaseUrl, Path));
+	ActiveRequest->SetURL(JoinAIREOfflineTaskUrl(Settings->BackendBaseUrl, Path));
 	ActiveRequest->SetVerb(TEXT("POST"));
 	ActiveRequest->SetHeader(
 		TEXT("Authorization"),
-		TEXT("Bearer ") + FString(FixedGameClientToken));
+		TEXT("Bearer ") + FString(AIREOfflineTaskGameClientToken));
 	ActiveRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	ActiveRequest->SetHeader(TEXT("X-Request-ID"), RequestId);
 	ActiveRequest->SetTimeout(Settings->ResponseTimeoutSeconds);
@@ -375,7 +375,7 @@ void UAIREOfflineTaskSubsystem::HandleTaskTransitionResponse(
 	if (!bWasSuccessful
 		|| !Response.IsValid()
 		|| !EHttpResponseCodes::IsOk(Response->GetResponseCode())
-		|| Response->GetContent().Num() > MaxHttpResponseBytes)
+		|| Response->GetContent().Num() > AIREOfflineTaskMaxHttpResponseBytes)
 	{
 		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("TaskTransitionNetworkFailure"));
 		return;
