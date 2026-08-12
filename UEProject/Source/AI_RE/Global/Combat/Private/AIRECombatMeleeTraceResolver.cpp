@@ -12,7 +12,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarAIRECombatMeleeTraceDebug(
 		TEXT("aire.Combat.MeleeTrace.Debug"),
 		0,
-		TEXT("Draw shared combat melee sphere sweeps.\n")
+		TEXT("Draw shared combat melee sphere and capsule sweeps.\n")
 		TEXT("0: Disabled\n")
 		TEXT("1: Enabled (cyan=miss, green=target, red=blocked)"),
 		ECVF_Cheat);
@@ -31,7 +31,7 @@ namespace
 			|| CVarAIREEnemyMeleeTraceDebug.GetValueOnGameThread() > 0;
 	}
 
-	void DrawMeleeTraceSweep(
+	void DrawSphereTraceSweep(
 		const UWorld* World,
 		const FVector& Start,
 		const FVector& End,
@@ -73,6 +73,53 @@ namespace
 			0,
 			DebugThickness);
 	}
+
+	void DrawCapsuleTraceSweep(
+		const UWorld* World,
+		const FVector& Start,
+		const FVector& End,
+		const float Radius,
+		const float HalfHeight,
+		const FQuat& Rotation,
+		const FColor& Color)
+	{
+		constexpr float DebugLifetime = 1.0f;
+		constexpr float DebugThickness = 1.5f;
+		DrawDebugCapsule(
+			World,
+			Start,
+			HalfHeight,
+			Radius,
+			Rotation,
+			Color,
+			false,
+			DebugLifetime,
+			0,
+			DebugThickness);
+		if (!Start.Equals(End))
+		{
+			DrawDebugCapsule(
+				World,
+				End,
+				HalfHeight,
+				Radius,
+				Rotation,
+				Color,
+				false,
+				DebugLifetime,
+				0,
+				DebugThickness);
+			DrawDebugLine(
+				World,
+				Start,
+				End,
+				Color,
+				false,
+				DebugLifetime,
+				0,
+				DebugThickness);
+		}
+	}
 }
 #endif
 
@@ -89,8 +136,13 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 		&& Request.Source->GetWorld() == Request.World
 		&& Request.Target->GetWorld() == Request.World
 		&& !Request.Segments.IsEmpty()
+		&& (Request.Shape == EAIRECombatMeleeTraceShape::Sphere
+			|| Request.Shape == EAIRECombatMeleeTraceShape::Capsule)
 		&& FMath::IsFinite(Request.Radius)
 		&& Request.Radius > 0.0f
+		&& (Request.Shape != EAIRECombatMeleeTraceShape::Capsule
+			|| (FMath::IsFinite(Request.CapsuleHalfHeight)
+				&& Request.CapsuleHalfHeight >= Request.Radius))
 		&& Request.TraceChannel >= ECC_WorldStatic
 		&& Request.TraceChannel < ECC_MAX;
 	if (!bValidRequest)
@@ -100,7 +152,10 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 
 	for (const FAIRECombatMeleeTraceSegment& Segment : Request.Segments)
 	{
-		if (Segment.Start.ContainsNaN() || Segment.End.ContainsNaN())
+		if (Segment.Start.ContainsNaN()
+			|| Segment.End.ContainsNaN()
+			|| Segment.Rotation.ContainsNaN()
+			|| !Segment.Rotation.IsNormalized())
 		{
 			return Resolution;
 		}
@@ -116,6 +171,12 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 
 	bool bTargetHit = false;
 	bool bBlocked = false;
+	const FCollisionShape CollisionShape =
+		Request.Shape == EAIRECombatMeleeTraceShape::Capsule
+			? FCollisionShape::MakeCapsule(
+				Request.Radius,
+				Request.CapsuleHalfHeight)
+			: FCollisionShape::MakeSphere(Request.Radius);
 	for (const FAIRECombatMeleeTraceSegment& Segment : Request.Segments)
 	{
 		FHitResult HitResult;
@@ -123,9 +184,9 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 			HitResult,
 			Segment.Start,
 			Segment.End,
-			FQuat::Identity,
+			Segment.Rotation,
 			Request.TraceChannel,
-			FCollisionShape::MakeSphere(Request.Radius),
+			CollisionShape,
 			QueryParams);
 		const bool bSegmentTargetHit =
 			bHit && HitResult.GetActor() == Request.Target;
@@ -138,12 +199,26 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 				: bSegmentTargetHit
 					? FColor::Green
 					: FColor::Red;
-			DrawMeleeTraceSweep(
-				Request.World,
-				Segment.Start,
-				Segment.End,
-				Request.Radius,
-				DebugColor);
+			if (Request.Shape == EAIRECombatMeleeTraceShape::Capsule)
+			{
+				DrawCapsuleTraceSweep(
+					Request.World,
+					Segment.Start,
+					Segment.End,
+					Request.Radius,
+					Request.CapsuleHalfHeight,
+					Segment.Rotation,
+					DebugColor);
+			}
+			else
+			{
+				DrawSphereTraceSweep(
+					Request.World,
+					Segment.Start,
+					Segment.End,
+					Request.Radius,
+					DebugColor);
+			}
 			if (bHit)
 			{
 				DrawDebugPoint(

@@ -134,6 +134,7 @@ private:
 	float CurrentStepDamage = 0.0f;
 	float CurrentStepStaggerValue = 0.0f;
 	float CurrentTraceRadius = 0.0f;
+	float CurrentTraceCapsuleHalfHeight = 0.0f;
 	TEnumAsByte<ECollisionChannel> CurrentTraceChannel = ECC_MAX;
 	EAIRECombatTargetingMode CurrentStepTargetingMode =
 		EAIRECombatTargetingMode::SingleTarget;

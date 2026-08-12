@@ -105,6 +105,7 @@ private:
 	float ActiveStaggerValue = 0.0f;
 	float ActiveAttackRange = 0.0f;
 	float ActiveTraceRadius = 0.0f;
+	float ActiveTraceCapsuleHalfHeight = 0.0f;
 	TEnumAsByte<ECollisionChannel> ActiveTraceChannel = ECC_MAX;
 	EAIRECombatTargetingMode ActiveTargetingMode =
 		EAIRECombatTargetingMode::SingleTarget;

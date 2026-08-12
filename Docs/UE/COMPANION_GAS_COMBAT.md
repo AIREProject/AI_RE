@@ -157,7 +157,7 @@ deprecated 프로퍼티로 남아 있지만 런타임에서는 사용하지 않�
 | `FallbackHitDelay` | Montage가 없을 때 Hit 발생 지연 |
 | `FallbackRecoveryDuration` | fallback 공격 종료 지연 |
 | `LeftTraceSockets` / `RightTraceSockets` | 좌·우 칼날의 project-owned base/tip socket pair |
-| `TraceRadius` / `TraceChannel` | 공용 melee resolver의 sphere 반경과 collision channel |
+| `TraceCapsuleRadius` / `TraceCapsuleHalfHeight` / `TraceChannel` | MAKO 무기 캡슐의 반경·반높이와 collision channel |
 | `ComboSteps.TraceSide` / `TraceSocketOverride` | 단계별 선행 칼날과 선택적 socket pair override |
 | `HarvestAttackRange` | Combat sweep과 분리된 직접 채집 판정 거리 |
 | `CombatSkill` | 선택적 스킬 활성화·Montage·Damage·Cooldown·Range·선택 확률·fallback 시간 |
@@ -274,9 +274,10 @@ source만 먼저 보완했습니다. Threat는 선택 Target에 `200 cm` 소실 
 M03-E09-T02B source는 Boss와 MAKO가 공간 판정만 공유하는
 `FAIRECombatMeleeTraceResolver`를 채택했습니다. 기본 공격의 각 Combo Step과 Combat Skill
 활성화는 Target, `ExecutionId`, Damage, Stagger, targeting mode, trace radius/channel과
-좌·우 socket pair를 snapshot합니다. NotifyState의 Begin/Tick/End는 이전·현재 base/tip의
-네 구간을 `25 cm` sphere로 sweep합니다. `NoHit`은 다음 sample을 허용하고,
-`Blocked`·`Invalid`·`TargetHit`은 strike를 종료합니다. `TargetHit`만 `FHitResult`를 포함한
+좌·우 socket pair를 snapshot합니다. NotifyState의 Begin/Tick/End는 무기 base socket에서
+칼날 축과 중앙에 맞춘 `반경 35 cm / 반높이 160 cm` 캡슐을 프레임 사이 6개 substep으로
+sweep합니다. Boss의 요청은 기존 sphere shape를 명시적으로 유지합니다. `NoHit`과
+`Blocked`는 다음 sample을 허용하고, `Invalid`·`TargetHit`만 strike를 종료합니다. `TargetHit`만 `FHitResult`를 포함한
 공용 Damage Request를 commit합니다.
 
 기본 socket 계약은 `weapon_l/r`에서 `weapon_trace_tip_l/r`까지이며, Combo Step과 Skill이
@@ -554,7 +555,7 @@ resolver를 호출하고, 같은 단계의 `ExecutionId`는 snapshotted Target�
 `MK_ABP_MAKO_DualLayers`, `MK_AM_Evade`의 in-place `Evade_L/R`, 그리고 `BP_MAKO`의
 Evade Montage 할당은 project-owned 자산에 개별 저장했습니다. 사용자는 PIE 스모크에서
 자율 회피 동작을 확인했지만, 이후 추가된 presentation lifetime 분리와 진단 로그 source는
-재빌드 전이며 공격 시작 거리와 `25 cm` trace envelope의 최종 승인이 남았습니다.
+재빌드 전이며 공격 시작 거리와 새 `35 × 160 cm` capsule envelope의 최종 승인이 남았습니다.
 
 PIE에서 `aire.Combat.MeleeTrace.Debug 1`을 사용하면 공용 trace가 cyan `NoHit`, green
 `TargetHit`, red `Blocked`로 표시됩니다. Output Log는 `[MAKO ATTACK]`, `[MAKO HEALTH]`,
@@ -683,8 +684,15 @@ CooldownDuration: 1.5 → 3.0 → 1.5
 ```
 
 T02B 종료 시점의 `150 cm`는 구현 기준선이지 최종 체감 승인값이 아닙니다. 공격 진입이
-보이는 칼날 궤적보다 지나치게 이르거나 늦지 않은지, `25 cm` trace radius가 의도하지
-않은 측면 hit를 만들지 않는지를 함께 비교한 뒤 두 값을 확정해야 합니다.
+보이는 칼날 궤적보다 지나치게 이르거나 늦지 않은지, `35 cm` capsule radius와
+`160 cm` half-height가 의도하지 않은 측면·후방 hit를 만들지 않는지를 함께 비교한 뒤
+세 값을 확정해야 합니다.
+
+2026-08-12 PIE 피드백의 기본 공격 접근 거리 즉시 비교값은 `80 cm`입니다. 이 값은
+`DA_MAKO_Weapon_BasicMelee.AttackRange`에서 변경하며 Data Asset 저장 후 다음 PIE부터
+반영됩니다. Combat Skill은 `CombatSkill.AttackRange`만 별도이지만 현재 trace capsule
+크기를 기본 공격과 공유하므로, 후속 Task에서 스킬 전용 shape·radius·half-height와
+`MK_AM_ChargeAttack` NotifyState 범위를 함께 분리·튜닝합니다.
 
 ### 9.3 Stamina·Cooldown
 
@@ -705,7 +713,7 @@ Target을 Reset한 뒤 반복합니다.
 - [ ] 정지/이동 Target의 실제 blade sweep 교차에서만 피해가 적용된다.
 - [ ] 후방·측면·사거리 밖 intentional miss와 WorldStatic/Pawn 차폐는 피해를 적용하지 않는다.
 - [ ] Trace window의 첫 `NoHit` 뒤 후속 sample이 명중할 수 있다.
-- [ ] `Blocked`와 `TargetHit`은 terminal이며 중복 Notify/fallback이 추가 피해를 만들지 않는다.
+- [ ] 첫 `Blocked` 뒤에도 후속 sample이 계속되며 `TargetHit`만 피해를 exact-once 적용한다.
 - [ ] Hit 전에 Ability를 취소하면 피해가 적용되지 않는다.
 - [ ] 취소 후 늦게 도착한 Hit Event가 피해를 적용하지 않는다.
 - [ ] Target 사망 후 추가 피해가 적용되지 않는다.

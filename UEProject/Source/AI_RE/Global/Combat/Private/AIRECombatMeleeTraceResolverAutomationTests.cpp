@@ -237,6 +237,32 @@ bool FAIRECombatMeleeTraceResolverTest::RunTest(const FString& Parameters)
 		TEXT("Endpoint motion catches tunnelling while both blade spans miss"),
 		Resolution.Result == EAIRECombatMeleeTraceResult::TargetHit);
 
+	Request.Segments.Reset();
+	Request.Segments.Emplace(FVector::ZeroVector, FVector::ZeroVector);
+	Resolution = FAIRECombatMeleeTraceResolver::Resolve(Request);
+	TestTrue(
+		TEXT("The legacy sphere shape misses a distant target from a stationary center"),
+		Resolution.Result == EAIRECombatMeleeTraceResult::NoHit);
+
+	Request.Shape = EAIRECombatMeleeTraceShape::Capsule;
+	Request.CapsuleHalfHeight = 220.0f;
+	Request.Segments.Reset();
+	Request.Segments.Emplace(
+		FVector::ZeroVector,
+		FVector::ZeroVector,
+		FQuat::FindBetweenNormals(FVector::UpVector, FVector::ForwardVector));
+	Resolution = FAIRECombatMeleeTraceResolver::Resolve(Request);
+	TestTrue(
+		TEXT("A rotated capsule reaches the target along its weapon axis"),
+		Resolution.Result == EAIRECombatMeleeTraceResult::TargetHit);
+
+	Request.CapsuleHalfHeight = 5.0f;
+	Resolution = FAIRECombatMeleeTraceResolver::Resolve(Request);
+	TestTrue(
+		TEXT("A capsule half height shorter than its radius is invalid"),
+		Resolution.Result == EAIRECombatMeleeTraceResult::Invalid);
+
+	Request.Shape = EAIRECombatMeleeTraceShape::Sphere;
 	Request.Radius = 0.0f;
 	Resolution = FAIRECombatMeleeTraceResolver::Resolve(Request);
 	TestTrue(

@@ -15,19 +15,29 @@ enum class EAIRECombatMeleeTraceResult : uint8
 	Invalid
 };
 
+enum class EAIRECombatMeleeTraceShape : uint8
+{
+	Sphere,
+	Capsule
+};
+
 struct AI_RE_API FAIRECombatMeleeTraceSegment
 {
 	FAIRECombatMeleeTraceSegment() = default;
 	FAIRECombatMeleeTraceSegment(
 		const FVector& InStart,
-		const FVector& InEnd)
+		const FVector& InEnd,
+		const FQuat& InRotation = FQuat::Identity)
 		: Start(InStart)
 		, End(InEnd)
+		, Rotation(InRotation)
 	{
 	}
 
 	FVector Start = FVector::ZeroVector;
 	FVector End = FVector::ZeroVector;
+	/** Shape rotation used by capsule requests. Capsules use local Z as their axis. */
+	FQuat Rotation = FQuat::Identity;
 };
 
 struct AI_RE_API FAIRECombatMeleeTraceRequest
@@ -37,7 +47,10 @@ struct AI_RE_API FAIRECombatMeleeTraceRequest
 	AActor* Source = nullptr;
 	AActor* Target = nullptr;
 	TArray<FAIRECombatMeleeTraceSegment> Segments;
+	EAIRECombatMeleeTraceShape Shape = EAIRECombatMeleeTraceShape::Sphere;
 	float Radius = 0.0f;
+	/** Required only for capsule requests and includes the hemisphere caps. */
+	float CapsuleHalfHeight = 0.0f;
 	ECollisionChannel TraceChannel = ECC_MAX;
 };
 
@@ -50,7 +63,7 @@ struct AI_RE_API FAIRECombatMeleeTraceResolution
 };
 
 /**
- * Resolves sphere-swept segments without selecting a target or applying damage.
+ * Resolves sphere- or capsule-swept segments without selecting a target or applying damage.
  * Source and recursively attached actors are ignored. Target contact wins across
  * the supplied segments; otherwise any non-target blocking contact is Blocked.
  */

@@ -25,6 +25,26 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionMeleeAttack, Log, All);
 
+namespace
+{
+	constexpr int32 WeaponTraceSubstepCount = 6;
+
+	FQuat MakeWeaponCapsuleRotation(const FVector& Start, const FVector& End)
+	{
+		const FVector Axis = (End - Start).GetSafeNormal();
+		return Axis.IsNearlyZero()
+			? FQuat::Identity
+			: FQuat::FindBetweenNormals(FVector::UpVector, Axis);
+	}
+
+	FVector MakeWeaponCapsuleCenter(
+		const FVector& Start,
+		const FVector& End)
+	{
+		return (Start + End) * 0.5f;
+	}
+}
+
 UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 {
 	FGameplayTagContainer AssetTags;
@@ -186,6 +206,7 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 	CurrentStepDamage = 0.0f;
 	CurrentStepStaggerValue = 0.0f;
 	CurrentTraceRadius = 0.0f;
+	CurrentTraceCapsuleHalfHeight = 0.0f;
 	CurrentTraceChannel = ECC_MAX;
 	CurrentTraceStartSocket = NAME_None;
 	CurrentTraceEndSocket = NAME_None;
@@ -706,6 +727,8 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 			== EAIRECombatTargetingMode::SingleTarget
 		&& FMath::IsFinite(CurrentTraceRadius)
 		&& CurrentTraceRadius > 0.0f
+		&& FMath::IsFinite(CurrentTraceCapsuleHalfHeight)
+		&& CurrentTraceCapsuleHalfHeight >= CurrentTraceRadius
 		&& CurrentTraceChannel.GetValue() < ECC_MAX;
 	if (!bCommonTraceInputsValid)
 	{
@@ -727,15 +750,24 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 		const float CenterTravelDistance = FMath::Max(
 			0.0f,
 			AttackRange - CurrentTraceRadius);
+		const FVector TraceEnd =
+			TraceStart + Forward * CenterTravelDistance;
+		const FVector CapsuleCenter = TraceStart
+			+ Forward * FMath::Max(
+				0.0f,
+				CurrentTraceCapsuleHalfHeight - CurrentTraceRadius);
 		FAIRECombatMeleeTraceRequest TraceRequest;
 		TraceRequest.World = GetWorld();
 		TraceRequest.Source = SourceActor;
 		TraceRequest.Target = TargetActor;
+		TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
 		TraceRequest.Radius = CurrentTraceRadius;
+		TraceRequest.CapsuleHalfHeight = CurrentTraceCapsuleHalfHeight;
 		TraceRequest.TraceChannel = CurrentTraceChannel.GetValue();
 		TraceRequest.Segments.Emplace(
-			TraceStart,
-			TraceStart + Forward * CenterTravelDistance);
+			CapsuleCenter,
+			CapsuleCenter,
+			MakeWeaponCapsuleRotation(TraceStart, TraceEnd));
 		const FAIRECombatMeleeTraceResolution Resolution =
 			FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
 		OutTargetHit = Resolution.HitResult;
@@ -775,18 +807,49 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 	const FVector TracePreviousEnd = bHasPreviousSample
 		? PreviousTraceEnd
 		: CurrentTraceEnd;
+	const FVector PreviousCapsuleCenter = MakeWeaponCapsuleCenter(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FVector CurrentCapsuleCenter = MakeWeaponCapsuleCenter(
+		CurrentTraceStart,
+		CurrentTraceEnd);
+	const FQuat PreviousCapsuleRotation = MakeWeaponCapsuleRotation(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FQuat CurrentCapsuleRotation = MakeWeaponCapsuleRotation(
+		CurrentTraceStart,
+		CurrentTraceEnd);
 
 	FAIRECombatMeleeTraceRequest TraceRequest;
 	TraceRequest.World = GetWorld();
 	TraceRequest.Source = SourceActor;
 	TraceRequest.Target = TargetActor;
+	TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
 	TraceRequest.Radius = CurrentTraceRadius;
+	TraceRequest.CapsuleHalfHeight = CurrentTraceCapsuleHalfHeight;
 	TraceRequest.TraceChannel = CurrentTraceChannel.GetValue();
-	TraceRequest.Segments.Reserve(4);
-	TraceRequest.Segments.Emplace(TracePreviousStart, CurrentTraceStart);
-	TraceRequest.Segments.Emplace(TracePreviousEnd, CurrentTraceEnd);
-	TraceRequest.Segments.Emplace(TracePreviousStart, TracePreviousEnd);
-	TraceRequest.Segments.Emplace(CurrentTraceStart, CurrentTraceEnd);
+	TraceRequest.Segments.Reserve(WeaponTraceSubstepCount);
+	FVector SubstepStart = PreviousCapsuleCenter;
+	for (int32 SubstepIndex = 1;
+		SubstepIndex <= WeaponTraceSubstepCount;
+		++SubstepIndex)
+	{
+		const float Alpha = static_cast<float>(SubstepIndex)
+			/ static_cast<float>(WeaponTraceSubstepCount);
+		const FVector SubstepEnd = FMath::Lerp(
+			PreviousCapsuleCenter,
+			CurrentCapsuleCenter,
+			Alpha);
+		const FQuat SubstepRotation = FQuat::Slerp(
+			PreviousCapsuleRotation,
+			CurrentCapsuleRotation,
+			Alpha).GetNormalized();
+		TraceRequest.Segments.Emplace(
+			SubstepStart,
+			SubstepEnd,
+			SubstepRotation);
+		SubstepStart = SubstepEnd;
+	}
 
 	const FAIRECombatMeleeTraceResolution Resolution =
 		FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
@@ -858,25 +921,29 @@ void UAIRECompanionMeleeAttackAbility::ResolveCurrentStepTraceSample(
 	{
 		return;
 	}
-	if (TraceResult == EAIRECombatMeleeTraceResult::NoHit)
+	if (TraceResult == EAIRECombatMeleeTraceResult::NoHit
+		|| TraceResult == EAIRECombatMeleeTraceResult::Blocked)
 	{
+		const TCHAR* SampleResultName =
+			TraceResult == EAIRECombatMeleeTraceResult::Blocked
+				? TEXT("Blocked")
+				: TEXT("NoHit");
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
 			Verbose,
-			TEXT("[MAKO ATTACK] Type=Basic Phase=SpatialSample Source=%s Target=%s StepIndex=%d ExecutionId=%s Result=NoHit"),
+			TEXT("[MAKO ATTACK] Type=Basic Phase=SpatialSample Source=%s Target=%s StepIndex=%d ExecutionId=%s Result=%s"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()),
 			*GetNameSafe(GetEventTarget()),
 			CurrentStepIndex,
-			*CurrentStepExecutionId.ToString());
+			*CurrentStepExecutionId.ToString(),
+			SampleResultName);
 		return;
 	}
 
 	const TCHAR* TraceResultName =
 		TraceResult == EAIRECombatMeleeTraceResult::TargetHit
 			? TEXT("TargetHit")
-			: TraceResult == EAIRECombatMeleeTraceResult::Blocked
-				? TEXT("Blocked")
-				: TEXT("Invalid");
+			: TEXT("Invalid");
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Log,
@@ -950,7 +1017,10 @@ void UAIRECompanionMeleeAttackAbility::ResetCurrentStepState()
 	CurrentStepTargetingMode =
 		GetAttackStepTargetingMode(CurrentStepIndex);
 	CurrentTraceRadius = IsValid(ActiveWeaponDefinition)
-		? ActiveWeaponDefinition->TraceRadius
+		? ActiveWeaponDefinition->TraceCapsuleRadius
+		: 0.0f;
+	CurrentTraceCapsuleHalfHeight = IsValid(ActiveWeaponDefinition)
+		? ActiveWeaponDefinition->TraceCapsuleHalfHeight
 		: 0.0f;
 	CurrentTraceChannel = ECC_MAX;
 	if (IsValid(ActiveWeaponDefinition))
@@ -983,7 +1053,7 @@ void UAIRECompanionMeleeAttackAbility::ResetCurrentStepState()
 		UE_LOG(
 			LogAIRECompanionMeleeAttack,
 			Log,
-			TEXT("[MAKO ATTACK] Type=Basic Phase=StrikeSnapshot Source=%s Target=%s StepIndex=%d ExecutionId=%s Damage=%.2f Stagger=%.2f Radius=%.1f Sockets=%s->%s"),
+			TEXT("[MAKO ATTACK] Type=Basic Phase=StrikeSnapshot Source=%s Target=%s StepIndex=%d ExecutionId=%s Damage=%.2f Stagger=%.2f CapsuleRadius=%.1f CapsuleHalfHeight=%.1f Sockets=%s->%s"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()),
 			*GetNameSafe(GetEventTarget()),
 			CurrentStepIndex,
@@ -991,6 +1061,7 @@ void UAIRECompanionMeleeAttackAbility::ResetCurrentStepState()
 			CurrentStepDamage,
 			CurrentStepStaggerValue,
 			CurrentTraceRadius,
+			CurrentTraceCapsuleHalfHeight,
 			*CurrentTraceStartSocket.ToString(),
 			*CurrentTraceEndSocket.ToString());
 	}

@@ -754,6 +754,7 @@ UAIREEnemyAttackComponent::PerformSocketTraceSample(
 	Request.World = GetWorld();
 	Request.Source = OwnerCharacter.Get();
 	Request.Target = AttackTarget.Get();
+	Request.Shape = EAIRECombatMeleeTraceShape::Sphere;
 	Request.Radius = ActiveMeleeTraceSettings.TraceRadius;
 	Request.TraceChannel =
 		ActiveMeleeTraceSettings.TraceChannel.GetValue();
@@ -802,6 +803,7 @@ UAIREEnemyAttackComponent::PerformFallbackTraceSample(
 	Request.World = GetWorld();
 	Request.Source = OwnerCharacter.Get();
 	Request.Target = AttackTarget.Get();
+	Request.Shape = EAIRECombatMeleeTraceShape::Sphere;
 	Request.Radius = ActiveMeleeTraceSettings.TraceRadius;
 	Request.TraceChannel =
 		ActiveMeleeTraceSettings.TraceChannel.GetValue();

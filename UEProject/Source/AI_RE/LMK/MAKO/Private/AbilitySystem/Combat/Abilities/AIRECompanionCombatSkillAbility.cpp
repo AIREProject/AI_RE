@@ -17,6 +17,26 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCombatSkill, Log, All);
 
+namespace
+{
+	constexpr int32 WeaponTraceSubstepCount = 6;
+
+	FQuat MakeWeaponCapsuleRotation(const FVector& Start, const FVector& End)
+	{
+		const FVector Axis = (End - Start).GetSafeNormal();
+		return Axis.IsNearlyZero()
+			? FQuat::Identity
+			: FQuat::FindBetweenNormals(FVector::UpVector, Axis);
+	}
+
+	FVector MakeWeaponCapsuleCenter(
+		const FVector& Start,
+		const FVector& End)
+	{
+		return (Start + End) * 0.5f;
+	}
+}
+
 UAIRECompanionCombatSkillAbility::UAIRECompanionCombatSkillAbility()
 {
 	FGameplayTagContainer AssetTags;
@@ -101,7 +121,10 @@ void UAIRECompanionCombatSkillAbility::ActivateAbility(
 		? ActiveWeaponDefinition->CombatSkill.TargetingMode
 		: EAIRECombatTargetingMode::Area;
 	ActiveTraceRadius = IsValid(ActiveWeaponDefinition)
-		? ActiveWeaponDefinition->TraceRadius
+		? ActiveWeaponDefinition->TraceCapsuleRadius
+		: 0.0f;
+	ActiveTraceCapsuleHalfHeight = IsValid(ActiveWeaponDefinition)
+		? ActiveWeaponDefinition->TraceCapsuleHalfHeight
 		: 0.0f;
 	ActiveTraceChannel = ECC_MAX;
 	if (IsValid(ActiveWeaponDefinition))
@@ -152,13 +175,14 @@ void UAIRECompanionCombatSkillAbility::ActivateAbility(
 	UE_LOG(
 		LogAIRECompanionCombatSkill,
 		Log,
-		TEXT("[MAKO ATTACK] Type=CombatSkill Phase=StrikeReady Source=%s Target=%s ExecutionId=%s Damage=%.2f Stagger=%.2f Radius=%.1f Sockets=%s->%s"),
+		TEXT("[MAKO ATTACK] Type=CombatSkill Phase=StrikeReady Source=%s Target=%s ExecutionId=%s Damage=%.2f Stagger=%.2f CapsuleRadius=%.1f CapsuleHalfHeight=%.1f Sockets=%s->%s"),
 		*GetNameSafe(GetAvatarActorFromActorInfo()),
 		*GetNameSafe(TargetActor),
 		*ActiveExecutionId.ToString(),
 		ActiveDamage,
 		ActiveStaggerValue,
 		ActiveTraceRadius,
+		ActiveTraceCapsuleHalfHeight,
 		*ActiveTraceStartSocket.ToString(),
 		*ActiveTraceEndSocket.ToString());
 
@@ -259,6 +283,7 @@ void UAIRECompanionCombatSkillAbility::EndAbility(
 	ActiveStaggerValue = 0.0f;
 	ActiveAttackRange = 0.0f;
 	ActiveTraceRadius = 0.0f;
+	ActiveTraceCapsuleHalfHeight = 0.0f;
 	ActiveTraceChannel = ECC_MAX;
 	ActiveTraceStartSocket = NAME_None;
 	ActiveTraceEndSocket = NAME_None;
@@ -412,6 +437,8 @@ UAIRECompanionCombatSkillAbility::SampleSkillTrace(
 		&& ActiveTargetingMode == EAIRECombatTargetingMode::SingleTarget
 		&& FMath::IsFinite(ActiveTraceRadius)
 		&& ActiveTraceRadius > 0.0f
+		&& FMath::IsFinite(ActiveTraceCapsuleHalfHeight)
+		&& ActiveTraceCapsuleHalfHeight >= ActiveTraceRadius
 		&& ActiveTraceChannel.GetValue() < ECC_MAX;
 	if (!bCommonTraceInputsValid)
 	{
@@ -433,15 +460,24 @@ UAIRECompanionCombatSkillAbility::SampleSkillTrace(
 		const float CenterTravelDistance = FMath::Max(
 			0.0f,
 			ActiveAttackRange - ActiveTraceRadius);
+		const FVector TraceEnd =
+			TraceStart + Forward * CenterTravelDistance;
+		const FVector CapsuleCenter = TraceStart
+			+ Forward * FMath::Max(
+				0.0f,
+				ActiveTraceCapsuleHalfHeight - ActiveTraceRadius);
 		FAIRECombatMeleeTraceRequest TraceRequest;
 		TraceRequest.World = GetWorld();
 		TraceRequest.Source = SourceActor;
 		TraceRequest.Target = TargetActor;
+		TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
 		TraceRequest.Radius = ActiveTraceRadius;
+		TraceRequest.CapsuleHalfHeight = ActiveTraceCapsuleHalfHeight;
 		TraceRequest.TraceChannel = ActiveTraceChannel.GetValue();
 		TraceRequest.Segments.Emplace(
-			TraceStart,
-			TraceStart + Forward * CenterTravelDistance);
+			CapsuleCenter,
+			CapsuleCenter,
+			MakeWeaponCapsuleRotation(TraceStart, TraceEnd));
 		const FAIRECombatMeleeTraceResolution Resolution =
 			FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
 		OutTargetHit = Resolution.HitResult;
@@ -480,18 +516,49 @@ UAIRECompanionCombatSkillAbility::SampleSkillTrace(
 	const FVector TracePreviousEnd = bHasPreviousSample
 		? PreviousTraceEnd
 		: CurrentTraceEnd;
+	const FVector PreviousCapsuleCenter = MakeWeaponCapsuleCenter(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FVector CurrentCapsuleCenter = MakeWeaponCapsuleCenter(
+		CurrentTraceStart,
+		CurrentTraceEnd);
+	const FQuat PreviousCapsuleRotation = MakeWeaponCapsuleRotation(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FQuat CurrentCapsuleRotation = MakeWeaponCapsuleRotation(
+		CurrentTraceStart,
+		CurrentTraceEnd);
 
 	FAIRECombatMeleeTraceRequest TraceRequest;
 	TraceRequest.World = GetWorld();
 	TraceRequest.Source = SourceActor;
 	TraceRequest.Target = TargetActor;
+	TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
 	TraceRequest.Radius = ActiveTraceRadius;
+	TraceRequest.CapsuleHalfHeight = ActiveTraceCapsuleHalfHeight;
 	TraceRequest.TraceChannel = ActiveTraceChannel.GetValue();
-	TraceRequest.Segments.Reserve(4);
-	TraceRequest.Segments.Emplace(TracePreviousStart, CurrentTraceStart);
-	TraceRequest.Segments.Emplace(TracePreviousEnd, CurrentTraceEnd);
-	TraceRequest.Segments.Emplace(TracePreviousStart, TracePreviousEnd);
-	TraceRequest.Segments.Emplace(CurrentTraceStart, CurrentTraceEnd);
+	TraceRequest.Segments.Reserve(WeaponTraceSubstepCount);
+	FVector SubstepStart = PreviousCapsuleCenter;
+	for (int32 SubstepIndex = 1;
+		SubstepIndex <= WeaponTraceSubstepCount;
+		++SubstepIndex)
+	{
+		const float Alpha = static_cast<float>(SubstepIndex)
+			/ static_cast<float>(WeaponTraceSubstepCount);
+		const FVector SubstepEnd = FMath::Lerp(
+			PreviousCapsuleCenter,
+			CurrentCapsuleCenter,
+			Alpha);
+		const FQuat SubstepRotation = FQuat::Slerp(
+			PreviousCapsuleRotation,
+			CurrentCapsuleRotation,
+			Alpha).GetNormalized();
+		TraceRequest.Segments.Emplace(
+			SubstepStart,
+			SubstepEnd,
+			SubstepRotation);
+		SubstepStart = SubstepEnd;
+	}
 
 	const FAIRECombatMeleeTraceResolution Resolution =
 		FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
@@ -560,24 +627,28 @@ void UAIRECompanionCombatSkillAbility::ResolveSkillTraceSample(
 	{
 		return;
 	}
-	if (TraceResult == EAIRECombatMeleeTraceResult::NoHit)
+	if (TraceResult == EAIRECombatMeleeTraceResult::NoHit
+		|| TraceResult == EAIRECombatMeleeTraceResult::Blocked)
 	{
+		const TCHAR* SampleResultName =
+			TraceResult == EAIRECombatMeleeTraceResult::Blocked
+				? TEXT("Blocked")
+				: TEXT("NoHit");
 		UE_LOG(
 			LogAIRECompanionCombatSkill,
 			Verbose,
-			TEXT("[MAKO ATTACK] Type=CombatSkill Phase=SpatialSample Source=%s Target=%s ExecutionId=%s Result=NoHit"),
+			TEXT("[MAKO ATTACK] Type=CombatSkill Phase=SpatialSample Source=%s Target=%s ExecutionId=%s Result=%s"),
 			*GetNameSafe(GetAvatarActorFromActorInfo()),
 			*GetNameSafe(GetEventTarget()),
-			*ActiveExecutionId.ToString());
+			*ActiveExecutionId.ToString(),
+			SampleResultName);
 		return;
 	}
 
 	const TCHAR* TraceResultName =
 		TraceResult == EAIRECombatMeleeTraceResult::TargetHit
 			? TEXT("TargetHit")
-			: TraceResult == EAIRECombatMeleeTraceResult::Blocked
-				? TEXT("Blocked")
-				: TEXT("Invalid");
+			: TEXT("Invalid");
 	UE_LOG(
 		LogAIRECompanionCombatSkill,
 		Log,

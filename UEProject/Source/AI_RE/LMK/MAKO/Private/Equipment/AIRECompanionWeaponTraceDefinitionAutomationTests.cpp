@@ -29,6 +29,14 @@ bool FAIRECompanionWeaponTraceDefinitionTest::RunTest(
 		WeaponDefinition->TraceRadius,
 		25.0f);
 	TestEqual(
+		TEXT("Default MAKO capsule radius is 35 cm"),
+		WeaponDefinition->TraceCapsuleRadius,
+		35.0f);
+	TestEqual(
+		TEXT("Default MAKO capsule half height is 160 cm"),
+		WeaponDefinition->TraceCapsuleHalfHeight,
+		160.0f);
+	TestEqual(
 		TEXT("Harvest point-hit range is 75 cm"),
 		WeaponDefinition->HarvestAttackRange,
 		75.0f);
@@ -75,6 +83,11 @@ bool FAIRECompanionWeaponTraceDefinitionTest::RunTest(
 		TEXT("A zero trace radius is rejected"),
 		WeaponDefinition->IsWeaponDefinitionValid(ValidationError));
 	WeaponDefinition->TraceRadius = 25.0f;
+	WeaponDefinition->TraceCapsuleHalfHeight = 30.0f;
+	TestFalse(
+		TEXT("A capsule shorter than its radius is rejected"),
+		WeaponDefinition->IsWeaponDefinitionValid(ValidationError));
+	WeaponDefinition->TraceCapsuleHalfHeight = 160.0f;
 	WeaponDefinition->TraceChannel = ECC_MAX;
 	TestFalse(
 		TEXT("An invalid trace channel is rejected"),

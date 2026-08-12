@@ -97,6 +97,18 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
+	if (!FMath::IsFinite(TraceCapsuleRadius)
+		|| TraceCapsuleRadius <= 0.0f
+		|| !FMath::IsFinite(TraceCapsuleHalfHeight)
+		|| TraceCapsuleHalfHeight < TraceCapsuleRadius)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceCapsule",
+			"Trace Capsule Radius must be positive and Half Height must be at least the Radius.");
+		return false;
+	}
+
 	if (TraceChannel.GetValue() >= ECC_MAX)
 	{
 		OutValidationError = NSLOCTEXT(

@@ -185,22 +185,23 @@ channel are 35 cm, 180 cm, and `ECC_Pawn`.
 
 T02B extracts only the stateless spatial part into
 `FAIRECombatMeleeTraceResolver::Resolve`. Its input is source, snapshotted target,
-collision channel, radius, and ordered swept segments; its result is `NoHit`,
+collision channel, shape, radius, optional capsule half-height, and ordered swept segments; its result is `NoHit`,
 `TargetHit`, `Blocked`, or `Invalid`, with `FHitResult` only for `TargetHit`. It owns
 neither target selection, strike lifetime, nor damage commit. Boss keeps its existing
 socket history and strike ledger while calling this resolver, and MAKO calls the same
 resolver without attaching an Enemy component or introducing concrete Boss/MAKO casts.
 
 MAKO basic combo steps each snapshot a distinct `ExecutionId`, Damage, Stagger,
-targeting mode, radius, channel, and selected left/right socket pair. Combat Skill
-keeps one such strike snapshot for the whole activation. A trace window sweeps previous
-and current base/tip positions as four ordered segments. `NoHit` leaves the window open;
-`Blocked`, `Invalid`, and `TargetHit` are terminal for that strike. Only `TargetHit`
+targeting mode, capsule dimensions, channel, and selected left/right socket pair. Combat Skill
+keeps one such strike snapshot for the whole activation. A trace window aligns one capsule
+to the blade axis and sweeps its previous and current centers through six interpolated
+substeps. `NoHit` and `Blocked` leave the window open; `Invalid` and `TargetHit` are terminal. Only `TargetHit`
 submits a shared Damage request with its `FHitResult`. The legacy point Notify and
 timer fallback remain one-shot spatial samples, while Harvest remains a direct resource
 hit with a separate `75 cm` range. Missing blade sockets are an explicit invalid miss,
 never a distance-based combat hit. The default MAKO contract is `weapon_l/r` to
-`weapon_trace_tip_l/r`, radius `25 cm`, and `ECC_Pawn`.
+`weapon_trace_tip_l/r`, capsule radius `35 cm`, capsule half-height `160 cm`, and `ECC_Pawn`.
+Boss socket and fallback requests explicitly retain the sphere shape.
 
 An attack pattern may opt into `ForwardMoveDistance` and a desired
 `ForwardMoveStopDistance`. A positive stop distance clamps the move from the

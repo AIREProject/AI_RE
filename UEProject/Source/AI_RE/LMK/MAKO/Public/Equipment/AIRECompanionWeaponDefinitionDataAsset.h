@@ -192,6 +192,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
 	float TraceRadius = 25.0f;
 
+	/** Radius of MAKO's broad weapon capsule. Kept separate from the legacy sphere radius. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
+	float TraceCapsuleRadius = 35.0f;
+
+	/** Half of MAKO's full capsule length, including its rounded caps. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
+	float TraceCapsuleHalfHeight = 160.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Pawn;
 
