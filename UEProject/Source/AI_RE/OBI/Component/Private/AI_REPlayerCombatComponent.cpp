@@ -87,8 +87,7 @@ void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)
 	TryEquipWeapon(WeaponData);
 }
 
-bool UAI_REPlayerCombatComponent::TryEquipWeapon(
-	UAI_REItemDataAsset* WeaponData)
+bool UAI_REPlayerCombatComponent::TryEquipWeapon(UAI_REItemDataAsset* WeaponData)
 {
 	UAI_REWeaponItemDataAsset* WeaponItem =
 		Cast<UAI_REWeaponItemDataAsset>(WeaponData);
@@ -309,8 +308,21 @@ void UAI_REPlayerCombatComponent::ClearWeaponVisuals()
 				WeaponMeshComp->SetStaticMesh(nullptr);
 			}
 
-			// 맨손 상태로 복귀하기 위해 링크된 애니메이션 레이어를 모두 해제합니다.
-			PlayerChar->GetMesh()->UnlinkAnimClassLayers(nullptr);
+			// 맨손 상태로 복귀하기 위해, 장착 중이던 무기의 링크된 애니메이션 레이어를 해제합니다.
+			if (EquippedWeapon)
+			{
+				if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(EquippedWeapon))
+				{
+					if (WeaponItem->WeaponDefinition && !WeaponItem->WeaponDefinition->LinkedAnimLayerClass.IsNull())
+					{
+						UClass* LayerClass = WeaponItem->WeaponDefinition->LinkedAnimLayerClass.LoadSynchronous();
+						if (LayerClass && PlayerChar->GetMesh()->GetAnimInstance())
+						{
+							PlayerChar->GetMesh()->GetAnimInstance()->UnlinkAnimClassLayers(LayerClass);
+						}
+					}
+				}
+			}
 		}
 	}
 }

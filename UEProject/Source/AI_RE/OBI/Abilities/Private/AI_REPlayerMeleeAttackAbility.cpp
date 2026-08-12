@@ -13,7 +13,8 @@
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REWeaponItemDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
-#include "../../LMK/MAKO/Public/Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "Engine/Engine.h"
+#include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 
 UAI_REPlayerMeleeAttackAbility::UAI_REPlayerMeleeAttackAbility()
 {
@@ -35,6 +36,7 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 	CurrentComboIndex = 1;
 	bIsComboWindowOpen = false;
 	bHasComboInput = false;
+	bIsActiveHitEnded = false;
 
 	// Wait for Gameplay Event from AnimNotify
 	HitEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
@@ -175,6 +177,7 @@ void UAI_REPlayerMeleeAttackAbility::HandleActiveHitStart(FGameplayEventData Pay
 	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, TEXT("[Debug] HandleActiveHitStart Fired! (Array Cleared)"));
 	// 연속 판정 시작 (배열 비우고 타이머 시작)
 	HitActorsThisSwing.Empty();
+	bIsActiveHitEnded = false;
 
 	if (GetWorld())
 	{
@@ -191,18 +194,51 @@ void UAI_REPlayerMeleeAttackAbility::HandleActiveHitEnd(FGameplayEventData Paylo
 		GetWorld()->GetTimerManager().ClearTimer(ActiveHitTimerHandle);
 	}
 	HitActorsThisSwing.Empty();
+	bIsActiveHitEnded = true;
+
+	// 예약된 콤보가 있다면 ActiveHit이 끝나는 즉시 캔슬하고 다음 섹션으로 점프
+	if (bHasComboInput)
+	{
+		TryComboTransition();
+	}
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen(FGameplayEventData Payload)
 {
 	bIsComboWindowOpen = true;
-	bHasComboInput = false;
+	// 미리 입력해둔 버퍼를 날려버리지 않도록 초기화 제거
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose(FGameplayEventData Payload)
 {
 	bIsComboWindowOpen = false;
 	
+	if (!bHasComboInput) return;
+
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (!Character) return;
+
+	bool bIsWeapon = false;
+	if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
+	{
+		if (CombatComp->EquippedWeapon != nullptr && CombatComp->EquippedWeapon != CombatComp->DefaultUnarmedWeapon)
+		{
+			bIsWeapon = true;
+		}
+	}
+
+	if (!bIsWeapon)
+	{
+		// 맨손 애니메이션은 ActiveHitEnd 노티파이가 없으므로, 
+		// 콤보 창이 닫히는 이 시점에 다음 콤보로 넘깁니다. (이때 변수들도 초기화됨)
+		TryComboTransition();
+	}
+}
+
+void UAI_REPlayerMeleeAttackAbility::TryComboTransition()
+{
+	if (!bHasComboInput) return;
+
 	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
 	if (!Character) return;
 	
@@ -210,50 +246,23 @@ void UAI_REPlayerMeleeAttackAbility::HandleComboWindowClose(FGameplayEventData P
 	if (Character->GetMesh()) AnimInst = Character->GetMesh()->GetAnimInstance();
 	if (!AnimInst) return;
 
-	bool bIsWeapon = false;
-	if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
-	{
-		// 장착된 무기가 '맨손 전용 기본 데이터 에셋'이 아닐 경우에만 무기로 판정합니다.
-		if (CombatComp->EquippedWeapon != nullptr && CombatComp->EquippedWeapon != CombatComp->DefaultUnarmedWeapon)
-		{
-			bIsWeapon = true;
-		}
-	}
-
-	if (!bHasComboInput)
-	{
-		// 유저가 입력하지 않았다면, 아무것도 하지 않습니다. (애니메이션 원본의 후딜레이가 끝까지 자연스럽게 재생됩니다)
-	}
-	else
-	{
-		// 콤보 입력이 성공했다면
-		if (bIsWeapon)
-		{
-			// 대검 등: 한 섹션이 완전히 끝난 뒤 부드럽게 이어지도록 SetNextSection 사용
-			FString CurrentSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex - 1); 
-			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex); 
-			AnimInst->Montage_SetNextSection(FName(*CurrentSectionStr), FName(*NextSectionStr), CurrentMontage);
-		}
-		else
-		{
-			// 맨손 등: 기존처럼 즉시 가로채서(점프) 타격
-			FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex); 
-			AnimInst->Montage_JumpToSection(FName(*NextSectionStr), CurrentMontage);
-		}
-		
-		// 실제 다음 타격 애니메이션이 이어지거나 점프되는 시점(동작 수행 시점)에 스테미나 소모!
-		CommitAbilityCost(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo());
-
-		// 다음 입력을 받기 위해 상태만 초기화합니다.
-		bHasComboInput = false;
-	}
+	// 맨손이든 무기든 이 함수가 호출되었다면 '즉시' 점프합니다. (JumpToSection 사용)
+	FString NextSectionStr = FString::Printf(TEXT("Combo%d"), CurrentComboIndex); 
+	AnimInst->Montage_JumpToSection(FName(*NextSectionStr), CurrentMontage);
+	
+	CommitAbilityCost(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo());
+	
+	// 다음 타격을 위해 모든 상태를 깨끗하게 초기화 (이전 섹션의 노티파이 잔여물 제거)
+	bHasComboInput = false;
+	bIsActiveHitEnded = false;
+	bIsComboWindowOpen = false;
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboInput(FGameplayEventData Payload)
 {
-	if (bIsComboWindowOpen && !bHasComboInput)
+	// 콤보 예약이 아직 안 되어있을 때만 허용 (창이 열려있든 아니든 미리 버퍼링 가능)
+	if (!bHasComboInput)
 	{
-		// 콤보 예약 확정 (점프는 Close 노티파이에서 수행함)
 		bHasComboInput = true;
 		
 		ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
@@ -263,6 +272,12 @@ void UAI_REPlayerMeleeAttackAbility::HandleComboInput(FGameplayEventData Payload
 			CurrentMontage = AnimInst->GetCurrentActiveMontage();
 			
 			CurrentComboIndex++;
+
+			// ActiveHit이 이미 끝난 후딜레이 상태에서 입력이 들어왔다면 대기 없이 즉시 점프
+			if (bIsActiveHitEnded)
+			{
+				TryComboTransition();
+			}
 		}
 	}
 }
@@ -337,7 +352,7 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 		{
 			AActor* HitActor = HitResult.GetActor();
 			
-			// 주먹이 닿은 정확한 지점에 디버그 시각화 (기획자님 요청 복구)
+			// 주먹이 닿은 정확한 지점에 디버그 시각화
 			DrawDebugCapsule(GetWorld(), TraceStart + (TraceEnd - TraceStart) * HitResult.Time, TraceRad, TraceRad, FQuat::Identity, FColor::Green, false, 2.0f);
 			DrawDebugPoint(GetWorld(), HitResult.ImpactPoint, 15.0f, FColor::Red, false, 2.0f);
 

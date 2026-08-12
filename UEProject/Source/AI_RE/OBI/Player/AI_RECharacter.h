@@ -62,6 +62,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class UInputAction> InteractAction;
 
+	/** Craft Input Action (Bound to C) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UInputAction> CraftAction;
+
+	/** Equip Input Action (Bound to E) */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UInputAction> EquipAction;
+
 	/** Attack Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> AttackAction;
@@ -86,6 +94,12 @@ protected:
 
 	/** Called for interaction input */
 	void DoInteract(const FInputActionValue& Value);
+
+	/** Called for craft input */
+	void DoCraft(const FInputActionValue& Value);
+
+	/** Called for equip input */
+	void DoEquip(const FInputActionValue& Value);
 
 	/** Called for attack input */
 	void DoAttack();

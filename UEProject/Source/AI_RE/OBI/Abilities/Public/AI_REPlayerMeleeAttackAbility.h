@@ -69,10 +69,12 @@ private:
 
 	void PerformTraceHit();
 	void ProcessHit(AActor* HitActor, float Dmg, ACharacter* Character);
+	void TryComboTransition();
 
 	int32 CurrentComboIndex = 1;
 	bool bIsComboWindowOpen = false;
 	bool bHasComboInput = false;
+	bool bIsActiveHitEnded = false;
 
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;
