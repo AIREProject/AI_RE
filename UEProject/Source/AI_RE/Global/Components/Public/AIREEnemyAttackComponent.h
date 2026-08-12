@@ -118,6 +118,20 @@ public:
 		const FGuid& ExecutionId,
 		float MovementWindowDuration);
 	void EndAttackMovementWindow(const FGuid& ExecutionId);
+	bool BeginAttackTempoWindow(
+		const FGuid& ExecutionId,
+		UAnimMontage* Montage,
+		int32 StrikeIndex,
+		float StrikeStartTime,
+		float WindowEndTime,
+		float AnticipationPlayRateMultiplier,
+		float StrikePlayRateMultiplier);
+	void UpdateAttackTempoWindow(
+		const FGuid& ExecutionId,
+		int32 StrikeIndex);
+	void EndAttackTempoWindow(
+		const FGuid& ExecutionId,
+		int32 StrikeIndex);
 
 	bool TryCancelDamageForAggroSwap(const FGuid& ExecutionId);
 	void CancelCurrentAttack();
@@ -179,6 +193,8 @@ private:
 	float GetOwnerHealthRatio() const;
 	void StartAttackMovement(float TraceWindowDuration);
 	void StopAttackMovement();
+	void ResetAttackTempo(bool bRestoreBasePlayRate);
+	void SetAttackTempoPlayRate(float PlayRateMultiplier);
 	void ClearMontageEndDelegate();
 	void CloseOpportunity();
 	void FinishAttack();
@@ -222,6 +238,7 @@ private:
 	FTimerHandle RecoveryTimerHandle;
 	FGuid ActiveExecutionId;
 	FGuid TraceWindowExecutionId;
+	FGuid TempoWindowExecutionId;
 	FAIREEnemyMeleeTraceSettings MeleeTraceSettings;
 	FAIREEnemyMeleeTraceSettings ActiveAttackTraceSettings;
 	FAIREEnemyMeleeTraceSettings ActiveMeleeTraceSettings;
@@ -235,8 +252,12 @@ private:
 	float ActiveForwardMoveDistance = 0.0f;
 	float ActiveStrikeDamageScale = 1.0f;
 	float ActiveStrikeStaggerScale = 1.0f;
+	float ActiveTempoStrikeStartTime = 0.0f;
+	float ActiveTempoStrikePlayRateMultiplier = 1.0f;
+	float ActiveTempoRecoveryExtension = 0.0f;
 	uint16 ActiveMovementRootMotionSourceId = 0;
 	int32 ActiveStrikeIndex = INDEX_NONE;
+	int32 ActiveTempoStrikeIndex = INDEX_NONE;
 	TSet<int32> CommittedStrikeIndices;
 	TMap<int32, FGuid> StrikeExecutionIds;
 	FVector AttackForward = FVector::ForwardVector;
@@ -255,4 +276,6 @@ private:
 	bool bAttackMovementWindowEverOpened = false;
 	bool bUseSocketTrace = false;
 	bool bAttackMovementStarted = false;
+	bool bAttackTempoWindowOpen = false;
+	bool bAttackTempoStrikeRateApplied = false;
 };

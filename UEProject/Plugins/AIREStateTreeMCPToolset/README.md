@@ -23,6 +23,9 @@ Editor-only UE 5.8 MCP tools for project-owned StateTree, UMG, and animation ass
 - `ConfigureEnemyAttackMovementWindow` replaces only the project-owned attack
   movement state so a collision-aware gap closer can start independently from
   its damage trace window.
+- Enemy attack tempo mutations replace only project-owned tempo states. They
+  reject overlapping tempo windows and any overlap with an attack movement
+  window, preserving trace timing, strike indices, and damage settings.
 - `ConfigureMontageAnimationTrack` rebuilds a project-owned Montage from one or
   more compatible Animation Sequences, recalculates the real play length through
   the montage data controller, and can clear template Montage notifies.
@@ -95,7 +98,10 @@ Named state and node creation is retry-safe: a matching sibling state or a match
    project-owned `AIRE Enemy Melee Trace Window` states.
 6. For a configured gap closer, use `ConfigureEnemyAttackMovementWindow` to
    place its movement interval independently from the contact interval.
-7. Inspect the result and save only the edited montage with `AssetTools.save_assets`.
+7. Use `InspectEnemyAttackTempoMontage`, then
+   `ConfigureEnemyAttackTempoWindows` to add a slow anticipation phase followed
+   by a short fast strike phase. Do not overlap a tempo window with movement.
+8. Inspect the result and save only the edited montage with `AssetTools.save_assets`.
 
 ## Control Rig hierarchy workflow
 
