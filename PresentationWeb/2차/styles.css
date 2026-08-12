@@ -3054,6 +3054,136 @@ button:focus-visible {
   font-size: 0.72cqw;
 }
 
+/* Generative AI: an applied production workflow, not a feature showcase. */
+.slide-inner--generative-ai {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.generative-ai-header {
+  align-items: end;
+  margin-bottom: 2cqw;
+}
+
+.generative-ai-header h2 {
+  margin-bottom: 0;
+  font-size: 3.35cqw;
+}
+
+.generative-ai-header .lead {
+  max-width: 34cqw;
+  margin-bottom: 0.35cqw;
+  font-size: 1.2cqw;
+  line-height: 1.5;
+}
+
+.generative-ai-stages {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1cqw;
+}
+
+.generative-ai-stage {
+  position: relative;
+  min-height: 20.7cqw;
+  padding: 1.45cqw 1.4cqw;
+  overflow: hidden;
+  border: 1px solid rgba(93, 84, 108, 0.13);
+  border-radius: 1.15cqw;
+  background: rgba(255, 253, 250, 0.84);
+  box-shadow: 0 1cqw 2.35cqw rgba(78, 69, 96, 0.08);
+}
+
+.generative-ai-stage::after {
+  position: absolute;
+  right: -2.1cqw;
+  bottom: -2.7cqw;
+  width: 8.4cqw;
+  height: 8.4cqw;
+  border-radius: 50%;
+  background: rgba(220, 212, 242, 0.56);
+  content: "";
+}
+
+.generative-ai-stage--ui {
+  background: linear-gradient(145deg, rgba(238, 231, 248, 0.9), rgba(255, 253, 250, 0.82));
+}
+
+.generative-ai-stage--ui::after {
+  background: rgba(201, 230, 226, 0.68);
+}
+
+.generative-ai-stage--image {
+  background: linear-gradient(145deg, rgba(220, 239, 234, 0.88), rgba(255, 253, 250, 0.82));
+}
+
+.generative-ai-stage--image::after {
+  background: rgba(243, 215, 199, 0.72);
+}
+
+.generative-ai-stage--code {
+  background: linear-gradient(145deg, rgba(248, 229, 218, 0.9), rgba(255, 253, 250, 0.82));
+}
+
+.generative-ai-stage > span,
+.generative-ai-stage em,
+.generative-ai-stage strong,
+.generative-ai-stage p {
+  position: relative;
+  z-index: 1;
+}
+
+.generative-ai-stage > span {
+  display: block;
+  margin-bottom: 2.55cqw;
+  color: #806c9f;
+  font-size: 0.84cqw;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.generative-ai-stage em {
+  display: block;
+  margin-bottom: 0.75cqw;
+  color: #6b4d7e;
+  font-size: 0.65cqw;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.generative-ai-stage strong {
+  display: block;
+  font-size: 1.65cqw;
+  line-height: 1.14;
+}
+
+.generative-ai-stage p {
+  margin: 1cqw 0 0;
+  color: var(--muted);
+  font-size: 1.05cqw;
+  font-weight: 680;
+  line-height: 1.48;
+  word-break: keep-all;
+}
+
+.generative-ai-statement {
+  margin: 1.45cqw 0 0;
+  padding: 1.05cqw 1.3cqw;
+  border-radius: 0.8cqw;
+  background: #292535;
+  color: rgba(255, 255, 255, 0.73);
+  font-size: 1.2cqw;
+  font-weight: 700;
+  text-align: center;
+}
+
+.generative-ai-statement strong {
+  color: #fff;
+  font-size: 1.35cqw;
+}
+
 /* Final phase: preserve the feature set and focus on finish quality. */
 .slide-inner--final-polish {
   display: flex;

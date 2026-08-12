@@ -4,6 +4,7 @@
 #include "Animation/AIRECompanionComboWindowAnimNotifyState.h"
 #include "Animation/AIRECompanionMeleeTraceAnimNotifyState.h"
 #include "AIREEnemyAttackMovementAnimNotifyState.h"
+#include "AIREEnemyAttackTempoAnimNotifyState.h"
 #include "AIREEnemyMeleeTraceAnimNotifyState.h"
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
@@ -292,6 +293,24 @@ namespace
 					FString::Printf(
 						TEXT("%s: %.3f-%.3f"),
 						*NotifyName,
+						NotifyEvent.GetTime(),
+						NotifyEvent.GetTime() + NotifyEvent.GetDuration()));
+				continue;
+			}
+
+			if (const UAIREEnemyAttackTempoAnimNotifyState* TempoWindow =
+				Cast<UAIREEnemyAttackTempoAnimNotifyState>(
+					NotifyEvent.NotifyStateClass))
+			{
+				++OutResult.TempoWindowCount;
+				OutResult.Entries.Add(
+					FString::Printf(
+						TEXT("%s[%d] xAnticipation=%.2f xStrike=%.2f switch=%.3f: %.3f-%.3f"),
+						*NotifyName,
+						TempoWindow->StrikeIndex,
+						TempoWindow->AnticipationPlayRateMultiplier,
+						TempoWindow->StrikePlayRateMultiplier,
+						TempoWindow->StrikeStartTime,
 						NotifyEvent.GetTime(),
 						NotifyEvent.GetTime() + NotifyEvent.GetDuration()));
 				continue;
@@ -1110,6 +1129,248 @@ FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::ConfigureEnemyMelee
 			Result.RemovedLegacyNotifyCount,
 			Windows.Num())
 		: TEXT("The montage did not end with the requested trace windows and no legacy attack notifies.");
+	return Result;
+}
+
+FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::InspectEnemyAttackTempoMontage(
+	UAnimMontage* Montage)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeNotifyMutationFailure(Error);
+	}
+
+	FAIREAnimationNotifyMutationResult Result;
+	PopulateEnemyMeleeTraceInspection(*Montage, Result);
+	Result.bSuccess = true;
+	Result.Message = TEXT("Enemy attack tempo montage inspected successfully.");
+	return Result;
+}
+
+FAIREAnimationNotifyMutationResult UAIREAnimationMCPToolset::ConfigureEnemyAttackTempoWindows(
+	UAnimMontage* Montage,
+	const FName NotifyTrackName,
+	const TArray<FAIREEnemyAttackTempoWindowDefinition>& Windows)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeNotifyMutationFailure(Error);
+	}
+	if (NotifyTrackName.IsNone())
+	{
+		return MakeNotifyMutationFailure(
+			TEXT("NotifyTrackName must not be None."));
+	}
+	if (Windows.IsEmpty())
+	{
+		return MakeNotifyMutationFailure(
+			TEXT("At least one tempo window is required."));
+	}
+
+	for (const FAIREEnemyAttackTempoWindowDefinition& Window : Windows)
+	{
+		if (!FMath::IsFinite(Window.StartTime)
+			|| !FMath::IsFinite(Window.StrikeStartTime)
+			|| !FMath::IsFinite(Window.EndTime)
+			|| !FMath::IsFinite(Window.AnticipationPlayRateMultiplier)
+			|| !FMath::IsFinite(Window.StrikePlayRateMultiplier))
+		{
+			return MakeNotifyMutationFailure(
+				TEXT("Tempo window times and multipliers must be finite."));
+		}
+	}
+
+	TSet<int32> StrikeIndices;
+	TArray<FAIREEnemyAttackTempoWindowDefinition> SortedWindows = Windows;
+	SortedWindows.Sort(
+		[](const FAIREEnemyAttackTempoWindowDefinition& Left,
+			const FAIREEnemyAttackTempoWindowDefinition& Right)
+		{
+			return Left.StartTime == Right.StartTime
+				? Left.StrikeIndex < Right.StrikeIndex
+				: Left.StartTime < Right.StartTime;
+		});
+	for (int32 WindowIndex = 0; WindowIndex < SortedWindows.Num(); ++WindowIndex)
+	{
+		const FAIREEnemyAttackTempoWindowDefinition& Window = SortedWindows[WindowIndex];
+		if (!FMath::IsFinite(Window.StartTime)
+			|| !FMath::IsFinite(Window.StrikeStartTime)
+			|| !FMath::IsFinite(Window.EndTime)
+			|| Window.StartTime < 0.0f
+			|| Window.StrikeStartTime <= Window.StartTime
+			|| Window.EndTime <= Window.StrikeStartTime
+			|| Window.EndTime > Montage->GetPlayLength()
+			|| Window.StrikeIndex < 0
+			|| StrikeIndices.Contains(Window.StrikeIndex)
+			|| !FMath::IsFinite(Window.AnticipationPlayRateMultiplier)
+			|| Window.AnticipationPlayRateMultiplier < 0.01f
+			|| !FMath::IsFinite(Window.StrikePlayRateMultiplier)
+			|| Window.StrikePlayRateMultiplier < 0.01f)
+		{
+			return MakeNotifyMutationFailure(
+				FString::Printf(
+					TEXT("Invalid or duplicate tempo strike %d at %.3f/%.3f/%.3f for montage length %.3f."),
+					Window.StrikeIndex,
+					Window.StartTime,
+					Window.StrikeStartTime,
+					Window.EndTime,
+					Montage->GetPlayLength()));
+		}
+		StrikeIndices.Add(Window.StrikeIndex);
+
+		for (int32 OtherIndex = WindowIndex + 1;
+			OtherIndex < SortedWindows.Num();
+			++OtherIndex)
+		{
+			const FAIREEnemyAttackTempoWindowDefinition& Other = SortedWindows[OtherIndex];
+			const bool bOverlaps = Window.StartTime < Other.EndTime
+				&& Other.StartTime < Window.EndTime;
+			if (bOverlaps)
+			{
+				return MakeNotifyMutationFailure(
+					FString::Printf(
+						TEXT("Tempo windows %d and %d overlap."),
+						Window.StrikeIndex,
+						Other.StrikeIndex));
+			}
+		}
+	}
+
+	for (const FAnimNotifyEvent& NotifyEvent : Montage->Notifies)
+	{
+		if (!IsValid(Cast<UAIREEnemyAttackMovementAnimNotifyState>(
+			NotifyEvent.NotifyStateClass)))
+		{
+			continue;
+		}
+
+		const float MovementStartTime = NotifyEvent.GetTime();
+		const float MovementEndTime =
+			MovementStartTime + NotifyEvent.GetDuration();
+		for (const FAIREEnemyAttackTempoWindowDefinition& Window : SortedWindows)
+		{
+			const bool bOverlapsMovement = Window.StartTime < MovementEndTime
+				&& MovementStartTime < Window.EndTime;
+			if (bOverlapsMovement)
+			{
+				return MakeNotifyMutationFailure(
+					FString::Printf(
+						TEXT("Tempo strike %d overlaps the attack movement window %.3f-%.3f."),
+						Window.StrikeIndex,
+						MovementStartTime,
+						MovementEndTime));
+			}
+		}
+	}
+
+	FAIREAnimationNotifyMutationResult ExistingResult;
+	PopulateEnemyMeleeTraceInspection(*Montage, ExistingResult);
+	bool bAlreadyConfigured = ExistingResult.TempoWindowCount == SortedWindows.Num();
+	for (const FAIREEnemyAttackTempoWindowDefinition& Window : SortedWindows)
+	{
+		const FAnimNotifyEvent* ExistingEvent = Montage->Notifies.FindByPredicate(
+			[&Window](const FAnimNotifyEvent& NotifyEvent)
+			{
+				const UAIREEnemyAttackTempoAnimNotifyState* TempoWindow =
+					Cast<UAIREEnemyAttackTempoAnimNotifyState>(
+						NotifyEvent.NotifyStateClass);
+				return IsValid(TempoWindow)
+					&& TempoWindow->StrikeIndex == Window.StrikeIndex;
+			});
+		const UAIREEnemyAttackTempoAnimNotifyState* ExistingWindow =
+			ExistingEvent
+				? Cast<UAIREEnemyAttackTempoAnimNotifyState>(
+					ExistingEvent->NotifyStateClass)
+				: nullptr;
+		bAlreadyConfigured = bAlreadyConfigured
+			&& IsValid(ExistingWindow)
+			&& FMath::IsNearlyEqual(
+				ExistingEvent->GetTime(), Window.StartTime, 0.001f)
+			&& FMath::IsNearlyEqual(
+				ExistingEvent->GetTime() + ExistingEvent->GetDuration(),
+				Window.EndTime,
+				0.001f)
+			&& FMath::IsNearlyEqual(
+				ExistingWindow->StrikeStartTime,
+				Window.StrikeStartTime,
+				0.001f)
+			&& FMath::IsNearlyEqual(
+				ExistingWindow->WindowEndTime,
+				Window.EndTime,
+				0.001f)
+			&& FMath::IsNearlyEqual(
+				ExistingWindow->AnticipationPlayRateMultiplier,
+				Window.AnticipationPlayRateMultiplier)
+			&& FMath::IsNearlyEqual(
+				ExistingWindow->StrikePlayRateMultiplier,
+				Window.StrikePlayRateMultiplier);
+	}
+	if (bAlreadyConfigured)
+	{
+		ExistingResult.bSuccess = true;
+		ExistingResult.Message =
+			TEXT("The requested enemy attack tempo windows are already configured.");
+		return ExistingResult;
+	}
+
+	const FScopedTransaction Transaction(
+		LOCTEXT(
+			"ConfigureEnemyAttackTempoWindows",
+			"Configure Enemy Attack Tempo Windows"));
+	Montage->Modify();
+
+	FAIREAnimationNotifyMutationResult Result;
+	Result.ReplacedTempoWindowCount = Montage->Notifies.RemoveAll(
+		[](const FAnimNotifyEvent& NotifyEvent)
+		{
+			return IsValid(Cast<UAIREEnemyAttackTempoAnimNotifyState>(
+				NotifyEvent.NotifyStateClass));
+		});
+
+	if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(
+		Montage,
+		NotifyTrackName))
+	{
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(
+			Montage,
+			NotifyTrackName);
+	}
+
+	for (const FAIREEnemyAttackTempoWindowDefinition& Window : SortedWindows)
+	{
+		UAIREEnemyAttackTempoAnimNotifyState* TempoWindow =
+			NewObject<UAIREEnemyAttackTempoAnimNotifyState>(
+				Montage,
+				NAME_None,
+				RF_Transactional);
+		TempoWindow->StrikeIndex = Window.StrikeIndex;
+		TempoWindow->StrikeStartTime = Window.StrikeStartTime;
+		TempoWindow->WindowEndTime = Window.EndTime;
+		TempoWindow->AnticipationPlayRateMultiplier =
+			Window.AnticipationPlayRateMultiplier;
+		TempoWindow->StrikePlayRateMultiplier =
+			Window.StrikePlayRateMultiplier;
+		UAnimationBlueprintLibrary::AddAnimationNotifyStateEventObject(
+			Montage,
+			Window.StartTime,
+			Window.EndTime - Window.StartTime,
+			TempoWindow,
+			NotifyTrackName);
+	}
+
+	Montage->RefreshCacheData();
+	Montage->MarkPackageDirty();
+
+	PopulateEnemyMeleeTraceInspection(*Montage, Result);
+	Result.bSuccess = Result.TempoWindowCount == SortedWindows.Num();
+	Result.Message = Result.bSuccess
+		? FString::Printf(
+			TEXT("Replaced %d tempo windows and configured %d enemy attack tempo windows."),
+			Result.ReplacedTempoWindowCount,
+			SortedWindows.Num())
+		: TEXT("The montage did not end with the requested tempo windows.");
 	return Result;
 }
 

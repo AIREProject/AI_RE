@@ -216,6 +216,15 @@ walls and Pawns block it. Code-driven movement is rejected for montages that alr
 extract root motion, and reaction, death, return, target destruction, montage
 interruption, and EndPlay remove any active movement source with the attack.
 
+`UAIREEnemyAttackTempoAnimNotifyState` may redistribute presentation time inside an
+attack montage into a slower anticipation phase and a faster strike phase. The Notify
+State reports timing only; `UAIREEnemyAttackComponent` owns play-rate changes,
+execution validation, recovery adjustment, cancellation, and base-rate restoration.
+Tempo does not change strike count, trace windows, socket selection, Damage, Stagger,
+or target authority. Tempo windows must not overlap one another or an attack movement
+window, because code-driven movement snapshots its montage-scaled duration when it
+starts.
+
 Per-pattern `ReuseCooldown` prevents a selected gap closer or signature attack from
 being selected again before its own lockout expires, in addition to the shared attack
 cooldown and recent-pattern avoidance. A Boss config may opt into combat approach

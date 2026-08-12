@@ -48,6 +48,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/Global/Animation/Public",
 			"AI_RE/Global/Components/Public",
 			"AI_RE/Global/Inventory/Public",
+			"AI_RE/Global/Sync/Public",
 			"AI_RE/Global/Abilities/Set/Public",
 			"AI_RE/Global/Actors/Public",
 			"AI_RE/Global/Interfaces/Public",

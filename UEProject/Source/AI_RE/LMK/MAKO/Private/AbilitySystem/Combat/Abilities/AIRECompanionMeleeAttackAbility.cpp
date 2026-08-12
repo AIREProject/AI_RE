@@ -27,7 +27,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionMeleeAttack, Log, All);
 
 namespace
 {
-	constexpr int32 WeaponTraceSubstepCount = 6;
+	constexpr int32 MeleeWeaponTraceSubstepCount = 6;
 
 	FQuat MakeWeaponCapsuleRotation(const FVector& Start, const FVector& End)
 	{
@@ -828,14 +828,14 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 	TraceRequest.Radius = CurrentTraceRadius;
 	TraceRequest.CapsuleHalfHeight = CurrentTraceCapsuleHalfHeight;
 	TraceRequest.TraceChannel = CurrentTraceChannel.GetValue();
-	TraceRequest.Segments.Reserve(WeaponTraceSubstepCount);
+	TraceRequest.Segments.Reserve(MeleeWeaponTraceSubstepCount);
 	FVector SubstepStart = PreviousCapsuleCenter;
 	for (int32 SubstepIndex = 1;
-		SubstepIndex <= WeaponTraceSubstepCount;
+		SubstepIndex <= MeleeWeaponTraceSubstepCount;
 		++SubstepIndex)
 	{
 		const float Alpha = static_cast<float>(SubstepIndex)
-			/ static_cast<float>(WeaponTraceSubstepCount);
+			/ static_cast<float>(MeleeWeaponTraceSubstepCount);
 		const FVector SubstepEnd = FMath::Lerp(
 			PreviousCapsuleCenter,
 			CurrentCapsuleCenter,

@@ -259,7 +259,9 @@ bool UAIREEnemyAttackComponent::TryStartMeleeAttack(AActor* Target)
 			false);
 	}
 	const float RecoveryDuration = bMontagePlayed
-		? FMath::Max(FallbackRecoveryDuration, PresentationDuration)
+		? FMath::Max(
+			FallbackRecoveryDuration,
+			PresentationDuration + ActiveTempoRecoveryExtension)
 		: FMath::Max(FallbackRecoveryDuration, FallbackHitDelay);
 	World->GetTimerManager().SetTimer(
 		RecoveryTimerHandle,
@@ -449,6 +451,129 @@ void UAIREEnemyAttackComponent::EndAttackMovementWindow(
 	StopAttackMovement();
 }
 
+bool UAIREEnemyAttackComponent::BeginAttackTempoWindow(
+	const FGuid& ExecutionId,
+	UAnimMontage* Montage,
+	const int32 StrikeIndex,
+	const float StrikeStartTime,
+	const float WindowEndTime,
+	const float AnticipationPlayRateMultiplier,
+	const float StrikePlayRateMultiplier)
+{
+	if (!bAttackActive
+		|| ExecutionId != ActiveExecutionId
+		|| bAttackTempoWindowOpen
+		|| Montage != ActiveAttackMontage
+		|| StrikeIndex < 0
+		|| !BoundAnimInstance.IsValid()
+		|| !IsValid(ActiveAttackMontage)
+		|| !BoundAnimInstance->Montage_IsActive(ActiveAttackMontage)
+		|| !FMath::IsFinite(StrikeStartTime)
+		|| !FMath::IsFinite(WindowEndTime)
+		|| !FMath::IsFinite(AnticipationPlayRateMultiplier)
+		|| AnticipationPlayRateMultiplier < 0.01f
+		|| !FMath::IsFinite(StrikePlayRateMultiplier)
+		|| StrikePlayRateMultiplier < 0.01f)
+	{
+		return false;
+	}
+
+	const float CurrentPosition = BoundAnimInstance->Montage_GetPosition(
+		ActiveAttackMontage);
+	if (WindowEndTime <= CurrentPosition || WindowEndTime <= StrikeStartTime)
+	{
+		return false;
+	}
+
+	TempoWindowExecutionId = ExecutionId;
+	ActiveTempoStrikeIndex = StrikeIndex;
+	ActiveTempoStrikeStartTime = StrikeStartTime;
+	ActiveTempoStrikePlayRateMultiplier = StrikePlayRateMultiplier;
+	bAttackTempoWindowOpen = true;
+	bAttackTempoStrikeRateApplied = CurrentPosition >= StrikeStartTime;
+	SetAttackTempoPlayRate(
+		bAttackTempoStrikeRateApplied
+			? StrikePlayRateMultiplier
+			: AnticipationPlayRateMultiplier);
+
+	float AdditionalDuration = 0.0f;
+	if (bAttackTempoStrikeRateApplied)
+	{
+		const float BaseWindowDuration =
+			(WindowEndTime - CurrentPosition) / ActivePlayRate;
+		const float TempoWindowDuration =
+			(WindowEndTime - CurrentPosition)
+				/ (ActivePlayRate * StrikePlayRateMultiplier);
+		AdditionalDuration = FMath::Max(
+			0.0f,
+			TempoWindowDuration - BaseWindowDuration);
+	}
+	else
+	{
+		const float BaseWindowDuration =
+			(WindowEndTime - CurrentPosition) / ActivePlayRate;
+		const float TempoWindowDuration =
+			(StrikeStartTime - CurrentPosition)
+				/ (ActivePlayRate * AnticipationPlayRateMultiplier)
+			+ (WindowEndTime - StrikeStartTime)
+				/ (ActivePlayRate * StrikePlayRateMultiplier);
+		AdditionalDuration = FMath::Max(
+			0.0f,
+			TempoWindowDuration - BaseWindowDuration);
+	}
+	ActiveTempoRecoveryExtension += AdditionalDuration;
+	if (UWorld* World = GetWorld())
+	{
+		const float RemainingRecovery = World->GetTimerManager().GetTimerRemaining(
+			RecoveryTimerHandle);
+		if (RemainingRecovery > 0.0f && AdditionalDuration > 0.0f)
+		{
+			World->GetTimerManager().SetTimer(
+				RecoveryTimerHandle,
+				this,
+				&UAIREEnemyAttackComponent::HandleRecoveryExpired,
+				RemainingRecovery + AdditionalDuration,
+				false);
+		}
+	}
+	return true;
+}
+
+void UAIREEnemyAttackComponent::UpdateAttackTempoWindow(
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex)
+{
+	if (!bAttackTempoWindowOpen
+		|| ExecutionId != TempoWindowExecutionId
+		|| StrikeIndex != ActiveTempoStrikeIndex
+		|| !BoundAnimInstance.IsValid()
+		|| !IsValid(ActiveAttackMontage))
+	{
+		return;
+	}
+
+	if (!bAttackTempoStrikeRateApplied
+		&& BoundAnimInstance->Montage_GetPosition(ActiveAttackMontage)
+			>= ActiveTempoStrikeStartTime)
+	{
+		SetAttackTempoPlayRate(ActiveTempoStrikePlayRateMultiplier);
+		bAttackTempoStrikeRateApplied = true;
+	}
+}
+
+void UAIREEnemyAttackComponent::EndAttackTempoWindow(
+	const FGuid& ExecutionId,
+	const int32 StrikeIndex)
+{
+	if (!bAttackTempoWindowOpen
+		|| ExecutionId != TempoWindowExecutionId
+		|| StrikeIndex != ActiveTempoStrikeIndex)
+	{
+		return;
+	}
+	ResetAttackTempo(true);
+}
+
 bool UAIREEnemyAttackComponent::TryCancelDamageForAggroSwap(
 	const FGuid& ExecutionId)
 {
@@ -486,6 +611,7 @@ void UAIREEnemyAttackComponent::CancelCurrentAttack()
 	}
 	if (OwnerCharacter.IsValid() && IsValid(ActiveAttackMontage))
 	{
+		ResetAttackTempo(true);
 		OwnerCharacter->StopAnimMontage(ActiveAttackMontage);
 	}
 	if (bAttackActive)
@@ -1038,6 +1164,38 @@ void UAIREEnemyAttackComponent::StopAttackMovement()
 	ActiveMovementRootMotionSourceId = 0;
 }
 
+void UAIREEnemyAttackComponent::ResetAttackTempo(
+	const bool bRestoreBasePlayRate)
+{
+	if (bRestoreBasePlayRate)
+	{
+		SetAttackTempoPlayRate(1.0f);
+	}
+	TempoWindowExecutionId.Invalidate();
+	ActiveTempoStrikeIndex = INDEX_NONE;
+	ActiveTempoStrikeStartTime = 0.0f;
+	ActiveTempoStrikePlayRateMultiplier = 1.0f;
+	bAttackTempoWindowOpen = false;
+	bAttackTempoStrikeRateApplied = false;
+}
+
+void UAIREEnemyAttackComponent::SetAttackTempoPlayRate(
+	const float PlayRateMultiplier)
+{
+	if (!BoundAnimInstance.IsValid()
+		|| !IsValid(ActiveAttackMontage)
+		|| !FMath::IsFinite(ActivePlayRate)
+		|| ActivePlayRate <= 0.0f
+		|| !FMath::IsFinite(PlayRateMultiplier)
+		|| PlayRateMultiplier <= 0.0f)
+	{
+		return;
+	}
+	BoundAnimInstance->Montage_SetPlayRate(
+		ActiveAttackMontage,
+		ActivePlayRate * PlayRateMultiplier);
+}
+
 void UAIREEnemyAttackComponent::CloseTraceWindow()
 {
 	bTraceWindowOpen = false;
@@ -1054,6 +1212,7 @@ void UAIREEnemyAttackComponent::CloseTraceWindow()
 void UAIREEnemyAttackComponent::ResetTraceState()
 {
 	StopAttackMovement();
+	ResetAttackTempo(false);
 	CloseTraceWindow();
 	ActiveAttackTraceSettings = FAIREEnemyMeleeTraceSettings();
 	ActiveMeleeTraceSettings = FAIREEnemyMeleeTraceSettings();
@@ -1064,6 +1223,7 @@ void UAIREEnemyAttackComponent::ResetTraceState()
 	ActivePatternStaggerScale = 1.0f;
 	ActiveCooldownScale = 1.0f;
 	ActiveForwardMoveDistance = 0.0f;
+	ActiveTempoRecoveryExtension = 0.0f;
 	CommittedStrikeIndices.Reset();
 	StrikeExecutionIds.Reset();
 	bMontagePlayed = false;
@@ -1108,6 +1268,7 @@ void UAIREEnemyAttackComponent::FinishAttack()
 		NextAllowedAttackTime = World->GetTimeSeconds()
 			+ CooldownDuration * ActiveCooldownScale;
 	}
+	ResetAttackTempo(true);
 	ClearMontageEndDelegate();
 	CloseTraceWindow();
 	CloseOpportunity();

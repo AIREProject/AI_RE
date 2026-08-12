@@ -182,6 +182,55 @@ E2E는 아직 별도 검증 항목입니다.
 generic Outbox, 전체 Game State Sync와 범용 AX-I11/I12를 완료하지 않으며 AX-G3/AX-G4 완료
 근거로 사용하지 않습니다.
 
+## 2026-08-12 AX-I09 Game State local pre-deploy Review 계약
+
+AX-I09는 채택 `AIRE_SERVER`의 로컬 Game State 계약·구현을 다음 경로로 동결했습니다.
+
+```text
+PUT /api/v1/game-state
+GET /api/v1/game-state?save_slot_id={id}&companion_id={id}
+```
+
+PUT은 `AIRE_GAME` GameClient 전용이고 GET은 `AIRE_GAME`과 `AIRE_WEB`이 읽을 수 있습니다.
+Bearer에서 얻은 `profile_id`가 scope 권위이며 WebClient는 Snapshot을 변경하지 않습니다.
+서버 Snapshot도 UE Gameplay의 실행 권위가 아니라 UE가 검증·저장한 bounded value의 조회용
+복사본입니다.
+
+PUT body는 `schema_version=1`, `content_version=1`, `operation_id`, 1 이상 단조 증가
+`state_version`, `world_session_id`, UTC offset 포함 `captured_at`, `save_slot_id`,
+`companion_id`, `inventory`를 필수로 가집니다. `X-Request-ID`는 `operation_id`와 정확히
+같아야 합니다. `X-Content-SHA256`은 재직렬화하거나 canonicalize한 JSON이 아니라 HTTP로
+전송한 **정확한 원문 JSON UTF-8 bytes**의 SHA-256 64자리 소문자 hex입니다.
+GET의 응답 상관관계용 `X-Request-ID`는 선택이며, 생략하면 서버가 생성합니다.
+
+Inventory payload는 다음 전체 로컬 저장 범위를 고정된 상한으로 포함합니다.
+
+- Player: `capacity=30`, revision, 일반 Slot 0~29와 Quick Slot 100~109를 합친 최대 40
+  Stack, nullable Weapon Equipment 1칸
+- MAKO: `AIRE.Inventory.MAKO`, `capacity=20`, capacity 이하 Stack, nullable Weapon
+  Equipment 1칸
+- Shared Storage: `AIRE.Inventory.SharedStorage`, `capacity=50`, capacity 이하 Stack,
+  Equipment object의 `equipped_item_id=null`
+- Stack: stable server Item ID, 유효 slot index, count 1~99. Weapon은 count 1이고 장착
+  ID도 server Item master의 Weapon이어야 함
+
+`inventory.containers`에는 MAKO와 Shared Storage가 중복 없이 정확히 하나씩 있어야 합니다.
+`snapshot_id`, World summary, UObject/Actor 경로와 실행 가능한 Command/LLM payload는 계약에
+없습니다. 정상 PUT/GET은 HTTP 200으로 Snapshot과 `request_id`, `operation_id`, 서버
+`last_synced_at`을 반환합니다.
+
+같은 scope에서 같은 `operation_id`와 같은 원문 body bytes 재전송은 최초 응답을 그대로
+반환하고 version·timestamp·부작용을 추가하지 않습니다. 같은 operation에 다른 bytes는
+`409 DuplicateRequest`, 새 operation의 같거나 낮은 version은
+`409 GameStateVersionConflict`, 빈 scope GET은 `404 GameStateNotFound`입니다. Header/hash,
+strict DTO, schema/content version, bounds와 Item 의미 검증 실패는 `400 InvalidRequest`이고
+현재 Snapshot을 바꾸지 않습니다.
+
+이 상태는 **local pre-deploy Review**입니다. 공개 배포
+`https://traip.mtvs2026.work/openapi.json`에는 아직 두 경로가 없으며 migration 적용, 배포
+OpenAPI 반영 또는 runtime smoke 성공을 주장하지 않습니다. 따라서 AX-I10 UE HTTP wiring과
+AX-W03 Mobile 조회는 배포 계약 확인 전 호출 가능 상태로 간주하지 않습니다.
+
 ## 연동 Gate
 
 UE/Web 클라이언트의 새 서버 연동을 완료하려면 파트너가 다음 중 하나로 계약을 동기화해야 합니다.

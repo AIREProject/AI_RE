@@ -59,6 +59,9 @@ struct FAIREAnimationNotifyMutationResult
 	int32 AttackMovementWindowCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 TempoWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
 	int32 RemovedLegacyNotifyCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
@@ -66,6 +69,9 @@ struct FAIREAnimationNotifyMutationResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
 	int32 ReplacedAttackMovementWindowCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	int32 ReplacedTempoWindowCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
 	TArray<FString> Entries;
@@ -96,6 +102,30 @@ struct FAIREEnemyMeleeTraceWindowDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
 	FName TraceEndSocket = NAME_None;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREEnemyAttackTempoWindowDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StartTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StrikeStartTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float EndTime = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	int32 StrikeIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float AnticipationPlayRateMultiplier = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Animation")
+	float StrikePlayRateMultiplier = 1.60f;
 };
 
 USTRUCT(BlueprintType)
@@ -266,6 +296,16 @@ public:
 		UAnimMontage* Montage,
 		FName NotifyTrackName,
 		const TArray<FAIREEnemyMeleeTraceWindowDefinition>& Windows);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
+	static FAIREAnimationNotifyMutationResult InspectEnemyAttackTempoMontage(
+		UAnimMontage* Montage);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationNotifyMutationResult ConfigureEnemyAttackTempoWindows(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		const TArray<FAIREEnemyAttackTempoWindowDefinition>& Windows);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
 	static FAIREAnimationNotifyMutationResult InspectCompanionMeleeTraceMontage(
