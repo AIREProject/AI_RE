@@ -21,7 +21,9 @@
 #include "AIRECombatEvadeComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCharacter, Log, All);
@@ -31,6 +33,23 @@ namespace
 	constexpr TCHAR CompanionId[] = TEXT("MAKO");
 	const FName SoxMaterialSlotName(TEXT("UE_MIMI_BootCuff"));
 	const FName ShoesMaterialSlotName(TEXT("UE_MIMI_Shoes"));
+	const FName HairMaterialSlotName(TEXT("MIMI_Hair_Pink_v002"));
+	const FName BackWeaponComponentNames[] =
+	{
+		FName(TEXT("holster_l")),
+		FName(TEXT("holster_r"))
+	};
+	const FName HandWeaponComponentNames[] =
+	{
+		FName(TEXT("weapon_l")),
+		FName(TEXT("weapon_r"))
+	};
+	const FName VisorComponentNames[] =
+	{
+		FName(TEXT("Visor"))
+	};
+	const TSoftObjectPtr<USkeletalMesh> DefaultUnhoodedHairMesh(
+		FSoftObjectPath(TEXT("/Game/Work/LMK/Model/Hair/MAKO_HAIR.MAKO_HAIR")));
 	const FName HoodMaterialSlotNames[] =
 	{
 		FName(TEXT("MIMI_Hood_CoolSlate_v003")),
@@ -58,6 +77,16 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
 	check(AbilitySystemComponent);
 	AbilitySystemComponent->SetIsReplicated(false);
+
+	UnhoodedHairSkeletalMeshComponent =
+		CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("UnhoodedHair"));
+	check(UnhoodedHairSkeletalMeshComponent);
+	UnhoodedHairSkeletalMeshComponent->SetupAttachment(GetMesh());
+	UnhoodedHairSkeletalMeshComponent->SetLeaderPoseComponent(GetMesh());
+	UnhoodedHairSkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	UnhoodedHairSkeletalMeshComponent->SetGenerateOverlapEvents(false);
+	UnhoodedHairSkeletalMeshComponent->SetCanEverAffectNavigation(false);
+	UnhoodedHairSkeletalMeshComponent->SetVisibility(false, true);
 
 	CompanionAttributeSet = CreateDefaultSubobject<UAIRECompanionAttributeSet>(TEXT("CompanionAttributes"));
 	check(CompanionAttributeSet);
@@ -263,6 +292,46 @@ bool AAIRECompanionCharacter::IsHoodVisible() const
 	return bHoodVisible;
 }
 
+void AAIRECompanionCharacter::SetBackWeaponsVisible(const bool bVisible)
+{
+	bBackWeaponsVisible = bVisible;
+	SetNamedStaticMeshComponentsVisible(BackWeaponComponentNames, bVisible);
+}
+
+bool AAIRECompanionCharacter::AreBackWeaponsVisible() const
+{
+	return bBackWeaponsVisible;
+}
+
+void AAIRECompanionCharacter::SetHandWeaponsVisible(const bool bVisible)
+{
+	bHandWeaponsVisible = bVisible;
+	SetNamedStaticMeshComponentsVisible(HandWeaponComponentNames, bVisible);
+}
+
+bool AAIRECompanionCharacter::AreHandWeaponsVisible() const
+{
+	return bHandWeaponsVisible;
+}
+
+void AAIRECompanionCharacter::SetVisorVisible(const bool bVisible)
+{
+	bVisorVisible = bVisible;
+	SetNamedStaticMeshComponentsVisible(VisorComponentNames, bVisible);
+}
+
+bool AAIRECompanionCharacter::IsVisorVisible() const
+{
+	return bVisorVisible;
+}
+
+void AAIRECompanionCharacter::SetCombatEquipmentActive(const bool bIsInCombat)
+{
+	SetBackWeaponsVisible(!bIsInCombat);
+	SetHandWeaponsVisible(bIsInCombat);
+	SetVisorVisible(bIsInCombat);
+}
+
 FString AAIRECompanionCharacter::GetCompanionId() const
 {
 	return CompanionId;
@@ -287,6 +356,7 @@ void AAIRECompanionCharacter::OnConstruction(const FTransform& Transform)
 	Super::OnConstruction(Transform);
 	ApplySoxAndShoesVisibility();
 	ApplyHoodVisibility();
+	ApplyCombatEquipmentVisibility();
 }
 
 void AAIRECompanionCharacter::BeginPlay()
@@ -294,6 +364,7 @@ void AAIRECompanionCharacter::BeginPlay()
 	Super::BeginPlay();
 	ApplySoxAndShoesVisibility();
 	ApplyHoodVisibility();
+	ApplyCombatEquipmentVisibility();
 
 	check(AbilitySystemComponent);
 	check(CompanionAttributeSet);
@@ -444,6 +515,49 @@ void AAIRECompanionCharacter::ApplyHoodVisibility()
 		return;
 	}
 
+	if (IsValid(UnhoodedHairSkeletalMeshComponent)
+		&& !IsValid(UnhoodedHairSkeletalMeshComponent->GetSkeletalMeshAsset()))
+	{
+		UnhoodedHairSkeletalMeshComponent->SetSkeletalMeshAsset(
+			DefaultUnhoodedHairMesh.LoadSynchronous());
+	}
+
+	const bool bHasUnhoodedHair =
+		IsValid(UnhoodedHairSkeletalMeshComponent)
+		&& IsValid(UnhoodedHairSkeletalMeshComponent->GetSkeletalMeshAsset());
+	if (IsValid(UnhoodedHairSkeletalMeshComponent))
+	{
+		UnhoodedHairSkeletalMeshComponent->SetLeaderPoseComponent(MeshComponent);
+		UnhoodedHairSkeletalMeshComponent->SetVisibility(
+			bHasUnhoodedHair && !bHoodVisible,
+			true);
+	}
+
+	const int32 HairMaterialIndex =
+		MeshComponent->GetMaterialIndex(HairMaterialSlotName);
+	if (HairMaterialIndex != INDEX_NONE)
+	{
+		const bool bShowIntegratedHair = bHoodVisible || !bHasUnhoodedHair;
+		const int32 LODCount = MeshComponent->GetNumLODs();
+		for (int32 LODIndex = 0; LODIndex < LODCount; ++LODIndex)
+		{
+			MeshComponent->ShowMaterialSection(
+				HairMaterialIndex,
+				INDEX_NONE,
+				bShowIntegratedHair,
+				LODIndex);
+		}
+	}
+	else if (bHasUnhoodedHair)
+	{
+		UE_LOG(
+			LogAIRECompanionCharacter,
+			Warning,
+			TEXT("Companion mesh %s does not provide hair material slot %s."),
+			*GetNameSafe(MeshComponent->GetSkeletalMeshAsset()),
+			*HairMaterialSlotName.ToString());
+	}
+
 	bool bFoundHoodSlot = false;
 	const int32 LODCount = MeshComponent->GetNumLODs();
 	for (const FName& HoodMaterialSlotName : HoodMaterialSlotNames)
@@ -472,6 +586,58 @@ void AAIRECompanionCharacter::ApplyHoodVisibility()
 			Warning,
 			TEXT("Companion mesh %s does not provide a hood material slot."),
 			*GetNameSafe(MeshComponent->GetSkeletalMeshAsset()));
+	}
+}
+
+void AAIRECompanionCharacter::ApplyCombatEquipmentVisibility()
+{
+	SetNamedStaticMeshComponentsVisible(
+		BackWeaponComponentNames,
+		bBackWeaponsVisible);
+	SetNamedStaticMeshComponentsVisible(
+		HandWeaponComponentNames,
+		bHandWeaponsVisible);
+	SetNamedStaticMeshComponentsVisible(
+		VisorComponentNames,
+		bVisorVisible);
+}
+
+void AAIRECompanionCharacter::SetNamedStaticMeshComponentsVisible(
+	const TConstArrayView<FName> ComponentNames,
+	const bool bVisible) const
+{
+	TInlineComponentArray<UStaticMeshComponent*> StaticMeshComponents(this);
+	for (const FName ComponentName : ComponentNames)
+	{
+		UStaticMeshComponent* MatchingComponent = nullptr;
+		const FString GeneratedComponentPrefix =
+			ComponentName.ToString() + TEXT("_GEN_VARIABLE");
+		for (UStaticMeshComponent* Component : StaticMeshComponents)
+		{
+			if (IsValid(Component)
+				&& (Component->GetFName() == ComponentName
+					|| Component->GetName().StartsWith(
+						GeneratedComponentPrefix,
+						ESearchCase::IgnoreCase)))
+			{
+				MatchingComponent = Component;
+				break;
+			}
+		}
+
+		if (!IsValid(MatchingComponent))
+		{
+			UE_LOG(
+				LogAIRECompanionCharacter,
+				Warning,
+				TEXT("Companion %s does not provide static mesh component %s."),
+				*GetNameSafe(this),
+				*ComponentName.ToString());
+			continue;
+		}
+
+		MatchingComponent->SetVisibility(bVisible, true);
+		MatchingComponent->SetHiddenInGame(!bVisible, true);
 	}
 }
 

@@ -49,6 +49,7 @@ void UAIRECompanionThreatComponent::StartThreatDetection(AAIRECompanionCharacter
 	}
 
 	CompanionCharacter = InCompanionCharacter;
+	InCompanionCharacter->SetCombatEquipmentActive(false);
 	LocalBehaviorPolicyComponent = PolicyComponent;
 	PolicyComponent->OnLocalBehaviorPolicyChanged.AddUniqueDynamic(
 		this,
@@ -73,6 +74,11 @@ void UAIRECompanionThreatComponent::StartThreatDetection(AAIRECompanionCharacter
 
 void UAIRECompanionThreatComponent::StopThreatDetection()
 {
+	if (CompanionCharacter.IsValid())
+	{
+		CompanionCharacter->SetCombatEquipmentActive(false);
+	}
+
 	if (LocalBehaviorPolicyComponent.IsValid())
 	{
 		LocalBehaviorPolicyComponent->OnLocalBehaviorPolicyChanged.RemoveDynamic(
@@ -446,6 +452,7 @@ void UAIRECompanionThreatComponent::SelectClosestEligibleTarget(
 	}
 
 	SelectedThreatTarget = ClosestTarget;
+	CompanionCharacter->SetCombatEquipmentActive(true);
 	UE_LOG(
 		LogAIRECompanionThreat,
 		Log,
@@ -465,6 +472,10 @@ void UAIRECompanionThreatComponent::ClearSelectedTarget(const EAIREThreatCleanup
 	}
 
 	SelectedThreatTarget.Reset();
+	if (CompanionCharacter.IsValid())
+	{
+		CompanionCharacter->SetCombatEquipmentActive(false);
+	}
 	UE_LOG(
 		LogAIRECompanionThreat,
 		Log,

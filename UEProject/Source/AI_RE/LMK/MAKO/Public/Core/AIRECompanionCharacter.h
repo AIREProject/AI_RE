@@ -24,6 +24,7 @@ class UAIRECompanionSupportComponent;
 class UAIRECompanionStorageAutomationComponent;
 class UAIRECompanionWorkOrderComponent;
 class UAbilitySystemComponent;
+class USkeletalMeshComponent;
 struct FOnAttributeChangeData;
 
 UCLASS(Blueprintable)
@@ -99,6 +100,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance")
 	bool IsHoodVisible() const;
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
+	void SetBackWeaponsVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance|Combat")
+	bool AreBackWeaponsVisible() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
+	void SetHandWeaponsVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance|Combat")
+	bool AreHandWeaponsVisible() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
+	void SetVisorVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance|Combat")
+	bool IsVisorVisible() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
+	void SetCombatEquipmentActive(bool bIsInCombat);
+
 	bool ResetAttributesToConfiguredDefaults();
 
 	UFUNCTION(BlueprintPure, Category = "AIRE")
@@ -115,6 +137,10 @@ protected:
 private:
 	void ApplySoxAndShoesVisibility();
 	void ApplyHoodVisibility();
+	void ApplyCombatEquipmentVisibility();
+	void SetNamedStaticMeshComponentsVisible(
+		TConstArrayView<FName> ComponentNames,
+		bool bVisible) const;
 	bool InitializeAutonomousEvadeRuntime();
 	void ShutdownAutonomousEvadeRuntime();
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
@@ -123,6 +149,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Abilities", meta = (AllowPrivateAccess = "true", NoEditInline))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USkeletalMeshComponent> UnhoodedHairSkeletalMeshComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Abilities", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIRECompanionAttributeSet> CompanionAttributeSet;
@@ -168,6 +197,15 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance", meta = (AllowPrivateAccess = "true"))
 	bool bHoodVisible = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
+	bool bBackWeaponsVisible = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
+	bool bHandWeaponsVisible = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
+	bool bVisorVisible = false;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle InvulnerableStateChangedDelegateHandle;
