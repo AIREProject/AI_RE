@@ -109,6 +109,16 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoInteract);
 		}
 
+		if (CraftAction)
+		{
+			EnhancedInputComponent->BindAction(CraftAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoCraft);
+		}
+
+		if (EquipAction)
+		{
+			EnhancedInputComponent->BindAction(EquipAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoEquip);
+		}
+
 		if (AttackAction)
 		{
 			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoAttack);
@@ -350,12 +360,6 @@ void AAI_RECharacter::BeginPlay()
 
 void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 {
-	if (CraftingUIInstance && CraftingUIInstance->IsInViewport())
-	{
-		CloseCraftingUI();
-		return;
-	}
-
 	// TargetScannerComponent에서 캐싱된 상호작용 대상을 가져와 즉시 상호작용
 	if (TargetScannerComponent)
 	{
@@ -365,9 +369,24 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 			return;
 		}
 	}
+}
 
-	// 반경 내에 상호작용할 물건이 아무것도 없다면 맨손 제작(None) 메뉴를 엽니다!
+void AAI_RECharacter::DoCraft(const FInputActionValue& Value)
+{
+	if (CraftingUIInstance && CraftingUIInstance->IsInViewport())
+	{
+		CloseCraftingUI();
+		return;
+	}
+
+	// 제작 메뉴 열기 (맨손 제작 모드)
 	OpenCraftingUI(EWorkbenchType::None);
+}
+
+void AAI_RECharacter::DoEquip(const FInputActionValue& Value)
+{
+	// TODO: 장착 UI 오픈 및 관련 상호작용 로직 구현
+	GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("Equip Action (E Key) Pressed!"));
 }
 
 void AAI_RECharacter::DoAttack()
