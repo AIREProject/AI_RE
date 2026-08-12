@@ -74,8 +74,8 @@ fail-closed 검증하고, 실제 런타임 응답이 그 계약과 다르면 계
 `ChatResponse.command_candidates`는 최대 4개를 반환합니다. 배포 `CommandType` enum은
 Follow, HoldPosition, ReturnToPlayer, EngageTarget, DistractTarget, MoveToLocation,
 CancelCurrent, GatherResource, Attack, Switch 열 가지입니다. 워크스페이스에는 기존 문서가
-가리키는 별도 `ai_companion_server/`가 없으므로 이 확인에는 배포 OpenAPI와 현재
-`AIRE_SERVER/app` 코드만 사용했습니다. `AIRE_SERVER/old/`와 과거 `docs/current/`는
+가리키는 현행 Backend는 `AIRE_SERVER/`이므로 이 확인에는 배포 OpenAPI와 현재
+`AIRE_SERVER/docs/`, `AIRE_SERVER/app` 코드만 사용했습니다. `AIRE_SERVER/old/`는
 이 범위의 런타임 권위가 아닙니다.
 
 AX-I03 UE Prototype은 LLM Command 선택 경험을 먼저 검증하기 위해 Game Chat마다 열 가지를
@@ -96,6 +96,55 @@ active WorkOrder Cancel/재개, Level 종료·Owner 파괴와 전체 unsupported
 World Entity Identity가 구현되기 전까지 선택 Threat와 대조할 수 없으므로 거부합니다.
 Command Result의 Backend 전송은 여전히 계약과 endpoint가 없어 로컬 결과로만 유지합니다.
 이 Prototype은 Event·Command Result를 포함한 전체 M04 Gate를 해제하지 않습니다.
+
+## 2026-08-13 AX-I05 구조화 Chat Context 소비 계약
+
+AX-I05의 Backend 권위는 `AIRE_SERVER/` 로컬 구현이다. `POST /api/v1/chat`과 호환 WebSocket은
+typed `ChatRequest.game_context`를 같은 방식으로 검증한다.
+
+- `surface=game`은 `GameContextV1`을 반드시 보낸다. `surface=mobile`은 field 생략 또는
+  `null`만 허용하며 `{}`와 기존 generic object는 호환하지 않는다.
+- Context의 필수 최상위 field는 `schema_version=1`, `location_id`, `threat`,
+  `nearby_resources`, `available_workstations`, `current_work`, `inventories`다.
+  `location_id`, `threat.nearest_kind`, `current_work`만 `null`을 허용한다.
+- Stable ID는 1~128자와 `[A-Za-z0-9][A-Za-z0-9._:-]*`를 사용한다. 임의 key,
+  UObject/class path, credential key, 지원하지 않는 version, malformed cross-field 값은
+  AI 호출 전 `400 InvalidRequest`로 거부한다. Unknown stable ID의 catalogue 존재 여부는
+  AX-I05에서 검사하지 않는다.
+- Threat count는 0~32이며 `present == (count > 0)`이고 count 0이면 nearest kind는
+  `null`이다. Resource는 중복 없는 최대 8종(count 1~32), workstation은 중복 없는 최대
+  8개다. Work type/state와 MAKO/Shared Storage inventory, free-slot·item 합계 상한은
+  `AIRE_SERVER/docs/api-endpoints.md`의 Context v1 절을 따른다.
+- Compact UTF-8 Context가 8KiB를 넘으면 `400 InvalidRequest`, 전체 HTTP body 256KiB를
+  넘으면 `413 RequestTooLarge`다. 배열 입력 순서는 의미가 없고 prompt facts는 stable ID
+  기준으로 정렬한다.
+- Context는 위치, 위협, 자원, workstation, WorkOrder, inventory를 대사 생성 facts로만
+  전달한다. Context를 근거로 Backend가 Command 후보를 추가·제거하거나 `CraftItem`/
+  gameplay를 실행하지 않는다. Command allowlist와 실행 통합은 AX-I06 범위다.
+- `location_id=null`일 때만 개발용 `COMPANION_DEFAULT_LOCATION_ID` fallback을 사용하며,
+  GameWorld 시간은 최상위 `time_context`가 단일 권위다.
+- 현재 일반 플레이맵의 stable location ID와 개발 fallback 예시는 `forest_camp`다. lore는 숲
+  캠프 사실만 제공하며 향후 보스맵 ID를 추측하거나 예약하지 않는다.
+- AX-I04 생산 payload는 권위 센서가 없으면 `threat.nearest_kind=null`, resource/workstation
+  빈 배열일 수 있다. 이는 7개 required field를 유지하는 정상 Context이며 Backend가 임의 ID로
+  보충하지 않는다.
+
+이 절은 채택 Backend의 로컬 목표 계약이다. 2026-08-13 현재 배포
+`https://traip.mtvs2026.work/openapi.json`은 `ChatRequest.game_context`를 아직 generic
+object로 노출한다. 따라서 배포 OpenAPI 반영, 배포 정상/오류/oversize smoke 또는 실제
+UE↔Backend 왕복 성공을 이 문서가 주장하지 않는다. 배포가 갱신될 때까지 클라이언트는 이
+차이를 계약 불일치로 기록하고 임의의 양쪽 형식을 동시에 지원하지 않는다.
+
+2026-08-13 AX-I05 로컬 구현은 전체 Backend pytest 574건, Ruff와 mypy를 통과해
+완료했다. AX-I04는 사용자 환경 UE 컴파일에 성공했고 Automation
+`AIRE.Companion.Chat.JsonAdapter.CommandCandidates`와 `AIRE.Companion.Chat.Context.V1`도
+Success다. fixture 기반 PIE state mutation은 사용자 결정으로 생략했으며 성공 근거로 사용하지
+않는다. 실제 Context v1 payload와 UE↔배포 Backend gameplay 왕복은 AX-I06 실제 플레이 Gate로
+이관했고, Gate 완료 전에는 AX-I04/05 왕복을 검증 완료로 표현하지 않는다.
+이후 서버에 접근할 수 없어 배포 적용이나 추가 runtime 확인은 수행하지 못했다. 사용자 결정에
+따라 구현 작업은 완료로 닫고, 서버 접근 복구 뒤 배포 OpenAPI와 smoke를 별도 적용 Gate로
+확인한다. strict 전환 뒤 기존 Game `game_context={}`는 400이므로 AX-I04 full Context producer와
+서버 적용 시점을 맞춰야 한다. Mobile은 Context 생략 또는 `null`을 유지한다.
 
 ## 2026-08-10 AX-W01 Web 배포 기준
 

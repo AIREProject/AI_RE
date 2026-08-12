@@ -32,6 +32,7 @@ class FAIREChatJsonAdapter
 public:
 	static bool BuildInGameRequest(
 		const FAIREInGameChatContext& Context,
+		const FAIREWorldContextV1& WorldContext,
 		const FString& CompanionId,
 		const FString& SessionId,
 		const FString& RequestId,

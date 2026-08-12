@@ -29,7 +29,9 @@ namespace
 {
 	constexpr int32 MeleeWeaponTraceSubstepCount = 6;
 
-	FQuat MakeWeaponCapsuleRotation(const FVector& Start, const FVector& End)
+	FQuat MakeMeleeWeaponCapsuleRotation(
+		const FVector& Start,
+		const FVector& End)
 	{
 		const FVector Axis = (End - Start).GetSafeNormal();
 		return Axis.IsNearlyZero()
@@ -37,7 +39,7 @@ namespace
 			: FQuat::FindBetweenNormals(FVector::UpVector, Axis);
 	}
 
-	FVector MakeWeaponCapsuleCenter(
+	FVector MakeMeleeWeaponCapsuleCenter(
 		const FVector& Start,
 		const FVector& End)
 	{
@@ -767,7 +769,7 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 		TraceRequest.Segments.Emplace(
 			CapsuleCenter,
 			CapsuleCenter,
-			MakeWeaponCapsuleRotation(TraceStart, TraceEnd));
+			MakeMeleeWeaponCapsuleRotation(TraceStart, TraceEnd));
 		const FAIRECombatMeleeTraceResolution Resolution =
 			FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
 		OutTargetHit = Resolution.HitResult;
@@ -807,16 +809,16 @@ UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
 	const FVector TracePreviousEnd = bHasPreviousSample
 		? PreviousTraceEnd
 		: CurrentTraceEnd;
-	const FVector PreviousCapsuleCenter = MakeWeaponCapsuleCenter(
+	const FVector PreviousCapsuleCenter = MakeMeleeWeaponCapsuleCenter(
 		TracePreviousStart,
 		TracePreviousEnd);
-	const FVector CurrentCapsuleCenter = MakeWeaponCapsuleCenter(
+	const FVector CurrentCapsuleCenter = MakeMeleeWeaponCapsuleCenter(
 		CurrentTraceStart,
 		CurrentTraceEnd);
-	const FQuat PreviousCapsuleRotation = MakeWeaponCapsuleRotation(
+	const FQuat PreviousCapsuleRotation = MakeMeleeWeaponCapsuleRotation(
 		TracePreviousStart,
 		TracePreviousEnd);
-	const FQuat CurrentCapsuleRotation = MakeWeaponCapsuleRotation(
+	const FQuat CurrentCapsuleRotation = MakeMeleeWeaponCapsuleRotation(
 		CurrentTraceStart,
 		CurrentTraceEnd);
 

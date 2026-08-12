@@ -114,6 +114,41 @@ bool UAIRECompanionThreatComponent::IsCombatRequested() const
 		&& SelectedThreatTarget.IsValid();
 }
 
+int32 UAIRECompanionThreatComponent::GetPerceivedHostileCount() const
+{
+	constexpr int32 MaxReportedHostileCount = 32;
+	const UWorld* World = GetWorld();
+	if (!bIsThreatDetectionActive
+		|| !CompanionCharacter.IsValid()
+		|| !IsValid(World))
+	{
+		return 0;
+	}
+	const double Now = World->GetTimeSeconds();
+	int32 HostileCount = 0;
+	for (const TWeakObjectPtr<AActor>& Candidate : PerceivedHostiles)
+	{
+		AActor* CandidateActor = Candidate.Get();
+		const double* SightLossDeadline =
+			PendingSightLossDeadlines.Find(Candidate);
+		const bool bSightMemoryExpired = SightLossDeadline != nullptr
+			&& Now >= *SightLossDeadline;
+		if (IsValid(CandidateActor)
+			&& !CandidateActor->IsActorBeingDestroyed()
+			&& !bSightMemoryExpired
+			&& IsActorHostile(CandidateActor))
+		{
+			++HostileCount;
+			if (HostileCount >= MaxReportedHostileCount)
+			{
+				break;
+			}
+		}
+	}
+
+	return HostileCount;
+}
+
 void UAIRECompanionThreatComponent::BeginPlay()
 {
 	Super::BeginPlay();

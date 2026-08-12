@@ -3,9 +3,9 @@
 > **Status: Legacy reference**
 >
 > As of 2026-07-27, Backend implementation is sourced from the separate
-> `ai_companion_server/` repository and deployed at `https://traip.mtvs2026.work`.
+> `AIRE_SERVER/` repository and deployed at `https://traip.mtvs2026.work`.
 > These schemas and fixtures are not authoritative until reconciled with both
-> `ai_companion_server/docs/current/` and the deployed `/openapi.json`.
+> `AIRE_SERVER/docs/`, its current implementation, and the deployed `/openapi.json`.
 
 This directory preserves the previous data contract exchanged between the Backend, WebApp, Unreal Engine, and AIService.
 

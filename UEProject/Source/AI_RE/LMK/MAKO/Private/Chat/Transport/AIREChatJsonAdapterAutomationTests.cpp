@@ -117,6 +117,8 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	Context.Day = 1;
 	Context.Hour = 12.0f;
 	Context.Period = EAIREGameWorldPeriod::Morning;
+	FAIREWorldContextV1 WorldContext;
+	WorldContext.LocationId = TEXT("forest_camp");
 	FString HttpBody;
 	FString WebSocketFrame;
 	FString BuildError;
@@ -124,6 +126,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 		TEXT("In-game request serializes successfully"),
 		FAIREChatJsonAdapter::BuildInGameRequest(
 			Context,
+			WorldContext,
 			TEXT("mako"),
 			TEXT("session-1"),
 			TEXT("request-1"),
