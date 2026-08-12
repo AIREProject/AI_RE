@@ -3351,6 +3351,15 @@ button:focus-visible {
   font-weight: 680;
 }
 
+body.is-cursor-idle,
+body.is-cursor-idle * {
+  cursor: none !important;
+}
+
+body.is-cursor-idle iframe {
+  pointer-events: none;
+}
+
 @media (max-width: 720px) {
   .menu-toggle span:last-child,
   .progress-label {

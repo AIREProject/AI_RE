@@ -25,8 +25,33 @@
   let currentIndex = 0;
   let touchStartX = null;
   let phoneTransitionTimer = null;
+  let cursorIdleTimer = null;
 
   const formatNumber = (value) => String(value).padStart(2, "0");
+
+  const isPresentationFullscreen = () => {
+    if (document.fullscreenElement !== null) {
+      return true;
+    }
+
+    return (
+      Math.abs(window.innerWidth - window.screen.width) <= 8 &&
+      Math.abs(window.innerHeight - window.screen.height) <= 8
+    );
+  };
+
+  const scheduleCursorHide = () => {
+    window.clearTimeout(cursorIdleTimer);
+    document.body.classList.remove("is-cursor-idle");
+
+    if (!isPresentationFullscreen()) {
+      return;
+    }
+
+    cursorIdleTimer = window.setTimeout(() => {
+      document.body.classList.add("is-cursor-idle");
+    }, 800);
+  };
 
   const fitWebappPhone = () => {
     const designWidth = 420;
@@ -172,7 +197,12 @@
     }
   });
   webappFrame.addEventListener("load", fitWebappPhone);
-  window.addEventListener("resize", fitWebappPhone);
+  window.addEventListener("resize", () => {
+    fitWebappPhone();
+    scheduleCursorHide();
+  });
+  document.addEventListener("fullscreenchange", scheduleCursorHide);
+  document.addEventListener("mousemove", scheduleCursorHide, { passive: true });
 
   window.addEventListener("storage", (event) => {
     if (event.key === "aire.web_device_credentials.v1") {
@@ -252,4 +282,5 @@
   configureWebappEmbed();
   fitWebappPhone();
   updateSlides();
+  scheduleCursorHide();
 })();
