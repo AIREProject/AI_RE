@@ -107,7 +107,11 @@ function isNullableStableId(value: unknown): value is string | null {
 }
 
 function isNullableSafeInteger(value: unknown): value is number | null {
-  return value === null || (typeof value === "number" && Number.isSafeInteger(value));
+  return value === null || (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+  );
 }
 
 function isIsoDateString(value: unknown): value is string {
@@ -201,13 +205,17 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function requireResponseRequestId(response: Response, requestId: string): void {
+function requireResponseRequestId(
+  response: Response,
+  requestId: string,
+  expectedSuccessStatus = 200,
+): void {
   if (response.headers.get("X-Request-ID") !== requestId) {
     throw new OfflineTaskApiError(
-      response.status === 200
+      response.status === expectedSuccessStatus
         ? "invalid-success-response"
         : "invalid-error-response",
-      response.status === 200
+      response.status === expectedSuccessStatus
         ? "InvalidOfflineTaskResponse"
         : "InvalidErrorResponse",
       false,
@@ -329,6 +337,47 @@ export async function listOfflineTasks(
       );
     }
     return body;
+  } catch (error: unknown) {
+    if (error instanceof OfflineTaskApiError) {
+      throw error;
+    }
+    if (controller.signal.aborted) {
+      throw new OfflineTaskApiError("timeout", "RequestTimeout", false);
+    }
+    throw new OfflineTaskApiError("network", "NetworkFailure", false);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+export async function deleteOfflineTask(
+  apiBaseUrl: string,
+  taskId: string,
+  requestId: string,
+): Promise<void> {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), apiRequestTimeoutMs);
+
+  try {
+    const response = await fetch(
+      `${apiBaseUrl}/api/v1/tasks/${encodeURIComponent(taskId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${webBearer}`,
+          "X-Request-ID": requestId,
+        },
+        signal: controller.signal,
+      },
+    );
+    requireResponseRequestId(response, requestId, 204);
+
+    if (response.status === 204) {
+      return;
+    }
+    const body = await readJson(response);
+    throwResponseError(response, body, requestId);
   } catch (error: unknown) {
     if (error instanceof OfflineTaskApiError) {
       throw error;

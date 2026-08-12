@@ -508,6 +508,7 @@ void UAIREGameplayInventorySubsystem::Deinitialize()
 	++PersistenceEpoch;
 	++ActiveSaveEpoch;
 	PersistenceReadyDelegate.Clear();
+	PersistenceSaveCompletedDelegate.Clear();
 	OnContainerChanged.Clear();
 	Containers.Reset();
 	AppliedMutations.Reset();
@@ -522,6 +523,8 @@ void UAIREGameplayInventorySubsystem::Deinitialize()
 	AppliedImportCandidateOrder.Reset();
 	AppliedImportOperationIds.Reset();
 	AppliedImportOperationOrder.Reset();
+	AppliedOfflineTaskIds.Reset();
+	AppliedOfflineTaskOrder.Reset();
 	PersistenceLoadSlots.Reset();
 	PendingCompanionConfig.Reset();
 	RegisteredPlayerInventory.Reset();
@@ -593,6 +596,12 @@ FAIREInventoryPersistenceReady&
 UAIREGameplayInventorySubsystem::OnPersistenceReady()
 {
 	return PersistenceReadyDelegate;
+}
+
+FAIREInventoryPersistenceSaveCompleted&
+UAIREGameplayInventorySubsystem::OnPersistenceSaveCompleted()
+{
+	return PersistenceSaveCompletedDelegate;
 }
 
 bool UAIREGameplayInventorySubsystem::RegisterPlayerInventory(
@@ -1766,6 +1775,8 @@ FGuid UAIREGameplayInventorySubsystem::ResetInventorySession(
 	AppliedImportCandidateOrder.Reset();
 	AppliedImportOperationIds.Reset();
 	AppliedImportOperationOrder.Reset();
+	AppliedOfflineTaskIds.Reset();
+	AppliedOfflineTaskOrder.Reset();
 	PersistenceLoadSlots.Reset();
 	PendingCompanionConfig.Reset();
 	CachedPlayerPersistenceState = FAIREInventoryPersistedPlayerState();
@@ -2187,6 +2198,167 @@ bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
 		MarkPersistenceDirty();
 	}
 	return true;
+}
+
+FAIREOfflineTaskApplyResult
+UAIREGameplayInventorySubsystem::TryApplyOfflineTaskResult(
+	const FAIREOfflineTaskApplyRequest& Request)
+{
+	FAIREOfflineTaskApplyResult Result;
+	const FAIREContainerState* CurrentMako = FindContainer(GetMakoContainerId());
+	const FAIREContainerState* CurrentStorage =
+		FindContainer(GetSharedStorageContainerId());
+	Result.MakoRevision = CurrentMako ? CurrentMako->Revision : INDEX_NONE;
+	Result.StorageRevision = CurrentStorage
+		? CurrentStorage->Revision
+		: INDEX_NONE;
+	if (!bPersistenceReady || !InventorySessionId.IsValid())
+	{
+		return Result;
+	}
+	if (Request.SessionId != InventorySessionId)
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidSession;
+		return Result;
+	}
+	if (!IsStableId(Request.TaskId))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidOperation;
+		return Result;
+	}
+	if (AppliedOfflineTaskIds.Contains(Request.TaskId))
+	{
+		Result.Code = EAIREInventoryMutationCode::AlreadyApplied;
+		return Result;
+	}
+	FAIREContainerState* Mako = FindContainer(GetMakoContainerId());
+	FAIREContainerState* Storage = FindContainer(GetSharedStorageContainerId());
+	if (!Mako || !Storage)
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidContainer;
+		return Result;
+	}
+	if (Mako->Revision != Request.ExpectedMakoRevision
+		|| Storage->Revision != Request.ExpectedStorageRevision)
+	{
+		Result.Code = EAIREInventoryMutationCode::RevisionConflict;
+		return Result;
+	}
+	if (IsEquipmentTransitionActive(*Mako))
+	{
+		Result.Code = EAIREInventoryMutationCode::EquipmentBusy;
+		return Result;
+	}
+
+	TMap<FName, int32> CostTotals;
+	TMap<FName, int32> RewardTotals;
+	auto Aggregate = [](const TArray<FAIREInventoryItemQuantity>& Items,
+		TMap<FName, int32>& OutTotals,
+		const bool bAllowEmpty)
+	{
+		OutTotals.Reset();
+		for (const FAIREInventoryItemQuantity& Item : Items)
+		{
+			const int64 Total = static_cast<int64>(OutTotals.FindRef(Item.ItemId))
+				+ Item.Count;
+			if (Item.ItemId.IsNone() || Item.Count <= 0 || Total > MAX_int32)
+			{
+				return false;
+			}
+			OutTotals.Add(Item.ItemId, static_cast<int32>(Total));
+		}
+		return bAllowEmpty || !OutTotals.IsEmpty();
+	};
+	if (!Aggregate(Request.Costs, CostTotals, true)
+		|| !Aggregate(Request.Rewards, RewardTotals, false))
+	{
+		Result.Code = EAIREInventoryMutationCode::InvalidQuantity;
+		return Result;
+	}
+	TMap<FName, FAIREItemRules> RulesByItem;
+	for (const TMap<FName, int32>* Totals : { &CostTotals, &RewardTotals })
+	{
+		for (const TPair<FName, int32>& Item : *Totals)
+		{
+			FAIREItemRules Rules;
+			if (!ResolveItemRules(Item.Key, false, Rules))
+			{
+				Result.Code = EAIREInventoryMutationCode::InvalidItem;
+				return Result;
+			}
+			RulesByItem.Add(Item.Key, Rules);
+		}
+	}
+
+	TArray<FAIREInventoryItemStackSnapshot> NewMako = Mako->ItemStacks;
+	TArray<FAIREInventoryItemStackSnapshot> NewStorage = Storage->ItemStacks;
+	bool bMakoChanged = false;
+	bool bStorageChanged = false;
+	for (const TPair<FName, int32>& Cost : CostTotals)
+	{
+		if (!TryRemoveLocalFirst(
+				NewMako,
+				NewStorage,
+				Cost.Key,
+				Cost.Value,
+				bMakoChanged,
+				bStorageChanged))
+		{
+			Result.Code = EAIREInventoryMutationCode::InsufficientQuantity;
+			return Result;
+		}
+	}
+	for (const TPair<FName, int32>& Reward : RewardTotals)
+	{
+		const FAIREItemRules& Rules = RulesByItem.FindChecked(Reward.Key);
+		TArray<FAIREInventoryItemStackSnapshot> MakoCandidate = NewMako;
+		if (TryAddToStacks(
+				MakoCandidate,
+				Mako->Capacity,
+				Reward.Key,
+				Reward.Value,
+				Rules.MaxStackSize))
+		{
+			NewMako = MoveTemp(MakoCandidate);
+			bMakoChanged = true;
+			continue;
+		}
+		if (!TryAddToStacks(
+				NewStorage,
+				Storage->Capacity,
+				Reward.Key,
+				Reward.Value,
+				Rules.MaxStackSize))
+		{
+			Result.Code = EAIREInventoryMutationCode::CapacityExceeded;
+			return Result;
+		}
+		bStorageChanged = true;
+	}
+
+	if (bMakoChanged)
+	{
+		Mako->ItemStacks = MoveTemp(NewMako);
+		++Mako->Revision;
+	}
+	if (bStorageChanged)
+	{
+		Storage->ItemStacks = MoveTemp(NewStorage);
+		++Storage->Revision;
+	}
+	RecordAppliedOfflineTaskId(Request.TaskId);
+	Result.Code = EAIREInventoryMutationCode::Succeeded;
+	Result.MakoRevision = Mako->Revision;
+	Result.StorageRevision = Storage->Revision;
+	if (bMakoChanged)
+	{
+		BroadcastContainerChanged(*Mako);
+	}
+	if (bStorageChanged)
+	{
+		BroadcastContainerChanged(*Storage);
+	}
+	return Result;
 }
 
 const UAIRECompanionItemDefinitionDataAsset*
@@ -2678,6 +2850,23 @@ void UAIREGameplayInventorySubsystem::RecordAppliedImportOperationIds(
 			AppliedImportOperationOrder.RemoveAt(0);
 			AppliedImportOperationIds.Remove(EvictedId);
 		}
+	}
+}
+
+void UAIREGameplayInventorySubsystem::RecordAppliedOfflineTaskId(
+	const FString& TaskId)
+{
+	if (!AppliedOfflineTaskIds.Contains(TaskId))
+	{
+		AppliedOfflineTaskOrder.Add(TaskId);
+	}
+	AppliedOfflineTaskIds.Add(TaskId);
+	while (AppliedOfflineTaskOrder.Num()
+		> AIREGameplayInventoryPersistence::MaxLedgerEntries)
+	{
+		const FString EvictedId = AppliedOfflineTaskOrder[0];
+		AppliedOfflineTaskOrder.RemoveAt(0);
+		AppliedOfflineTaskIds.Remove(EvictedId);
 	}
 }
 
@@ -3363,6 +3552,8 @@ bool UAIREGameplayInventorySubsystem::ValidatePersistenceEnvelope(
 		|| Normalized.ImportCandidateIds.Num()
 			> AIREGameplayInventoryPersistence::MaxLedgerEntries
 		|| Normalized.ImportOperationIds.Num()
+			> AIREGameplayInventoryPersistence::MaxLedgerEntries
+		|| Normalized.OfflineTasks.Num()
 			> AIREGameplayInventoryPersistence::MaxLedgerEntries)
 	{
 		OutCode = EAIREInventoryPersistenceResultCode::InvalidLedger;
@@ -3435,6 +3626,18 @@ bool UAIREGameplayInventorySubsystem::ValidatePersistenceEnvelope(
 			return false;
 		}
 		SeenOperationIds.Add(OperationId);
+	}
+	TSet<FString> SeenOfflineTaskIds;
+	for (const FAIREInventoryPersistedOfflineTaskEntry& Task
+		: Normalized.OfflineTasks)
+	{
+		if (!IsStableId(Task.TaskId)
+			|| SeenOfflineTaskIds.Contains(Task.TaskId))
+		{
+			OutCode = EAIREInventoryPersistenceResultCode::InvalidLedger;
+			return false;
+		}
+		SeenOfflineTaskIds.Add(Task.TaskId);
 	}
 
 	OutNormalizedEnvelope = MoveTemp(Normalized);
@@ -3530,6 +3733,14 @@ bool UAIREGameplayInventorySubsystem::CommitPersistenceEnvelope(
 		AppliedImportOperationIds.Add(OperationId);
 	}
 	AppliedImportOperationOrder = Normalized.ImportOperationIds;
+	AppliedOfflineTaskIds.Reset();
+	AppliedOfflineTaskOrder.Reset();
+	for (const FAIREInventoryPersistedOfflineTaskEntry& Task
+		: Normalized.OfflineTasks)
+	{
+		AppliedOfflineTaskIds.Add(Task.TaskId);
+		AppliedOfflineTaskOrder.Add(Task.TaskId);
+	}
 	CachedPlayerPersistenceState = Normalized.Player;
 	bHasPlayerPersistenceState = true;
 	PendingCompanionConfig.Reset();
@@ -3646,6 +3857,17 @@ bool UAIREGameplayInventorySubsystem::BuildPersistenceEnvelope(
 	}
 	Candidate.ImportCandidateIds = AppliedImportCandidateOrder;
 	Candidate.ImportOperationIds = AppliedImportOperationOrder;
+	for (const FString& TaskId : AppliedOfflineTaskOrder)
+	{
+		if (!AppliedOfflineTaskIds.Contains(TaskId))
+		{
+			OutCode = EAIREInventoryPersistenceResultCode::InvalidLedger;
+			return false;
+		}
+		FAIREInventoryPersistedOfflineTaskEntry& Entry =
+			Candidate.OfflineTasks.AddDefaulted_GetRef();
+		Entry.TaskId = TaskId;
+	}
 	if (!bHasPlayerPersistenceState)
 	{
 		OutCode =
@@ -3800,7 +4022,8 @@ void UAIREGameplayInventorySubsystem::HandlePersistenceSaveCompleted(
 		LastPersistenceSaveResult = MakePersistenceResult(
 			EAIREInventoryPersistenceOperation::Save,
 			EAIREInventoryPersistenceResultCode::IoFailure,
-			LatestPersistenceGeneration);
+			Generation);
+		PersistenceSaveCompletedDelegate.Broadcast(LastPersistenceSaveResult);
 		return;
 	}
 
@@ -3812,6 +4035,7 @@ void UAIREGameplayInventorySubsystem::HandlePersistenceSaveCompleted(
 		EAIREInventoryPersistenceOperation::Save,
 		EAIREInventoryPersistenceResultCode::Succeeded,
 		Generation);
+	PersistenceSaveCompletedDelegate.Broadcast(LastPersistenceSaveResult);
 	if (bPersistenceDirty)
 	{
 		TryStartPersistenceSave();

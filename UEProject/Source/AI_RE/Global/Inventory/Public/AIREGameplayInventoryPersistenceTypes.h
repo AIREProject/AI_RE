@@ -190,6 +190,15 @@ struct AI_RE_API FAIREInventoryPersistedWorkEntry
 };
 
 USTRUCT()
+struct AI_RE_API FAIREInventoryPersistedOfflineTaskEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(SaveGame)
+	FString TaskId;
+};
+
+USTRUCT()
 struct AI_RE_API FAIREInventorySaveEnvelope
 {
 	GENERATED_BODY()
@@ -228,6 +237,9 @@ struct AI_RE_API FAIREInventorySaveEnvelope
 
 	UPROPERTY(SaveGame)
 	TArray<FAIREInventoryPersistedWorkEntry> WorkResults;
+
+	UPROPERTY(SaveGame)
+	TArray<FAIREInventoryPersistedOfflineTaskEntry> OfflineTasks;
 
 	UPROPERTY(SaveGame)
 	TArray<FString> ImportCandidateIds;

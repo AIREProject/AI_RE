@@ -149,6 +149,13 @@ public:
 		Inventory.RecordAppliedImportOperationIds(OperationIds);
 	}
 
+	static void RecordOfflineTask(
+		UAIREGameplayInventorySubsystem& Inventory,
+		const FString& TaskId)
+	{
+		Inventory.RecordAppliedOfflineTaskId(TaskId);
+	}
+
 	static void FinalizeLoadFromMemory(
 		UAIREGameplayInventorySubsystem& Inventory,
 		const TOptional<FAIREInventorySaveEnvelope>& Primary,
@@ -338,6 +345,9 @@ bool FAIREGameplayInventorySaveGameRoundTripTest::RunTest(
 		*Source,
 		TEXT("candidate.roundtrip"),
 		{ TEXT("operation.roundtrip") });
+	FAIREGameplayInventoryPersistenceTestAccess::RecordOfflineTask(
+		*Source,
+		TEXT("task.roundtrip"));
 
 	FAIREInventorySaveEnvelope SourceEnvelope;
 	EAIREInventoryPersistenceResultCode BuildCode =
@@ -389,6 +399,13 @@ bool FAIREGameplayInventorySaveGameRoundTripTest::RunTest(
 		FAIREGameplayInventoryPersistenceTestAccess::CommitEnvelope(
 			*Restored,
 			Normalized));
+	FAIREOfflineTaskApplyRequest RestoredTask;
+	RestoredTask.TaskId = TEXT("task.roundtrip");
+	RestoredTask.SessionId = Restored->GetInventorySessionId();
+	TestEqual(
+		TEXT("Offline task ledger restores exact-once evidence"),
+		Restored->TryApplyOfflineTaskResult(RestoredTask).Code,
+		EAIREInventoryMutationCode::AlreadyApplied);
 	TestTrue(
 		TEXT("Runtime session remains new"),
 		Restored->GetInventorySessionId() == RestoredRuntimeSession);

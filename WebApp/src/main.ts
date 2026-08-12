@@ -7,6 +7,7 @@ import {
 } from "./api/client";
 import {
   createOfflineTask,
+  deleteOfflineTask,
   listOfflineTasks,
   OfflineTaskApiError,
   type CreateOfflineTaskRequest,
@@ -32,16 +33,8 @@ const taskItemOptions: Record<
   CreatableOfflineTaskType,
   readonly TaskItemOption[]
 > = {
-  Gathering: [
-    { id: "Branch", label: "나뭇가지" },
-    { id: "Stone", label: "돌" },
-  ],
-  Crafting: [
-    { id: "ShoddyBandage", label: "엉성한 붕대" },
-    { id: "Rope", label: "밧줄" },
-    { id: "Axe_Stone", label: "돌도끼" },
-    { id: "Pickaxe_Stone", label: "돌곡괭이" },
-  ],
+  Gathering: [{ id: "PlantStem", label: "나무" }],
+  Crafting: [{ id: "ShoddyBandage", label: "엉성한 붕대" }],
 };
 
 const taskItemLabels = new Map<string, string>(
@@ -57,11 +50,27 @@ const taskTypeLabels: Record<OfflineTaskType, string> = {
 };
 
 const taskStatusLabels: Record<OfflineTaskStatus, string> = {
-  Pending: "Pending · 대기",
-  InProgress: "InProgress · 진행 중",
-  Completed: "Completed · 서버 작업 완료",
-  Claimed: "Claimed · 서버 수령 상태",
+  Pending: "Pending · UE 동기화 대기",
+  InProgress: "InProgress · 서버 시간 계산 중",
+  Completed: "Completed · UE 적용 대기",
+  Claimed: "Claimed · 서버 처리 종료",
 };
+
+function taskStatusLabel(task: OfflineTaskView): string {
+  if (task.status !== "InProgress" || task.progress_quantity === null) {
+    return taskStatusLabels[task.status];
+  }
+  if (task.progress_quantity === 0) {
+    return "작업 중 · 아직 완성 0개";
+  }
+  if (
+    task.quantity !== null &&
+    task.progress_quantity >= task.quantity
+  ) {
+    return `수령 가능 · ${task.progress_quantity}개 준비`;
+  }
+  return `수령 가능 · 지금 ${task.progress_quantity}개`;
+}
 
 function createStableId(prefix: string): string {
   if (typeof crypto.randomUUID === "function") {
@@ -152,8 +161,9 @@ app.innerHTML = `
       <section class="composer-area">
         <p class="time-context"><span aria-hidden="true">◷</span>현실 시간 기준으로 대화해요</p>
         <div class="suggestion-list" aria-label="추천 대화">
-          <button type="button" class="suggestion-chip">철 도끼 제작 방법</button>
-          <button type="button" class="suggestion-chip">나무 100개만 캐줘</button>
+          <button type="button" class="suggestion-chip">오늘 나에게 해주고 싶은 말이 있어?</button>
+          <button type="button" class="suggestion-chip">돌 도끼 제작 방법을 알려줘</button>
+          <button type="button" class="suggestion-chip">나무 30개만 캐놔줘</button>
         </div>
         <form id="chat-form" class="chat-composer" data-state="idle" aria-busy="false">
           <label class="sr-only" for="chat-input">MAKO에게 메시지 보내기</label>
@@ -171,7 +181,7 @@ app.innerHTML = `
         <section class="task-intro">
           <p class="section-kicker">오프라인 작업</p>
           <h2>MAKO에게 할 일을 맡겨요</h2>
-          <p>작업 상태는 서버 기록이며 UE Inventory 지급 여부를 뜻하지 않아요.</p>
+          <p>현실 시간이 지난 뒤 게임을 켜면 완성된 수량을 UE Inventory에 적용해요.</p>
         </section>
 
         <section class="task-create-card" aria-labelledby="task-create-title">
@@ -203,7 +213,7 @@ app.innerHTML = `
               value="1"
               aria-describedby="task-quantity-hint"
             />
-            <p id="task-quantity-hint" class="field-hint">채집은 한 번에 1~50개까지 요청할 수 있어요.</p>
+            <p id="task-quantity-hint" class="field-hint">서버 시간 정책 기준 · 수량 1~50</p>
 
             <button id="task-create-button" class="primary-task-button" type="submit">
               작업 요청하기
@@ -225,7 +235,8 @@ app.innerHTML = `
 
           <label class="status-filter-label" for="task-status-filter">상태 필터</label>
           <select id="task-status-filter" class="status-filter">
-            <option value="">전체</option>
+            <option value="Active" selected>진행 중 · Claimed 숨김</option>
+            <option value="">전체 기록</option>
             <option value="Pending">Pending</option>
             <option value="InProgress">InProgress</option>
             <option value="Completed">Completed</option>
@@ -233,7 +244,8 @@ app.innerHTML = `
           </select>
 
           <p class="task-boundary-notice">
-            Completed와 Claimed는 서버 Task 상태예요. UE Inventory 지급 완료 증거가 아니에요.
+            새로고침 시 서버 시간 기준 완성 수량을 확인해요. UE를 켜면 표시된 정수 수량을
+            확정하고 남은 예약량은 종료해요.
           </p>
           <div id="task-list" class="task-list" data-state="idle" aria-live="polite" aria-busy="false">
             <p class="task-list-message">작업 탭을 열면 목록을 불러와요.</p>
@@ -265,6 +277,7 @@ const chatForm = requireElement<HTMLFormElement>("#chat-form");
 const chatInput = requireElement<HTMLTextAreaElement>("#chat-input");
 const sendButton = requireElement<HTMLButtonElement>("#send-button");
 const composerNotice = requireElement<HTMLElement>("#composer-notice");
+const suggestionList = requireElement<HTMLElement>(".suggestion-list");
 const taskForm = requireElement<HTMLFormElement>("#task-form");
 const taskTypeSelect = requireElement<HTMLSelectElement>("#task-type");
 const taskItemSelect = requireElement<HTMLSelectElement>("#task-item");
@@ -280,6 +293,12 @@ const sessionId = createStableId("session");
 let isSending = false;
 let isCreatingTask = false;
 let isListingTasks = false;
+let deletingTaskId: string | null = null;
+let isDraggingSuggestions = false;
+let didDragSuggestions = false;
+let suppressSuggestionClick = false;
+let suggestionDragStartX = 0;
+let suggestionDragStartScrollLeft = 0;
 
 function setChatState(state: ChatUiState, message?: string): void {
   companionApp.dataset.chatState = state;
@@ -354,12 +373,13 @@ function selectedTaskStatus(): OfflineTaskStatus | undefined {
 }
 
 function syncTaskControls(): void {
-  taskTypeSelect.disabled = isCreatingTask;
-  taskItemSelect.disabled = isCreatingTask;
-  taskQuantityInput.disabled = isCreatingTask;
-  taskCreateButton.disabled = isCreatingTask || isListingTasks;
-  taskStatusFilter.disabled = isCreatingTask || isListingTasks;
-  taskRefreshButton.disabled = isCreatingTask || isListingTasks;
+  const isTaskMutationPending = isCreatingTask || deletingTaskId !== null;
+  taskTypeSelect.disabled = isTaskMutationPending;
+  taskItemSelect.disabled = isTaskMutationPending;
+  taskQuantityInput.disabled = isTaskMutationPending;
+  taskCreateButton.disabled = isTaskMutationPending || isListingTasks;
+  taskStatusFilter.disabled = isTaskMutationPending || isListingTasks;
+  taskRefreshButton.disabled = isTaskMutationPending || isListingTasks;
 }
 
 function setTaskCreateState(state: TaskUiState, message?: string): void {
@@ -396,14 +416,14 @@ function populateTaskItems(taskType: CreatableOfflineTaskType): void {
 }
 
 function updateTaskQuantityPolicy(taskType: CreatableOfflineTaskType): void {
-  if (taskType === "Gathering") {
-    taskQuantityInput.max = "50";
-    taskQuantityHint.textContent = "채집은 한 번에 1~50개까지 요청할 수 있어요.";
-    return;
-  }
+  taskQuantityInput.max = "50";
+  updateTaskDurationHint(taskType);
+}
 
-  taskQuantityInput.removeAttribute("max");
-  taskQuantityHint.textContent = "제작 수량은 1 이상의 정수로 입력해 주세요.";
+function updateTaskDurationHint(taskType: CreatableOfflineTaskType): void {
+  const taskLabel = taskType === "Gathering" ? "채집" : "제작";
+  taskQuantityHint.textContent =
+    `${taskLabel} 시간은 현재 Backend 정책으로 계산 · 수량 1~50`;
 }
 
 function validateTaskQuantity(
@@ -425,8 +445,8 @@ function validateTaskQuantity(
     setTaskCreateState("error", "수량은 1 이상의 정수여야 해요.");
     return null;
   }
-  if (taskType === "Gathering" && quantity > 50) {
-    setTaskCreateState("error", "Gathering 수량은 1~50개만 요청할 수 있어요.");
+  if (quantity > 50) {
+    setTaskCreateState("error", "작업 수량은 1~50개만 요청할 수 있어요.");
     return null;
   }
   return quantity;
@@ -434,14 +454,23 @@ function validateTaskQuantity(
 
 function taskFailureMessage(
   error: OfflineTaskApiError,
-  operation: "create" | "list",
+  operation: "create" | "list" | "delete",
 ): string {
-  const subject = operation === "create" ? "작업 요청" : "작업 목록 조회";
+  const subject =
+    operation === "create"
+      ? "작업 요청"
+      : operation === "list"
+        ? "작업 목록 조회"
+        : "예약 삭제";
   switch (error.kind) {
     case "timeout":
-      return operation === "create"
-        ? "작업 요청 응답 시간이 초과됐어요. 자동 재전송하지 않았으니 목록을 먼저 확인해 주세요."
-        : "작업 목록 응답 시간이 초과됐어요. 자동으로 다시 조회하지 않았어요.";
+      if (operation === "create") {
+        return "작업 요청 응답 시간이 초과됐어요. 자동 재전송하지 않았으니 목록을 먼저 확인해 주세요.";
+      }
+      if (operation === "delete") {
+        return "예약 삭제 응답 시간이 초과됐어요. 목록을 새로고침해 삭제 여부를 확인해 주세요.";
+      }
+      return "작업 목록 응답 시간이 초과됐어요. 자동으로 다시 조회하지 않았어요.";
     case "network":
       return `${subject} 중 Backend에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.`;
     case "invalid-json":
@@ -455,6 +484,15 @@ function taskFailureMessage(
     case "forbidden":
       return `현재 Web 신원에는 ${subject} 권한이 없어요.`;
     case "server-error":
+      if (operation === "delete" && error.code === "OfflineTaskNotFound") {
+        return "이미 삭제됐거나 현재 프로필의 예약이 아니에요. 목록을 새로고침해 주세요.";
+      }
+      if (
+        operation === "delete" &&
+        error.code === "OfflineTaskTransitionNotAllowed"
+      ) {
+        return "이미 완료 처리 중인 작업은 삭제할 수 없어요. 목록을 새로고침해 주세요.";
+      }
       return `Backend가 ${subject}을 처리하지 못했어요 (${error.code}).`;
   }
 }
@@ -511,8 +549,26 @@ function renderTaskList(tasks: OfflineTaskView[]): void {
     const status = document.createElement("span");
     status.className = "task-status-badge";
     status.dataset.status = task.status;
-    status.textContent = taskStatusLabels[task.status];
-    header.append(titleGroup, status);
+    status.textContent =
+      task.status === "Claimed" && task.result_quantity === 0
+        ? "Claimed · 결과 0개로 종료"
+        : taskStatusLabel(task);
+    const actions = document.createElement("div");
+    actions.className = "task-card-actions";
+    actions.append(status);
+    if (task.status === "Pending" || task.status === "InProgress") {
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "task-delete-button";
+      deleteButton.type = "button";
+      deleteButton.textContent = "예약 삭제";
+      deleteButton.disabled = deletingTaskId !== null;
+      deleteButton.setAttribute("aria-label", `${itemLabel} 예약 삭제`);
+      deleteButton.addEventListener("click", () => {
+        void removeOfflineTask(task, deleteButton);
+      });
+      actions.append(deleteButton);
+    }
+    header.append(titleGroup, actions);
 
     const taskId = document.createElement("code");
     taskId.className = "task-id";
@@ -523,7 +579,6 @@ function renderTaskList(tasks: OfflineTaskView[]): void {
     appendTaskMetric(metrics, "목표", formatTaskQuantity(task.quantity));
     appendTaskMetric(metrics, "진행", formatTaskQuantity(task.progress_quantity));
     appendTaskMetric(metrics, "결과", formatTaskQuantity(task.result_quantity));
-
     const startedAt = document.createElement("time");
     startedAt.className = "task-started-at";
     startedAt.dateTime = task.started_at;
@@ -536,6 +591,47 @@ function renderTaskList(tasks: OfflineTaskView[]): void {
   taskList.dataset.state = "success";
   taskList.setAttribute("aria-busy", "false");
   taskList.replaceChildren(...cards);
+}
+
+async function removeOfflineTask(
+  task: OfflineTaskView,
+  deleteButton: HTMLButtonElement,
+): Promise<void> {
+  if (deletingTaskId !== null) {
+    return;
+  }
+  if (task.status !== "Pending" && task.status !== "InProgress") {
+    setTaskListMessage("error", "완료 처리된 작업은 삭제할 수 없어요.");
+    return;
+  }
+  if (!window.confirm("이 예약 작업을 삭제할까요? 진행된 시간은 복구되지 않아요.")) {
+    return;
+  }
+
+  deletingTaskId = task.task_id;
+  deleteButton.disabled = true;
+  deleteButton.textContent = "삭제 중…";
+  syncTaskControls();
+
+  try {
+    await deleteOfflineTask(
+      apiBaseUrl,
+      task.task_id,
+      createStableId("task-delete"),
+    );
+    deletingTaskId = null;
+    syncTaskControls();
+    await loadOfflineTaskList();
+  } catch (error: unknown) {
+    if (error instanceof OfflineTaskApiError) {
+      setTaskListMessage("error", taskFailureMessage(error, "delete"));
+    } else {
+      setTaskListMessage("error", "예약 삭제 중 알 수 없는 오류가 발생했어요.");
+    }
+  } finally {
+    deletingTaskId = null;
+    syncTaskControls();
+  }
 }
 
 async function loadOfflineTaskList(
@@ -556,11 +652,15 @@ async function loadOfflineTaskList(
       createStableId("task-list"),
       selectedTaskStatus(),
     );
-    renderTaskList(response.tasks);
+    const visibleTasks =
+      taskStatusFilter.value === "Active"
+        ? response.tasks.filter((task) => task.status !== "Claimed")
+        : response.tasks;
+    renderTaskList(visibleTasks);
     if (expectedTaskId === undefined) {
       return "found";
     }
-    return response.tasks.some((task) => task.task_id === expectedTaskId)
+    return visibleTasks.some((task) => task.task_id === expectedTaskId)
       ? "found"
       : "missing";
   } catch (error: unknown) {
@@ -671,6 +771,70 @@ document.querySelectorAll<HTMLButtonElement>(".suggestion-chip").forEach((button
   });
 });
 
+suggestionList.addEventListener("pointerdown", (event) => {
+  if (event.pointerType !== "mouse" || event.button !== 0) {
+    return;
+  }
+
+  isDraggingSuggestions = true;
+  didDragSuggestions = false;
+  suggestionDragStartX = event.clientX;
+  suggestionDragStartScrollLeft = suggestionList.scrollLeft;
+});
+
+suggestionList.addEventListener("pointermove", (event) => {
+  if (!isDraggingSuggestions) {
+    return;
+  }
+
+  const dragDistance = event.clientX - suggestionDragStartX;
+  if (Math.abs(dragDistance) > 4) {
+    if (!didDragSuggestions) {
+      suggestionList.setPointerCapture(event.pointerId);
+      suggestionList.classList.add("is-dragging");
+    }
+    didDragSuggestions = true;
+    suggestionList.scrollLeft = suggestionDragStartScrollLeft - dragDistance;
+    event.preventDefault();
+  }
+});
+
+suggestionList.addEventListener("pointerup", (event) => {
+  if (!isDraggingSuggestions) {
+    return;
+  }
+
+  suppressSuggestionClick = didDragSuggestions;
+  isDraggingSuggestions = false;
+  suggestionList.classList.remove("is-dragging");
+  if (suggestionList.hasPointerCapture(event.pointerId)) {
+    suggestionList.releasePointerCapture(event.pointerId);
+  }
+  window.setTimeout(() => {
+    suppressSuggestionClick = false;
+  }, 0);
+});
+
+suggestionList.addEventListener("pointercancel", () => {
+  isDraggingSuggestions = false;
+  didDragSuggestions = false;
+  suggestionList.classList.remove("is-dragging");
+});
+
+suggestionList.addEventListener(
+  "click",
+  (event) => {
+    if (!suppressSuggestionClick) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressSuggestionClick = false;
+  },
+  true,
+);
+
 taskTypeSelect.addEventListener("change", () => {
   const selectedType = taskTypeSelect.value;
   if (!isCreatableOfflineTaskType(selectedType)) {
@@ -684,6 +848,10 @@ taskTypeSelect.addEventListener("change", () => {
 });
 
 taskQuantityInput.addEventListener("input", () => {
+  const selectedType = taskTypeSelect.value;
+  if (isCreatableOfflineTaskType(selectedType)) {
+    updateTaskDurationHint(selectedType);
+  }
   if (!isCreatingTask) {
     setTaskCreateState("idle");
   }

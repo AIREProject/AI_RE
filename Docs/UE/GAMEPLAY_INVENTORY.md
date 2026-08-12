@@ -269,3 +269,16 @@ single-flight로 병합합니다. 진행 중인 저장이 있으면 최신 값�
 Backend HTTP, Outbox, Offline Settlement와 모바일 상태 조회는 포함하지 않으며, 실제 외부
 정산은 후속 계약 Gate 이후 별도 Task에서 다룹니다. 즉 이 저장은 PC 로컬 SaveGame이며
 Backend Inventory 동기화를 의미하지 않습니다.
+
+## 9. AX-P01 제한 Offline Task 결과 적용 경계
+
+AX-P01은 기존 Task API가 확정한 `PlantStem` Gathering과 `ShoddyBandage` Crafting 결과만
+AX-I07 저장 경계에 적용합니다. GameInstance Offline Task Subsystem이 목록과 상태 전이 DTO를
+검증하고, Gameplay Inventory Subsystem은 비용·보상과 문자열 `task_id` ledger를 MAKO 우선·
+Shared Storage fallback 규칙으로 한 번에 계산한 뒤 전량 성공할 때만 commit합니다.
+
+Offline Task ledger는 최대 256개이며 SaveGame format 2 envelope에 함께 저장됩니다. 같은
+Task ID 재적용은 `AlreadyApplied`이며 수량과 revision을 바꾸지 않습니다. 저장 완료 delegate는
+실제 비동기 SaveGame 성공/실패 결과를 coordinator에 전달하며, 기존 Task `claim`은 성공한
+generation 뒤에만 가능합니다. `Claimed`는 별도 Settlement receipt가 아니라 서버 Task 상태입니다.
+이 제한 경계는 범용 AX-I08 Outbox나 AX-I11/I12 전체 Settlement 계약을 대신하지 않습니다.

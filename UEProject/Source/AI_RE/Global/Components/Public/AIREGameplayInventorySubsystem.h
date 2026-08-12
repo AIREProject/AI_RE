@@ -24,6 +24,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 DECLARE_MULTICAST_DELEGATE_OneParam(
 	FAIREInventoryPersistenceReady,
 	const FAIREInventoryPersistenceResult&);
+DECLARE_MULTICAST_DELEGATE_OneParam(
+	FAIREInventoryPersistenceSaveCompleted,
+	const FAIREInventoryPersistenceResult&);
 
 UCLASS()
 class AI_RE_API UAIREGameplayInventorySubsystem : public UGameInstanceSubsystem
@@ -47,6 +50,7 @@ public:
 	FAIREInventoryPersistenceResult RequestInventorySave();
 
 	FAIREInventoryPersistenceReady& OnPersistenceReady();
+	FAIREInventoryPersistenceSaveCompleted& OnPersistenceSaveCompleted();
 
 	bool RegisterPlayerInventory(
 		UAI_REPlayerInventoryComponent* PlayerInventory,
@@ -126,6 +130,9 @@ public:
 	 */
 	FAIREInventoryWorkResult TryStoreMakoWorkReward(
 		const FAIREMakoWorkRewardRequest& Request);
+
+	FAIREOfflineTaskApplyResult TryApplyOfflineTaskResult(
+		const FAIREOfflineTaskApplyRequest& Request);
 
 	FGuid ResetInventorySession(
 		const FAIREInventorySessionScope& NewScope =
@@ -215,6 +222,7 @@ private:
 		bool bPersistent = true);
 	void RecordAppliedImportCandidateId(const FString& CandidateId);
 	void RecordAppliedImportOperationIds(const TArray<FString>& OperationIds);
+	void RecordAppliedOfflineTaskId(const FString& TaskId);
 	void BroadcastContainerChanged(const FAIREContainerState& Container);
 	bool AggregateWorkIngredients(
 		const TArray<FAIREInventoryItemQuantity>& Ingredients,
@@ -311,12 +319,15 @@ private:
 	TArray<FString> AppliedImportCandidateOrder;
 	TSet<FString> AppliedImportOperationIds;
 	TArray<FString> AppliedImportOperationOrder;
+	TSet<FString> AppliedOfflineTaskIds;
+	TArray<FString> AppliedOfflineTaskOrder;
 	TArray<FAIREPersistenceLoadSlotState> PersistenceLoadSlots;
 	TWeakObjectPtr<const UAIRECompanionConfigDataAsset> PendingCompanionConfig;
 	TWeakObjectPtr<UAI_REPlayerInventoryComponent> RegisteredPlayerInventory;
 	TWeakObjectPtr<UAI_REPlayerCombatComponent> RegisteredPlayerCombat;
 	FAIREInventoryPersistedPlayerState CachedPlayerPersistenceState;
 	FAIREInventoryPersistenceReady PersistenceReadyDelegate;
+	FAIREInventoryPersistenceSaveCompleted PersistenceSaveCompletedDelegate;
 	FAIREInventoryPersistenceResult LastPersistenceLoadResult;
 	FAIREInventoryPersistenceResult LastPersistenceSaveResult;
 	uint64 PersistenceEpoch = 0;

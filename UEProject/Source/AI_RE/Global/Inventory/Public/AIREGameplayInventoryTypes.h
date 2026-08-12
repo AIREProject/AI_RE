@@ -431,6 +431,51 @@ struct AI_RE_API FAIREInventoryWorkResult
 	int64 StorageRevision = INDEX_NONE;
 };
 
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREOfflineTaskApplyRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	FString TaskId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	FGuid SessionId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	int64 ExpectedMakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	int64 ExpectedStorageRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	TArray<FAIREInventoryItemQuantity> Costs;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory|Offline")
+	TArray<FAIREInventoryItemQuantity> Rewards;
+};
+
+USTRUCT(BlueprintType)
+struct AI_RE_API FAIREOfflineTaskApplyResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Offline")
+	EAIREInventoryMutationCode Code = EAIREInventoryMutationCode::NotInitialized;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Offline")
+	int64 MakoRevision = INDEX_NONE;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Inventory|Offline")
+	int64 StorageRevision = INDEX_NONE;
+
+	bool WasApplied() const
+	{
+		return Code == EAIREInventoryMutationCode::Succeeded
+			|| Code == EAIREInventoryMutationCode::AlreadyApplied;
+	}
+};
+
 struct AI_RE_API FAIREInventorySessionScope
 {
 	FString ProfileId;

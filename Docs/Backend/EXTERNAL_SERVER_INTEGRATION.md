@@ -11,8 +11,9 @@
 - OpenAPI: [https://traip.mtvs2026.work/openapi.json](https://traip.mtvs2026.work/openapi.json)
 
 2026-08-11 사용자 결정으로 별도 Backend 작업자는 없으며 이후 필요한 Backend, DB, LLM과
-배포 변경도 파트너가 직접 수행합니다. 이번 AX-P01 마감 범위는 새 Backend·LLM 기능 없이
-기존 API와 UE Local Work를 연결하는 것으로 제한합니다.
+배포 변경도 파트너가 직접 수행합니다. AX-P01은 2026-08-12 방향 변경으로 UE Local Work가
+아니라 기존 Offline Task API의 서버 경과시간 결과를 UE Inventory에 적용하는 제한된 수직
+슬라이스를 구현합니다.
 
 ## 계약 우선순위
 
@@ -123,21 +124,63 @@ Task DTO가 일치함을 확인하고, WebApp에 Gathering/Crafting 생성과 Ta
 실제 모바일 Gathering/Crafting 생성·목록 확인, 동일 request ID 멱등성, 네 status filter와
 401/403·timeout·network·invalid/malformed JSON UI 매트릭스는 아직 Review 항목입니다.
 
-## 2026-08-11 AX-P01 예약 작업 UE 실행 결정
+2026-08-12 배포 계약에는 사용자가 걸린 예약을 해제할 수 있도록
+`DELETE /api/v1/tasks/{task_id}`를 추가했습니다. `AIRE_WEB`이 자기 프로필의
+`Pending/InProgress`만 삭제할 수 있고 `Completed/Claimed`는 거부합니다. 이 경로가 배포
+OpenAPI와 public WebApp에 반영됐습니다. 배포 API에서 생성한 테스트 Task의 DELETE 204와
+후속 목록 제거를 확인했으며, 실제 모바일 조작은 아직 Review 항목입니다.
 
-2026-08-12 마감에는 새 Backend·LLM 기능을 추가하지 않고 기존 Offline Task API의 GameClient
-`start/complete/claim`을 UE Local Gathering/Crafting Work와 연결하는 Prototype을 우선합니다.
-Mobile이 생성한 Task는 게임 실행 뒤 UE가 요청 시 한 번 조회하며, allowlist된 Gathering 한
-종류와 UE에서 검증된 Crafting Recipe 한 종류만 실제 WorkOrder로 변환합니다.
+## 2026-08-12 AX-P01 기존 Offline Task API Prototype
 
-Local Work와 Inventory 저장이 성공한 뒤에만 Task를 complete/claim하고, 같은 `task_id`를 local
-Inventory persistence ledger에 함께 기록해 재조회·재시작 중복 지급을 막습니다. WebClient는
-계속 start/complete/claim을 호출하지 않으며 polling도 추가하지 않습니다.
+AX-P01은 새 Settlement endpoint나 DB table을 추가하지 않고 배포된 다음 경로만 사용합니다.
 
-이 흐름은 게임이 꺼진 동안 서버가 작업과 보상을 계산하는 Offline Simulation이 아닙니다.
-`Claimed`도 계속 서버 Task 상태이며 UE Inventory settlement receipt가 아닙니다. Game State
-Snapshot, Settlement ledger, apply/ack receipt와 모바일 Inventory 표시는 AX-I09~I12 및
-AX-W03/W04에 남고, Prototype 성공만으로 AX-G3/AX-G4를 완료 처리하지 않습니다.
+```text
+GET  /api/v1/tasks?save_slot_id=demo-slot-1
+POST /api/v1/tasks/{task_id}/start
+POST /api/v1/tasks/{task_id}/complete
+POST /api/v1/tasks/{task_id}/claim
+```
+
+Web 예약 취소는 별도 `DELETE /api/v1/tasks/{task_id}` 경계이며 UE 정산 흐름에는 사용하지
+않습니다. 취소된 Task를 UE가 이전 목록에서 처리하려 해도 서버의 후속 전이는 실패하고 local
+Inventory를 변경하지 않습니다.
+
+UE는 AX-I07 복원 뒤 목록을 한 번 조회합니다. 지원 Task의 `Pending`은 start 후 complete,
+`InProgress`는 complete, `Completed`는 Inventory 적용 대상으로 처리합니다. 비용·보상과 안정
+문자열 `task_id` ledger를 하나의 local Inventory commit으로 적용하고 SaveGame 성공 뒤에만
+claim합니다. 이미 저장된 `task_id`가 다시 `Completed`로 조회되면 Inventory를 바꾸지 않고
+claim만 복구합니다. timeout 뒤 자동 retry나 polling은 하지 않습니다.
+
+클라이언트 allowlist는 수량 1~50의 `PlantStem` Gathering과 `ShoddyBandage` Crafting입니다.
+Gathering은 결과 수량만큼 `PlantStem`을 지급하고 Crafting은 결과 1개당 `PlantStem` 2개를
+차감한 뒤 `ShoddyBandage` 1개를 지급합니다. 이 비용·보상 mapping은 현재 Task 응답에 별도
+receipt가 없기 때문에 검증된 Task type/item 조합에 한해 UE가 소유합니다.
+
+현재 배포 Backend는 관리자 Offline Task 정책을 Task 생성 시 snapshot합니다. 기본 정책은
+`PlantStem` Gathering 5초/개와 `ShoddyBandage` Crafting 10초/개이며, 클라이언트는 이 값을
+계산하거나 덮어쓰지 않습니다. complete 시 첫 단위 미만이면
+`InProgress(progress_quantity=0, result_quantity=null)`을 유지합니다. UE는 이를 정상적인
+미완료 응답으로 받아 Inventory와 Claim을 건드리지 않고 다음 실행·수동 동기화에서 다시
+계산합니다.
+
+Swagger Admin의
+`/api/v1/admin/offline-task-policies`에서 `gathering-plant-stem`과
+`crafting-shoddy-bandage`의 `seconds_per_item`을 PATCH할 수 있으며 기본값은 각각 5초와
+10초입니다. 새 Task는 생성 시 정책값을 snapshot하므로 기존 Task에는 소급 적용되지 않습니다.
+migration 0008과 관련 OpenAPI가 배포됐습니다. 관리자 인증 정책값 직접 조회와 실제 Crafting
+E2E는 아직 별도 검증 항목입니다.
+
+수량 Task는 생성 즉시 `InProgress`로 시작하며 GET 목록은 서버 시간 기준
+`progress_quantity`를 반환합니다. Web은 자동 polling 없이 사용자가 새로고침할 때만 이를
+갱신하고, UE가 complete를 호출한 시점의 정수 수량을 최종 확정합니다.
+
+배포 스모크에서 Gathering 3개 Task는 생성 직후 진행량 0, 6초 뒤 진행량 1을 반환했고,
+정리 DELETE 뒤 목록에서 사라졌습니다. 이 증거는 서버시간 Gathering과 예약 삭제의 정상
+경로만 확인하며 UE apply/save/claim 및 Crafting 비용·보상 경로를 대신하지 않습니다.
+
+`Claimed`는 기존 서버 Task 상태이며 별도 Settlement receipt가 아닙니다. 이 Prototype은
+generic Outbox, 전체 Game State Sync와 범용 AX-I11/I12를 완료하지 않으며 AX-G3/AX-G4 완료
+근거로 사용하지 않습니다.
 
 ## 연동 Gate
 

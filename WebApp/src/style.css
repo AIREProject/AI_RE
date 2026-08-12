@@ -293,8 +293,17 @@ button {
   display: flex;
   gap: 7px;
   overflow-x: auto;
-  padding-bottom: 10px;
+  overscroll-behavior-inline: contain;
+  padding: 0 18px 10px 0;
+  cursor: grab;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+}
+
+.suggestion-list.is-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .suggestion-list::-webkit-scrollbar {
@@ -613,6 +622,30 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.task-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.task-delete-button {
+  padding: 5px 8px;
+  border: 1px solid #e8c9c1;
+  border-radius: 999px;
+  color: #9a493d;
+  background: #fff8f5;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.task-delete-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .task-card-type,
