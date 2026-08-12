@@ -99,7 +99,7 @@ AActor* UAI_RETargetScannerComponent::ScanForwardForTarget(float Radius, float D
 
 void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 {
-	// 기획자님 요청에 따라 거리 3m(300)로 상시 스캔 (UI 프리체크용)
+	// 거리 3m(300)로 상시 스캔 (UI 프리체크용)
 	AActor* HitActor = ScanForwardForTarget(45.0f, 300.0f, ECC_Visibility, false); 
 	
 	if (HitActor && HitActor->Implements<UAI_REInteractableInterface>())

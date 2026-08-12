@@ -40,7 +40,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat|Equipment")
 	TObjectPtr<UAI_REItemDataAsset> DefaultUnarmedWeapon;
 
-	// 스태미나 소모량 (기획자 요청으로 보존, 0으로 설정하면 소모 안함)
+	// 스태미나 소모량 (0으로 설정하면 소모 안함)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Combat")
 	float AttackStaminaCost = 15.f;
 
