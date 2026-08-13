@@ -73,6 +73,9 @@ struct AI_RE_API FAIRECompanionWorkOrderRequest
 	FName RecipeRowId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Work")
+	bool bRequireMakoDestination = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Work")
 	FAIRECompanionStorageTransferPayload StorageTransfer;
 };
 
@@ -96,6 +99,9 @@ struct AI_RE_API FAIRECompanionWorkOrderSnapshot
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Work")
 	FName RecipeRowId = NAME_None;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Work")
+	bool bRequireMakoDestination = false;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Work")
 	FAIRECompanionStorageTransferPayload StorageTransfer;

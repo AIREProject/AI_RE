@@ -3,6 +3,7 @@
 #include "Chat/Context/AIREWorldContextBuilder.h"
 #include "Chat/Transport/AIREChatJsonAdapter.h"
 #include "Chat/Contracts/AIREChatSettings.h"
+#include "Command/AIRECompanionCommandGatewayComponent.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Dom/JsonObject.h"
 #include "HttpModule.h"
@@ -158,6 +159,12 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 	const FAIREWorldContextV1 WorldContext = FAIREWorldContextBuilder::Build(
 		Cast<AAIRECompanionCharacter>(GetOwner()),
 		ChatContext.LocationId);
+	const AAIRECompanionCharacter* Character =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	const UAIRECompanionCommandGatewayComponent* Gateway =
+		IsValid(Character) ? Character->GetCommandGatewayComponent() : nullptr;
+	const bool bCraftItemRuntimeAvailable = IsValid(Gateway)
+		&& Gateway->CanAdvertiseCraftItem(WorldContext);
 	FString SerializationError;
 	if (!FAIREChatJsonAdapter::BuildInGameRequest(
 		ChatContext,
@@ -167,6 +174,7 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 		ActiveRequestId,
 		ActiveMessageId,
 		UserMessage,
+		bCraftItemRuntimeAvailable,
 		ActiveHttpBody,
 		ActiveWebSocketFrame,
 		SerializationError))

@@ -15,7 +15,8 @@ enum class EAIRECommandType : uint8
 	CancelCurrent,
 	GatherResource,
 	Attack,
-	Switch
+	Switch,
+	CraftItem
 };
 
 UENUM(BlueprintType)
@@ -57,6 +58,10 @@ enum class EAIRECommandResultReason : uint8
 	NavigationFailed,
 	WorkOrderUnavailable,
 	WorkOrderCancellationFailed,
+	RecipeUnavailable,
+	MaterialsUnavailable,
+	WorkbenchUnavailable,
+	WorkOrderFailed,
 	ThreatUnavailable,
 	ThreatTargetLost,
 	ReplacedByNewCommand,
@@ -118,6 +123,15 @@ struct AI_RE_API FAIRECommandCandidate
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Command")
 	bool bHasGatherQuantity = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Command")
+	FString CraftRecipeId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Command")
+	int32 CraftQuantity = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Command")
+	bool bHasCraftQuantity = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Command")
 	bool bHasUnsupportedParameters = false;

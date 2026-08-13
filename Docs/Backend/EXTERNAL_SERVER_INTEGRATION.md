@@ -85,6 +85,12 @@ Follow, HoldPosition, ReturnToPlayer, active WorkOrder Cancel과 UE-selected Thr
 GatherResource와 EngageTarget, DistractTarget, MoveToLocation, Switch는 명시적인
 `UnsupportedExecution`으로 끝나며 gameplay mutation을 만들지 않습니다.
 
+2026-08-13 사용자 결정으로 `GatherResource`는 후속 InGame 수직 슬라이스에 포함합니다. 현재
+배포·UE 동작은 계속 `UnsupportedExecution`이며, 구현 시 명시적 채집 요청만 후보로 허용하고
+UE가 MAKO 중심의 bounded query에서 가장 가까운 유효·비고갈 자원을 다시 선택합니다. 첫 대상인
+`나무`의 Backend 안정 Resource ID와 UE Gameplay Tag, 반경·최대 후보 수는 계약 동결 뒤
+광고를 활성화합니다. Context의 `nearby_resources` 사실만으로 명령을 생성하거나 실행하지 않습니다.
+
 Editor MCP로 `ST_AIRECompanion_Local`에 production DirectCommand Task와 property binding,
 `IdleNearPlayer`를 구성하고 Compile·Save했습니다. 사용자는 실제 Game Chat PIE에서 Hold lease,
 Follow 200cm 정지·재추적과 Combat 선점을 확인했습니다. 직접 ReturnToPlayer 후보,
@@ -129,11 +135,10 @@ typed `ChatRequest.game_context`를 같은 방식으로 검증한다.
   빈 배열일 수 있다. 이는 7개 required field를 유지하는 정상 Context이며 Backend가 임의 ID로
   보충하지 않는다.
 
-이 절은 채택 Backend의 로컬 목표 계약이다. 2026-08-13 현재 배포
-`https://traip.mtvs2026.work/openapi.json`은 `ChatRequest.game_context`를 아직 generic
-object로 노출한다. 따라서 배포 OpenAPI 반영, 배포 정상/오류/oversize smoke 또는 실제
-UE↔Backend 왕복 성공을 이 문서가 주장하지 않는다. 배포가 갱신될 때까지 클라이언트는 이
-차이를 계약 불일치로 기록하고 임의의 양쪽 형식을 동시에 지원하지 않는다.
+2026-08-13 배포 `https://traip.mtvs2026.work/openapi.json`을 다시 확인한 결과
+`ChatRequest.game_context`는 `GameContextV1 | null`이고 7개 field가 모두 required이며
+`additionalProperties=false`다. AX-I05 Context v1 OpenAPI 불일치는 해소됐지만 정상/오류/oversize
+runtime smoke와 실제 UE↔Backend 왕복 성공은 아직 주장하지 않는다.
 
 2026-08-13 AX-I05 로컬 구현은 전체 Backend pytest 574건, Ruff와 mypy를 통과해
 완료했다. AX-I04는 사용자 환경 UE 컴파일에 성공했고 Automation
@@ -141,10 +146,42 @@ UE↔Backend 왕복 성공을 이 문서가 주장하지 않는다. 배포가 �
 Success다. fixture 기반 PIE state mutation은 사용자 결정으로 생략했으며 성공 근거로 사용하지
 않는다. 실제 Context v1 payload와 UE↔배포 Backend gameplay 왕복은 AX-I06 실제 플레이 Gate로
 이관했고, Gate 완료 전에는 AX-I04/05 왕복을 검증 완료로 표현하지 않는다.
-이후 서버에 접근할 수 없어 배포 적용이나 추가 runtime 확인은 수행하지 못했다. 사용자 결정에
-따라 구현 작업은 완료로 닫고, 서버 접근 복구 뒤 배포 OpenAPI와 smoke를 별도 적용 Gate로
-확인한다. strict 전환 뒤 기존 Game `game_context={}`는 400이므로 AX-I04 full Context producer와
-서버 적용 시점을 맞춰야 한다. Mobile은 Context 생략 또는 `null`을 유지한다.
+같은 확인에서 배포 `CommandType`은 기존 열 가지이며 `Command.CraftItem`은 아직 없다. 따라서
+AX-I06 Backend 계약 배포와 정상·거부 smoke를 먼저 끝내고 UE Craft 광고를 활성화해야 한다.
+strict 전환 뒤 기존 Game `game_context={}`는 400이므로 AX-I04 full Context producer를 사용하며,
+Mobile은 Context 생략 또는 `null`을 유지한다.
+
+## 2026-08-13 AX-I06 CraftItem 로컬 목표 계약
+
+AX-I06은 Backend의 `Command.CraftItem` 후보를 UE의 기존 Crafting WorkOrder에 연결한다. 첫
+allowlist 항목은 다음 하나뿐이며 field 누락·추가, 다른 수량과 다른 Recipe ID는 거부한다.
+
+```json
+{
+  "type": "Command.CraftItem",
+  "parameters": {
+    "recipe_id": "recipe-11",
+    "quantity": 1
+  }
+}
+```
+
+- Backend는 명시적인 철검 제작 요청에만 후보를 만들며 Recipe 질문은 facts-only 대사로 남긴다.
+  Context의 Inventory 또는 workstation 사실만으로 후보를 만들거나 실행하지 않는다.
+- UE protocol mapping은 `recipe-11` → `DT_crafting_recipes` row `IronSword` → result Item ID
+  `Sword_Iron`이다. 표시 이름이나 UObject path를 protocol identity로 사용하지 않는다.
+- UE는 5,000cm 이내 WorldStatic/WorldDynamic overlap에서 유효 작업대를 최대 8개만 수집하고,
+  `Blacksmith` 유형 중 가장 가까운 Actor를 Candidate 수신 시 다시 선택한다. Context에는 같은
+  bounded provider의 stable capability `Workbench.Blacksmith`만 전달한다.
+- Gateway는 Recipe, 수량, 재료, MAKO 결과 슬롯, Inventory revision, active WorkOrder와 Local AI
+  우선순위를 preflight한 뒤에만 WorkOrder를 만든다. Backend timeout·장애·malformed 응답은
+  Inventory, Crafting 또는 Local AI를 변경하지 않는다.
+
+2026-08-13 로컬 Backend 구현은 전체 pytest 592건과 Ruff/mypy를 통과했다. UE source는 사용자
+환경 build와 관련 Automation 5종에 성공했다. 이후 명시적 사용자 요청으로 Unreal MCP를 사용해
+`Sword_Iron`, `IronIngot`, `WoodHandle` Item DataAsset을 생성하고, 실제 DataTable row
+`IronSword`가 `IronIngot×3`, `WoodHandle×1`, `Sword_Iron×1`, Blacksmith, 3초임을 확인했다.
+Inventory/PIE 실제 제작과 배포 OpenAPI의 `CraftItem` 반영·정상/거부 smoke는 아직 별도 Gate다.
 
 ## 2026-08-10 AX-W01 Web 배포 기준
 

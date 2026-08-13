@@ -4,6 +4,7 @@
 
 #include "AIREGameplayInventorySaveGame.h"
 #include "AI_REPlayerInventoryComponent.h"
+#include "Core/AIRECompanionConfigDataAsset.h"
 #include "Engine/GameInstance.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/AutomationTest.h"
@@ -180,6 +181,18 @@ public:
 		Inventory.FinalizePersistenceLoad(LoadEpoch);
 	}
 
+	static bool InitializeFreshState(
+		UAIREGameplayInventorySubsystem& Inventory,
+		const UAIRECompanionConfigDataAsset& CompanionConfig)
+	{
+		PrepareTransientSession(Inventory);
+		Inventory.bPersistenceReady = false;
+		Inventory.bPersistenceLoadComplete = true;
+		Inventory.bMakoInventoryInitialized = false;
+		Inventory.bShouldSeedFreshSharedStorage = true;
+		return Inventory.EnsureMakoInventoryInitialized(&CompanionConfig);
+	}
+
 	static uint64 PrimeSaveCompletion(
 		UAIREGameplayInventorySubsystem& Inventory,
 		const int64 LatestGeneration,
@@ -264,6 +277,91 @@ namespace
 		Request.Count = Count;
 		return Request;
 	}
+
+	int32 GetItemCount(
+		const FAIREInventoryContainerSnapshot& Snapshot,
+		const FName ItemId)
+	{
+		int32 Count = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack : Snapshot.ItemStacks)
+		{
+			if (Stack.ItemId == ItemId)
+			{
+				Count += Stack.Count;
+			}
+		}
+		return Count;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAIREGameplayInventoryFreshSharedStorageSeedTest,
+	"AIRE.Inventory.SaveGame.FreshSharedStorageSeed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAIREGameplayInventoryFreshSharedStorageSeedTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	TStrongObjectPtr<UAIREGameplayInventorySubsystem> Fresh = MakeInventory();
+	TStrongObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig(
+		NewObject<UAIRECompanionConfigDataAsset>());
+	TestTrue(
+		TEXT("Fresh state initializes"),
+		FAIREGameplayInventoryPersistenceTestAccess::InitializeFreshState(
+			*Fresh,
+			*CompanionConfig));
+
+	FAIREInventoryContainerSnapshot FreshStorage;
+	TestTrue(
+		TEXT("Fresh shared storage is available"),
+		Fresh->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			FreshStorage));
+	TestEqual(
+		TEXT("Fresh save receives three iron ingots"),
+		GetItemCount(FreshStorage, FName(TEXT("IronIngot"))),
+		3);
+	TestEqual(
+		TEXT("Fresh save receives one wood handle"),
+		GetItemCount(FreshStorage, FName(TEXT("WoodHandle"))),
+		1);
+
+	FAIREInventorySaveEnvelope Envelope;
+	EAIREInventoryPersistenceResultCode BuildCode =
+		EAIREInventoryPersistenceResultCode::NotStarted;
+	TestTrue(
+		TEXT("Seeded fresh state builds a save envelope"),
+		FAIREGameplayInventoryPersistenceTestAccess::BuildEnvelope(
+			*Fresh,
+			1,
+			Envelope,
+			BuildCode));
+
+	TStrongObjectPtr<UAIREGameplayInventorySubsystem> Restored = MakeInventory();
+	FAIREGameplayInventoryPersistenceTestAccess::FinalizeLoadFromMemory(
+		*Restored,
+		TOptional<FAIREInventorySaveEnvelope>(Envelope),
+		TOptional<FAIREInventorySaveEnvelope>());
+	TestTrue(
+		TEXT("Existing save initialization is a no-op"),
+		Restored->EnsureMakoInventoryInitialized(CompanionConfig.Get()));
+
+	FAIREInventoryContainerSnapshot RestoredStorage;
+	TestTrue(
+		TEXT("Restored shared storage is available"),
+		Restored->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			RestoredStorage));
+	TestEqual(
+		TEXT("Existing save does not duplicate iron ingots"),
+		GetItemCount(RestoredStorage, FName(TEXT("IronIngot"))),
+		3);
+	TestEqual(
+		TEXT("Existing save does not duplicate wood handles"),
+		GetItemCount(RestoredStorage, FName(TEXT("WoodHandle"))),
+		1);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -894,6 +992,15 @@ bool FAIREGameplayInventorySaveGameValidationFallbackTest::RunTest(
 			UAIREGameplayInventorySubsystem::GetMakoContainerId(),
 			SafeEmptyMako));
 	TestTrue(TEXT("Safe empty does not seed items"), SafeEmptyMako.ItemStacks.IsEmpty());
+	FAIREInventoryContainerSnapshot SafeEmptyStorage;
+	TestTrue(
+		TEXT("Safe empty shared storage is ready"),
+		SafeEmptyTarget->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			SafeEmptyStorage));
+	TestTrue(
+		TEXT("Invalid saves do not receive fresh shared storage items"),
+		SafeEmptyStorage.ItemStacks.IsEmpty());
 
 	FAIREGameplayInventoryPersistenceTestAccess::SetStableEquipment(
 		*Source,

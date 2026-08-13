@@ -2,12 +2,12 @@
 
 - 관련 Milestone: `M03 Companion Local AI`
 - 관련 Task: `M03-E08-T01`, `M03-E07-T02`, `M03-E08-T02`, `M03-E08-T03`, `M03-E08-T05`, `M03-E08-T06`
-- 현재 상태: M03-E08-T01·M03-E07-T02·M03-E08-T05 Review,
+- 현재 상태: M03-E08-T01·M03-E07-T02 Review, M03-E08-T05 Planned,
   M03-E08-T02·M03-E08-T06 In Progress, M03-E08-T03 Review
   (SaveGame 계약·구현 범위 반영 완료, 사용자 Build/Automation/PIE 대기).
-  최신 UI·물리적 Shared Storage Work C++의 사용자 UBT와 세 Inventory WBP 및
+  최신 UI와 기존 물리적 Shared Storage Work C++의 사용자 UBT, 세 Inventory WBP 및
   `BP_AIRESharedStorage` Compile/Save는 통과했습니다. 리네임 이후 PIE 정상·실패 경로,
-  Storage Rule·Preferred Storage 연결과 두 번째 MAKO 무기 검증은 대기 중입니다.
+  새 논리 Storage Rule과 두 번째 MAKO 무기 검증은 대기 중입니다.
 
 ## 1. 책임과 수명
 
@@ -91,9 +91,9 @@ Player Interactor를 명시적으로 전달해 Storage Panel을 엽니다. `On S
 Blueprint Event를 호출하며, Crafting 책임이 섞이지 않도록
 `AAI_REWorkBenchBase`를 상속하지 않습니다.
 
-MAKO의 물리적 Shared Storage 작업은 Actor의 조정 가능한 `CompanionInteractionPoint` Transform을
-목표로 사용합니다. 이 Scene Component는 접근 위치와 작업 방향만 제공하며 Inventory나
-WorkOrder 상태를 소유하지 않습니다.
+2026-08-13 사용자 결정으로 MAKO 자동 예치·인출은 이 Actor까지 이동하지 않고 Inventory
+Subsystem 안에서 논리적으로 수행합니다. `CompanionInteractionPoint`는 기존 자산 호환을 위해
+남길 수 있지만 MAKO 자동 Transfer의 실행 조건이나 목표로 사용하지 않습니다.
 
 2026-08-04 사용자 PIE 스모크에서 Player 상호작용 시 빈 Shared Storage의 `Revision=0`,
 `Capacity=50`, `ContainerId=AIRE.Inventory.SharedStorage`가 Blueprint Event로 전달되는
@@ -109,7 +109,7 @@ StorageTransfer WorkOrder를 표시하거나 실행하지 않습니다.
 
 정식 명칭은 한국어 `공유 보관함`, 영문 `Shared Storage`입니다. C++ 계약은
 `AAIRESharedStorageActor`, `UAIREStorageInventoryPanelWidget`, `StorageTransfer`,
-`UAIRECompanionStorageAutomationComponent`, `PreferredStorage`,
+`UAIRECompanionStorageAutomationComponent`,
 `AIRE.Inventory.SharedStorage`, `TryTransferPlayerStorage`를 사용합니다. 기존
 `AIRE.Inventory.SharedWarehouse`는 저장된 legacy ID를 정규화하는 exact alias 호환에만
 남깁니다. 기존 이름으로 저장된 C++ Class와 Asset 참조는 `CoreRedirects` 및 Editor asset
@@ -192,17 +192,16 @@ MAKO Inventory가 수용하지 못하면 Shared Storage를 사용합니다. 두 
 기존 수동 `Interact` 획득은 유지하며 먼저 성공한 경로만 Item을 claim합니다. 이 근접
 자동 획득은 AI Perception이나 이동 명령이 아니며, 먼 Item을 찾아 이동하는 행동은 후속
 WorkOrder가 소유합니다. 채집 보상의 `MAKO → Shared Storage` 직접 fallback은 정확한 보상 정산
-예외입니다. MAKO의 일반 자동 예치·인출은 `M03-E08-T05`의 `StorageTransfer` WorkOrder로
-Shared Storage 접근점까지 실제 이동한 뒤 수행하므로 두 경로를 같은 행동으로 취급하지 않습니다.
+예외입니다. MAKO의 일반 자동 예치·인출은 `M03-E08-T05`의 논리 Transfer 정책으로 수행하며,
+Shared Storage 접근점 이동이나 `StorageTransfer` WorkOrder를 생성하지 않습니다.
 
 `UAIRECompanionStorageAutomationComponent`는 Config의 순서가 보장된 Storage Rule을
-`최대 초과 예치 → 최소 미달 인출` 순서로 평가합니다. 명시적으로 설정된 `PreferredStorage`만
-사용하고 Tick 검색은 하지 않습니다. 한 WorkOrder는 현재 Source Stack 하나만 옮기며,
-Equipped Item은 보유량에는 포함하지만 Equipped·Pending Item은 Transfer Source로 사용하지
-않습니다. 실행기는 도착·방향 정렬·선택적 Montage·고정 작업 시간을 마친 뒤 최신 MAKO와
-Shared Storage Snapshot, Session과 Rule을 다시 확인하고 `WorkOrderId`를 mutation ID로 사용해
-`TryTransferItem`을 호출합니다. 전투가 선점하면 기존 `PausedByCombat → Requested` 계약으로
-이동 시간과 작업 시간을 처음부터 다시 시작합니다.
+`최대 초과 예치 → 최소 미달 인출` 순서로 평가합니다. Actor나 접근점을 찾지 않고 Inventory
+Subsystem의 canonical Shared Storage Container를 직접 사용합니다. 한 평가는 현재 Source Stack 하나만 옮기며, Equipped Item은
+보유량에는 포함하지만 Equipped·Pending Item은 Transfer Source로 사용하지 않습니다. 다음 Tick에
+병합된 평가가 최신 MAKO와 Shared Storage Snapshot, Session, 양쪽 revision과 Rule을 다시 확인하고
+새 mutation ID로 `TryTransferItem`을 호출합니다. Transfer는 MAKO 행동 상태를 점유하지 않고,
+전량을 수용할 수 없거나 입력이 stale이면 양쪽 상태를 모두 보존합니다.
 
 두 번째 MAKO Weapon 자산이 없으므로 실제 다중 무기 async 교체·복구 검증 전까지
 T01은 `Review`입니다.
@@ -252,8 +251,10 @@ SaveGame은 `AIRE.Inventory.Local.Primary`와 `AIRE.Inventory.Local.Previous` �
 `generation`과 payload 검증 결과를 함께 확인하고, 유효한 세대 중 가장 높은 generation을
 선택합니다. 최신 세대가 손상·구버전·scope mismatch·content mismatch·검증 실패면 다른
 세대로 fallback합니다. 두 슬롯이 모두 존재하지 않을 때만 load 결과 확정 뒤 Config seed를
-한 번 적용하고, 유효한 복원본에는 seed를 다시 합치지 않습니다. 하나라도 존재하지만 두
-세대가 모두 유효하지 않으면 seed 없이 빈 안전 상태로 준비합니다.
+한 번 적용하며, 이때 AX-I06 첫 제작 검증 재료인 `IronIngot×3`, `WoodHandle×1`도 Shared
+Storage에 지급합니다. 이 초기 상태는 새 세대로 저장하고, 유효한 복원본에는 seed를 다시
+합치지 않습니다. 하나라도 존재하지만 두 세대가 모두 유효하지 않으면 seed 없이 빈 안전
+상태로 준비합니다.
 
 영속 중복 방지 ledger는 mutation result, Work result, import candidate와 import operation을
 각각 최대 256개로 제한하고 deterministic eviction을 사용합니다. 저장된 안정 ID는 다음

@@ -37,6 +37,8 @@ namespace
 		TEXT("Command.Attack"),
 		TEXT("Command.Switch"),
 	};
+	const TCHAR* const CraftItemCommand = TEXT("Command.CraftItem");
+	const TCHAR* const RequiredCraftWorkbench = TEXT("Workbench.Blacksmith");
 
 	FString GetPeriodName(const EAIREGameWorldPeriod Period)
 	{
@@ -384,6 +386,10 @@ namespace
 		{
 			OutType = EAIRECommandType::Switch;
 		}
+		else if (Value == CraftItemCommand)
+		{
+			OutType = EAIRECommandType::CraftItem;
+		}
 		else
 		{
 			return false;
@@ -511,6 +517,7 @@ namespace
 		}
 
 		bool bHasResource = false;
+		bool bHasRecipeId = false;
 		for (const auto& Field : Parameters->Values)
 		{
 			const FString FieldName(*Field.Key);
@@ -577,10 +584,48 @@ namespace
 				continue;
 			}
 
+			if (Type == EAIRECommandType::CraftItem && FieldName == TEXT("recipe_id"))
+			{
+				FString RecipeId;
+				if (!Field.Value.IsValid()
+					|| Field.Value->Type != EJson::String
+					|| !Field.Value->TryGetString(RecipeId)
+					|| !FAIREChatJsonAdapter::IsStableId(RecipeId))
+				{
+					return false;
+				}
+				OutCandidate.CraftRecipeId = MoveTemp(RecipeId);
+				bHasRecipeId = true;
+				continue;
+			}
+
+			if (Type == EAIRECommandType::CraftItem && FieldName == TEXT("quantity"))
+			{
+				double Quantity = 0.0;
+				if (!Field.Value.IsValid()
+					|| Field.Value->Type != EJson::Number
+					|| !Field.Value->TryGetNumber(Quantity)
+					|| Quantity != 1.0)
+				{
+					return false;
+				}
+				OutCandidate.CraftQuantity = 1;
+				OutCandidate.bHasCraftQuantity = true;
+				continue;
+			}
+
 			OutCandidate.bHasUnsupportedParameters = true;
 		}
 
-		return Type != EAIRECommandType::GatherResource || bHasResource;
+		if (Type == EAIRECommandType::GatherResource)
+		{
+			return bHasResource;
+		}
+		if (Type == EAIRECommandType::CraftItem)
+		{
+			return bHasRecipeId && OutCandidate.bHasCraftQuantity;
+		}
+		return true;
 	}
 
 	bool ParseCommandCandidate(
@@ -919,6 +964,7 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 	const FString& RequestId,
 	const FString& MessageId,
 	const FString& UserMessage,
+	const bool bCraftItemRuntimeAvailable,
 	FString& OutHttpBody,
 	FString& OutWebSocketFrame,
 	FString& OutError)
@@ -970,10 +1016,18 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 		TArray<TSharedPtr<FJsonValue>>());
 	Payload->SetObjectField(TEXT("game_context"), GameContext);
 	TArray<TSharedPtr<FJsonValue>> AllowedCommands;
-	AllowedCommands.Reserve(UE_ARRAY_COUNT(FixedAllowedCommands));
+	const bool bCanAdvertiseCraftItem =
+		bCraftItemRuntimeAvailable
+		&& WorldContext.AvailableWorkstations.Contains(RequiredCraftWorkbench);
+	AllowedCommands.Reserve(
+		UE_ARRAY_COUNT(FixedAllowedCommands) + (bCanAdvertiseCraftItem ? 1 : 0));
 	for (const TCHAR* Command : FixedAllowedCommands)
 	{
 		AllowedCommands.Add(MakeShared<FJsonValueString>(Command));
+	}
+	if (bCanAdvertiseCraftItem)
+	{
+		AllowedCommands.Add(MakeShared<FJsonValueString>(CraftItemCommand));
 	}
 	Payload->SetArrayField(TEXT("allowed_commands"), MoveTemp(AllowedCommands));
 	if (!SerializeChatObject(Payload, OutHttpBody))
