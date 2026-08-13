@@ -346,4 +346,5 @@ private:
 	bool bHasPlayerPersistenceState = false;
 	bool bApplyingPlayerPersistenceState = false;
 	bool bMakoInventoryInitialized = false;
+	bool bShouldSeedFreshSharedStorage = false;
 };

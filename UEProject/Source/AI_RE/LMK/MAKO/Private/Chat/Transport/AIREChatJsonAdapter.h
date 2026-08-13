@@ -38,6 +38,7 @@ public:
 		const FString& RequestId,
 		const FString& MessageId,
 		const FString& UserMessage,
+		bool bCraftItemRuntimeAvailable,
 		FString& OutHttpBody,
 		FString& OutWebSocketFrame,
 		FString& OutError);

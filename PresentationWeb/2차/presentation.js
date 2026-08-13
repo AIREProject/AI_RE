@@ -1,5 +1,36 @@
 (() => {
+  const deck = document.getElementById("deck");
+  const slideOrder = [
+    ".slide--cover",
+    ".slide--overview-focus",
+    ".slide--gameplay-video",
+    ".slide--audience",
+    ".slide--differentiation",
+    ".slide--gameplay-loop",
+    ".slide--local-ai",
+    ".slide--world-art",
+    ".character-grid",
+    ".slide--multiplatform",
+    ".slide--mobile-final",
+    ".slide--final-polish",
+    ".team-slide",
+    ".slide--closing",
+    ".slide--appendix-interface",
+    ".slide--generative-ai",
+  ];
+
+  slideOrder.forEach((selector) => {
+    const matched = document.querySelector(selector);
+    const slide = matched?.classList.contains("slide") ? matched : matched?.closest(".slide");
+    if (slide !== null && slide !== undefined) {
+      deck.appendChild(slide);
+    }
+  });
+
   const slides = [...document.querySelectorAll(".slide")];
+  slides.forEach((slide, index) => {
+    slide.setAttribute("aria-label", `${index + 1}. ${slide.dataset.title}`);
+  });
   const menu = document.getElementById("slideMenu");
   const menuList = document.getElementById("menuList");
   const menuToggle = document.getElementById("menuToggle");
@@ -10,21 +41,12 @@
   const currentNumber = document.getElementById("currentNumber");
   const totalNumber = document.getElementById("totalNumber");
   const progressBar = document.getElementById("progressBar");
-  const webappFrame = document.getElementById("webappFrame");
-  const webappExternalLink = document.getElementById("webappExternalLink");
-  const webappReload = document.getElementById("webappReload");
-  const webappExpand = document.getElementById("webappExpand");
-  const phonePresentation = document.querySelector(".phone-presentation");
-  const phoneActions = document.querySelector(".phone-actions");
-  const phoneModal = document.getElementById("phoneModal");
-  const phoneModalStage = document.getElementById("phoneModalStage");
-  const phoneModalClose = document.getElementById("phoneModalClose");
-  const webappPhone = document.getElementById("webappPhone");
-  const webappPhoneScreen = document.querySelector("#webappPhone .phone-screen");
+  const chatDemo = document.querySelector(".chat-demo");
+  const chatViewport = document.querySelector(".chat-demo__viewport");
 
   let currentIndex = 0;
   let touchStartX = null;
-  let phoneTransitionTimer = null;
+  let chatDemoTimers = [];
   let cursorIdleTimer = null;
 
   const formatNumber = (value) => String(value).padStart(2, "0");
@@ -53,79 +75,41 @@
     }, 800);
   };
 
-  const fitWebappPhone = () => {
-    const designWidth = 420;
-    const designHeight = 844;
-    const scale = Math.min(
-      webappPhoneScreen.clientWidth / designWidth,
-      webappPhoneScreen.clientHeight / designHeight,
-    );
-
-    webappFrame.style.transform = `scale(${scale})`;
+  const stopChatDemo = () => {
+    chatDemoTimers.forEach((timer) => window.clearTimeout(timer));
+    chatDemoTimers = [];
+    chatDemo?.querySelectorAll("[data-chat-delay]").forEach((item) => item.classList.remove("is-visible"));
   };
 
-  const configureWebappEmbed = () => {
-    const requestedUrl = new URLSearchParams(window.location.search).get("webapp");
-    const defaultUrl = new URL("https://aire-mako-chat.lunau1f320.chatgpt.site/");
+  const scrollChatToBottom = (behavior = "smooth") => {
+    window.requestAnimationFrame(() => {
+      chatViewport?.scrollTo({ top: chatViewport.scrollHeight, behavior });
+    });
+  };
 
-    try {
-      const parsedUrl = requestedUrl === null ? defaultUrl : new URL(requestedUrl);
-      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-        return;
+  const startChatDemo = () => {
+    if (chatDemo === null || chatViewport === null) {
+      return;
+    }
+
+    stopChatDemo();
+    chatViewport.scrollTop = 0;
+
+    chatDemo.querySelectorAll("[data-chat-delay]").forEach((item) => {
+      const showDelay = Number(item.dataset.chatDelay);
+      const hideDelay = Number(item.dataset.chatHide);
+
+      chatDemoTimers.push(window.setTimeout(() => {
+        item.classList.add("is-visible");
+        scrollChatToBottom();
+        chatDemoTimers.push(window.setTimeout(scrollChatToBottom, 560));
+      }, showDelay));
+
+      if (Number.isFinite(hideDelay)) {
+        chatDemoTimers.push(window.setTimeout(() => item.classList.remove("is-visible"), hideDelay));
       }
+    });
 
-      webappFrame.src = parsedUrl.href;
-      webappExternalLink.href = parsedUrl.href;
-    } catch {
-      // Keep the deployed mobile URL when the override is invalid.
-    }
-  };
-
-  const reloadWebapp = () => {
-    const currentSource = webappFrame.src;
-    webappFrame.src = "about:blank";
-    window.setTimeout(() => {
-      webappFrame.src = currentSource;
-    }, 50);
-  };
-
-  const setPhoneModalOpen = (open) => {
-    window.clearTimeout(phoneTransitionTimer);
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (open) {
-      phoneModalStage.appendChild(webappPhone);
-      phoneModal.classList.remove("is-lowering");
-      phoneModal.classList.add("is-open");
-      phoneModal.setAttribute("aria-hidden", "false");
-      window.requestAnimationFrame(() => {
-        phoneModal.classList.add("is-lifting");
-        fitWebappPhone();
-      });
-      phoneTransitionTimer = window.setTimeout(() => {
-        phoneModal.classList.remove("is-lifting");
-        fitWebappPhone();
-        phoneModalClose.focus({ preventScroll: true });
-      }, prefersReducedMotion ? 0 : 940);
-      return;
-    }
-
-    const finishClosing = () => {
-      phonePresentation.insertBefore(webappPhone, phoneActions);
-      phoneModal.classList.remove("is-open", "is-lifting", "is-lowering");
-      phoneModal.setAttribute("aria-hidden", "true");
-      fitWebappPhone();
-      webappExpand.focus({ preventScroll: true });
-    };
-
-    if (prefersReducedMotion) {
-      finishClosing();
-      return;
-    }
-
-    phoneModal.classList.remove("is-lifting");
-    phoneModal.classList.add("is-lowering");
-    phoneTransitionTimer = window.setTimeout(finishClosing, 640);
   };
 
   const setMenuOpen = (open) => {
@@ -159,6 +143,12 @@
     prevButton.disabled = currentIndex === 0;
     nextButton.disabled = currentIndex === slides.length - 1;
     document.title = `${slides[currentIndex].dataset.title} | TRAIP AI : RE`;
+
+    if (slides[currentIndex].contains(chatDemo)) {
+      startChatDemo();
+    } else {
+      stopChatDemo();
+    }
   };
 
   const goToSlide = (index) => {
@@ -188,45 +178,14 @@
   menuToggle.addEventListener("click", () => setMenuOpen(!menu.classList.contains("is-open")));
   menuClose.addEventListener("click", () => setMenuOpen(false));
   menuScrim.addEventListener("click", () => setMenuOpen(false));
-  webappReload.addEventListener("click", reloadWebapp);
-  webappExpand.addEventListener("click", () => setPhoneModalOpen(true));
-  phoneModalClose.addEventListener("click", () => setPhoneModalOpen(false));
-  phoneModal.addEventListener("click", (event) => {
-    if (event.target === phoneModal) {
-      setPhoneModalOpen(false);
-    }
-  });
-  webappFrame.addEventListener("load", fitWebappPhone);
   window.addEventListener("resize", () => {
-    fitWebappPhone();
     scheduleCursorHide();
   });
   document.addEventListener("fullscreenchange", scheduleCursorHide);
   document.addEventListener("mousemove", scheduleCursorHide, { passive: true });
 
-  window.addEventListener("storage", (event) => {
-    if (event.key === "aire.web_device_credentials.v1") {
-      reloadWebapp();
-    }
-  });
-
-  if (typeof ResizeObserver === "function") {
-    new ResizeObserver(fitWebappPhone).observe(webappPhoneScreen);
-  }
-
   document.addEventListener("keydown", (event) => {
     const isMenuOpen = menu.classList.contains("is-open");
-    const isPhoneModalOpen = phoneModal.classList.contains("is-open");
-
-    if (event.key === "Escape" && isPhoneModalOpen) {
-      event.preventDefault();
-      setPhoneModalOpen(false);
-      return;
-    }
-
-    if (isPhoneModalOpen) {
-      return;
-    }
 
     if (event.key === "Escape" && isMenuOpen) {
       event.preventDefault();
@@ -279,8 +238,6 @@
     goToSlide(currentIndex + (delta < 0 ? 1 : -1));
   }, { passive: true });
 
-  configureWebappEmbed();
-  fitWebappPhone();
   updateSlides();
   scheduleCursorHide();
 })();

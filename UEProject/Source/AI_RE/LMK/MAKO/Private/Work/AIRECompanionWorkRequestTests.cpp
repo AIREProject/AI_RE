@@ -10,6 +10,7 @@
 #include "AI_REHarvestableResourceComponent.h"
 #include "AI_REItemActor.h"
 #include "AI_REItemDataAsset.h"
+#include "AI_REWorkBenchBase.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -51,6 +52,7 @@ namespace
 			&& Snapshot.WorkType == EAIRECompanionWorkOrderType::None
 			&& Snapshot.RecipeTable.Get() == nullptr
 			&& Snapshot.RecipeRowId.IsNone()
+			&& !Snapshot.bRequireMakoDestination
 			&& !Snapshot.StorageTransfer.RequestSessionId.IsValid()
 			&& Snapshot.StorageTransfer.ItemId.IsNone()
 			&& Snapshot.StorageTransfer.Count == 0
@@ -66,6 +68,8 @@ namespace
 			&& Left.WorkType == Right.WorkType
 			&& Left.RecipeTable.Get() == Right.RecipeTable.Get()
 			&& Left.RecipeRowId == Right.RecipeRowId
+			&& Left.bRequireMakoDestination
+				== Right.bRequireMakoDestination
 			&& Left.StorageTransfer.RequestSessionId
 				== Right.StorageTransfer.RequestSessionId
 			&& Left.StorageTransfer.Direction
@@ -269,11 +273,13 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 
 	TestTrue(
 		TEXT("Valid Basic workbench recipe creates one WorkOrder"),
-		TryCraft(
+		FAIRECompanionCraftingWorkRequest::TryRequest(
+			CraftWorkOrder.Get(),
 			Workbench,
 			RecipeTable.Get(),
 			TestRecipeRowId,
-			ReturnedWorkOrderId));
+			ReturnedWorkOrderId,
+			true));
 	const FAIRECompanionWorkOrderSnapshot CraftSnapshot =
 		CraftWorkOrder->GetWorkOrderSnapshot();
 	TestTrue(
@@ -286,6 +292,7 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 			&& CraftSnapshot.TargetActor.Get() == Workbench
 			&& CraftSnapshot.RecipeTable.Get() == RecipeTable.Get()
 			&& CraftSnapshot.RecipeRowId == TestRecipeRowId
+			&& CraftSnapshot.bRequireMakoDestination
 			&& CraftSnapshot.State == EAIRECompanionWorkOrderState::Requested);
 	FGuid DuplicateCraftId;
 	TestFalse(
@@ -415,6 +422,7 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 			&& HarvestSnapshot.TargetActor.Get() == ResourceActor
 			&& HarvestSnapshot.RecipeTable.Get() == nullptr
 			&& HarvestSnapshot.RecipeRowId.IsNone()
+			&& !HarvestSnapshot.bRequireMakoDestination
 			&& HarvestSnapshot.State
 				== EAIRECompanionWorkOrderState::Requested);
 	FGuid DuplicateHarvestId;
@@ -569,6 +577,7 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 			&& StorageSnapshot.TargetActor.Get() == StorageActor
 			&& StorageSnapshot.RecipeTable.Get() == nullptr
 			&& StorageSnapshot.RecipeRowId.IsNone()
+			&& !StorageSnapshot.bRequireMakoDestination
 			&& StorageSnapshot.StorageTransfer.RequestSessionId
 				== StorageSessionId
 			&& StorageSnapshot.StorageTransfer.Direction

@@ -4,12 +4,15 @@
 #include "Chat/Contracts/AIREChatTypes.h"
 #include "Command/AIRECompanionCommandTypes.h"
 #include "Components/ActorComponent.h"
+#include "Work/AIRECompanionWorkOrderTypes.h"
 #include "AIRECompanionCommandGatewayComponent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FAIRECompanionCommandResultSignature,
 	const FAIRECommandResult&,
 	Result);
+
+class UDataTable;
 
 UCLASS(ClassGroup = AIRE, meta = (BlueprintSpawnableComponent))
 class AI_RE_API UAIRECompanionCommandGatewayComponent final
@@ -25,6 +28,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Command")
 	bool HasActiveDirectCommand() const;
+
+	bool CanAdvertiseCraftItem(
+		const FAIREWorldContextV1& WorldContext) const;
 
 	bool ReportDirectCommandRunning(const FString& CommandId, int64 Generation);
 	bool ReportDirectCommandSucceeded(
@@ -50,6 +56,11 @@ private:
 	UFUNCTION()
 	void HandleChatResponse(const FAIREChatResult& Result);
 
+	UFUNCTION()
+	void HandleWorkOrderChanged(
+		FAIRECompanionWorkOrderSnapshot PreviousSnapshot,
+		FAIRECompanionWorkOrderSnapshot CurrentSnapshot);
+
 	void EvaluateActiveCommand();
 	bool ValidateCandidate(
 		const FAIRECommandCandidate& Candidate,
@@ -60,6 +71,7 @@ private:
 	bool TryExecuteDirectCommand(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteCancelCurrent(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteAttack(const FAIRECommandCandidate& Candidate);
+	bool TryExecuteCraftItem(const FAIRECommandCandidate& Candidate);
 	void RejectCandidate(
 		const FAIRECommandCandidate& Candidate,
 		EAIRECommandResultReason Reason);
@@ -83,6 +95,11 @@ private:
 
 	UPROPERTY(Transient)
 	TWeakObjectPtr<AActor> ActiveAttackTarget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Companion|Command")
+	TObjectPtr<UDataTable> CraftingRecipeTable;
+
+	FGuid ActiveCraftWorkOrderId;
 
 	TSet<FString> ProcessedCommandIds;
 	TArray<FString> ProcessedCommandOrder;

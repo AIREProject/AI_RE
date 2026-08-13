@@ -9,6 +9,7 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
+#include "Work/AIRECompanionWorkbenchQuery.h"
 #include "Work/AIRECompanionWorkOrderTypes.h"
 
 namespace
@@ -16,9 +17,12 @@ namespace
 	const FName IncludedInventoryItemIds[] =
 	{
 		TEXT("Branch"),
+		TEXT("IronIngot"),
+		TEXT("Sword_Iron"),
 		TEXT("PlantStem"),
 		TEXT("ShoddyBandage"),
 		TEXT("Stone"),
+		TEXT("WoodHandle"),
 	};
 
 	bool IsWorldContextStableId(const FString& Value)
@@ -256,7 +260,10 @@ FAIREWorldContextV1 FAIREWorldContextBuilder::Build(
 		Context.Inventories.Add(MoveTemp(Inventory));
 	}
 
-	// Nearby resources and workstations stay empty until a bounded,
-	// authoritative awareness source is available.
+	FAIRECompanionWorkbenchQuery::GetNearbyCapabilityIds(
+		*Companion,
+		Context.AvailableWorkstations);
+	// Nearby resources stay empty until a bounded authoritative resource
+	// awareness source is available.
 	return Context;
 }

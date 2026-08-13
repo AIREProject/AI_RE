@@ -30,6 +30,7 @@ namespace
 			TEXT("request-1"),
 			TEXT("message-1"),
 			TEXT("hello"),
+			false,
 			OutHttpBody,
 			OutWebSocketFrame,
 			OutError);
