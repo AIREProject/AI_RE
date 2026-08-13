@@ -1919,12 +1919,20 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 				: nullptr;
 		if (IsValid(ResourceComponent) && ResourceComponent->IsDepleted())
 		{
+			if (Snapshot.State == EAIRECompanionWorkOrderState::Requested)
+			{
+				InstanceData.WorkOrderComponent->TryStartMoving(
+					Snapshot.WorkOrderId);
+				Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+			}
 			if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
 			{
 				InstanceData.WorkOrderComponent->TryStartWorking(
 					Snapshot.WorkOrderId);
+				Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
 			}
-			if (InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
+			if (Snapshot.State == EAIRECompanionWorkOrderState::Working
+				&& InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
 					Snapshot.WorkOrderId))
 			{
 				CancelOwnedRequests(InstanceData);

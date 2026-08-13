@@ -2,13 +2,21 @@
 
 #include "Command/AIRECompanionCommandGatewayComponent.h"
 
+#include "AI_REHarvestGameplayTags.h"
+#include "AI_REHarvestableResourceActor.h"
+#include "AI_REHarvestableResourceComponent.h"
+#include "AI_REItemActor.h"
+#include "AI_REItemDataAsset.h"
 #include "Chat/AIRECompanionChatComponent.h"
+#include "Components/SphereComponent.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "GameFramework/WorldSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
+#include "UObject/StrongObjectPtr.h"
+#include "Work/AIRECompanionWorkOrderComponent.h"
 
 namespace
 {
@@ -38,6 +46,18 @@ namespace
 		Result.DisplayText = TEXT("ok");
 		Result.CommandCandidates = MoveTemp(Candidates);
 		ChatComponent.OnResponseReceived.Broadcast(Result);
+	}
+
+	void AddResourceQueryCollision(AAI_REHarvestableResourceActor& Resource)
+	{
+		USphereComponent* Collision = NewObject<USphereComponent>(&Resource);
+		Resource.AddInstanceComponent(Collision);
+		Collision->SetupAttachment(Resource.GetRootComponent());
+		Collision->SetSphereRadius(50.0f);
+		Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		Collision->SetCollisionObjectType(ECC_WorldDynamic);
+		Collision->SetCollisionResponseToAllChannels(ECR_Overlap);
+		Collision->RegisterComponent();
 	}
 }
 
@@ -195,16 +215,27 @@ bool FAIRECompanionCommandGatewayLifecycleTest::RunTest(
 		Snapshot.Generation,
 		ReplacementSnapshot.Generation);
 
-	FAIRECommandCandidate Gather = MakeCandidate(
-		TEXT("command-gather"),
+	FAIRECommandCandidate GatherWithQuantity = MakeCandidate(
+		TEXT("command-gather-quantity"),
 		EAIRECommandType::GatherResource);
-	Gather.GatherResource = EAIREGatherResourceKind::Wood;
-	Gather.GatherQuantity = 5;
-	Gather.bHasGatherQuantity = true;
-	EmitCandidates(*ChatComponent, {Gather});
+	GatherWithQuantity.GatherResource = EAIREGatherResourceKind::Wood;
+	GatherWithQuantity.GatherQuantity = 1;
+	GatherWithQuantity.bHasGatherQuantity = true;
+	EmitCandidates(*ChatComponent, {GatherWithQuantity});
 	Snapshot = Gateway->GetDirectCommandSnapshot();
 	TestEqual(
-		TEXT("Unsupported Gather does not mutate the active intent"),
+		TEXT("Gather quantity does not mutate the active intent"),
+		Snapshot.Generation,
+		ReplacementSnapshot.Generation);
+
+	FAIRECommandCandidate GatherWithoutTarget = MakeCandidate(
+		TEXT("command-gather-no-target"),
+		EAIRECommandType::GatherResource);
+	GatherWithoutTarget.GatherResource = EAIREGatherResourceKind::Wood;
+	EmitCandidates(*ChatComponent, {GatherWithoutTarget});
+	Snapshot = Gateway->GetDirectCommandSnapshot();
+	TestEqual(
+		TEXT("Gather with no nearby wood preserves the active intent"),
 		Snapshot.Generation,
 		ReplacementSnapshot.Generation);
 
@@ -228,6 +259,71 @@ bool FAIRECompanionCommandGatewayLifecycleTest::RunTest(
 	TestFalse(
 		TEXT("Terminal completion clears the direct snapshot"),
 		Gateway->HasActiveDirectCommand());
+
+	AAI_REHarvestableResourceActor* Resource =
+		TestWorld->SpawnActor<AAI_REHarvestableResourceActor>(
+			FVector(200.0f, 0.0f, 0.0f),
+			FRotator::ZeroRotator,
+			SpawnParameters);
+	if (!TestNotNull(TEXT("Gather resource is spawned"), Resource))
+	{
+		return false;
+	}
+	AddResourceQueryCollision(*Resource);
+	TStrongObjectPtr<UAI_REItemDataAsset> RewardItem(
+		NewObject<UAI_REItemDataAsset>());
+	RewardItem->ItemId = FName(TEXT("AIRE.Test.GatherReward"));
+	Resource->ItemActorClass = AAI_REItemActor::StaticClass();
+	Resource->GetHarvestableResourceComponent()->SetResourceDefaults(
+		AI_REHarvestGameplayTags::Resource_Wood,
+		RewardItem.Get(),
+		1,
+		25.0f);
+
+	FAIRECommandCandidate Gather = MakeCandidate(
+		TEXT("command-gather"),
+		EAIRECommandType::GatherResource);
+	Gather.GatherResource = EAIREGatherResourceKind::Wood;
+	EmitCandidates(*ChatComponent, {Gather});
+	UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+		Companion->GetWorkOrderComponent();
+	const FAIRECompanionWorkOrderSnapshot GatherSnapshot =
+		WorkOrderComponent->GetWorkOrderSnapshot();
+	TestTrue(
+		TEXT("Gather creates a Harvesting WorkOrder"),
+		GatherSnapshot.WorkOrderId.IsValid()
+			&& GatherSnapshot.WorkType == EAIRECompanionWorkOrderType::Harvesting
+			&& GatherSnapshot.TargetActor.Get() == Resource);
+	TestTrue(
+		TEXT("Gather enters Moving"),
+		WorkOrderComponent->TryStartMoving(GatherSnapshot.WorkOrderId));
+	TestTrue(
+		TEXT("Gather enters Working"),
+		WorkOrderComponent->TryStartWorking(GatherSnapshot.WorkOrderId));
+	TestTrue(
+		TEXT("Gather completes"),
+		WorkOrderComponent->TryCompleteWorkOrder(GatherSnapshot.WorkOrderId));
+	TestFalse(
+		TEXT("Gather terminal transition is exact-once"),
+		WorkOrderComponent->TryCompleteWorkOrder(GatherSnapshot.WorkOrderId));
+
+	FAIRECommandCandidate GatherToCancel = MakeCandidate(
+		TEXT("command-gather-cancelled"),
+		EAIRECommandType::GatherResource);
+	GatherToCancel.GatherResource = EAIREGatherResourceKind::Wood;
+	EmitCandidates(*ChatComponent, {GatherToCancel});
+	const FGuid GatherToCancelId =
+		WorkOrderComponent->GetWorkOrderSnapshot().WorkOrderId;
+	EmitCandidates(
+		*ChatComponent,
+		{MakeCandidate(TEXT("command-cancel-gather"), EAIRECommandType::CancelCurrent)});
+	TestTrue(
+		TEXT("CancelCurrent cancels Gather"),
+		WorkOrderComponent->GetWorkOrderSnapshot().State
+			== EAIRECompanionWorkOrderState::Cancelled);
+	TestFalse(
+		TEXT("Cancelled Gather ignores late completion"),
+		WorkOrderComponent->TryCompleteWorkOrder(GatherToCancelId));
 
 	EmitCandidates(
 		*ChatComponent,

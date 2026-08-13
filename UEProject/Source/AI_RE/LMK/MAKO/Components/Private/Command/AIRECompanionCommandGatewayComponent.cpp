@@ -1,6 +1,8 @@
 #include "Command/AIRECompanionCommandGatewayComponent.h"
 
 #include "AI_RECraftingTypes.h"
+#include "AI_REHarvestGameplayTags.h"
+#include "AI_REHarvestableResourceActor.h"
 #include "AI_REItemDataAsset.h"
 #include "AI_REItemSubsystem.h"
 #include "AIREGameplayInventoryTypes.h"
@@ -15,6 +17,8 @@
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "Work/AIRECompanionCraftingWorkRequest.h"
+#include "Work/AIRECompanionHarvestableResourceQuery.h"
+#include "Work/AIRECompanionHarvestWorkRequest.h"
 #include "Work/AIRECompanionWorkbenchQuery.h"
 #include "AI_REWorkBenchBase.h"
 #include "Engine/World.h"
@@ -29,7 +33,6 @@ namespace
 {
 	constexpr int32 MaxProcessedCommandIds = 256;
 	constexpr int32 CommandMaxStableIdLength = 128;
-	constexpr int32 MaxGatherQuantity = 50;
 	// Backend와 GameClient가 서로 다른 호스트에서 실행되므로 소규모 NTP 오차를 허용한다.
 	// Candidate 자체의 수명과 로컬 만료 검사는 아래에서 별도로 엄격하게 유지한다.
 	constexpr double FutureToleranceSeconds = 30.0;
@@ -92,6 +95,12 @@ namespace
 		return Type == EAIRECommandType::Follow
 			|| Type == EAIRECommandType::HoldPosition
 			|| Type == EAIRECommandType::ReturnToPlayer;
+	}
+
+	bool IsWorkOrderCommandType(const EAIRECommandType Type)
+	{
+		return Type == EAIRECommandType::GatherResource
+			|| Type == EAIRECommandType::CraftItem;
 	}
 
 	bool IsSameActiveCommand(
@@ -289,14 +298,14 @@ void UAIRECompanionCommandGatewayComponent::EvaluateActiveCommand()
 	const FDateTime NowUtc = FDateTime::UtcNow();
 	if (NowUtc >= ActiveCandidate.ExpiresAtUtc)
 	{
-		if (ActiveCandidate.Type == EAIRECommandType::CraftItem)
+		if (IsWorkOrderCommandType(ActiveCandidate.Type))
 		{
 			AAIRECompanionCharacter* Character =
 				Cast<AAIRECompanionCharacter>(GetOwner());
 			UAIRECompanionWorkOrderComponent* WorkOrderComponent =
 				IsValid(Character) ? Character->GetWorkOrderComponent() : nullptr;
-			const FGuid ExpiredWorkOrderId = ActiveCraftWorkOrderId;
-			ActiveCraftWorkOrderId.Invalidate();
+			const FGuid ExpiredWorkOrderId = ActiveWorkOrderId;
+			ActiveWorkOrderId.Invalidate();
 			if (IsValid(WorkOrderComponent) && ExpiredWorkOrderId.IsValid())
 			{
 				WorkOrderComponent->TryCancelWorkOrder(ExpiredWorkOrderId);
@@ -470,13 +479,10 @@ bool UAIRECompanionCommandGatewayComponent::ValidateCandidate(
 	if (Candidate.Type == EAIRECommandType::GatherResource)
 	{
 		const bool bResourceIsValid = Candidate.GatherResource
-			== EAIREGatherResourceKind::Wood
-			|| Candidate.GatherResource == EAIREGatherResourceKind::Stone;
-		const bool bQuantityIsValid = !Candidate.bHasGatherQuantity
-			? Candidate.GatherQuantity == 0
-			: Candidate.GatherQuantity > 0
-				&& Candidate.GatherQuantity <= MaxGatherQuantity;
-		if (!bResourceIsValid || !bQuantityIsValid || bHasTargetId)
+			== EAIREGatherResourceKind::Wood;
+		const bool bQuantityIsAbsent = !Candidate.bHasGatherQuantity
+			&& Candidate.GatherQuantity == 0;
+		if (!bResourceIsValid || !bQuantityIsAbsent || bHasTargetId)
 		{
 			OutReason = EAIRECommandResultReason::InvalidParameters;
 			return false;
@@ -568,12 +574,13 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteCandidate(
 		return TryExecuteCancelCurrent(Candidate);
 	case EAIRECommandType::Attack:
 		return TryExecuteAttack(Candidate);
+	case EAIRECommandType::GatherResource:
+		return TryExecuteGatherResource(Candidate);
 	case EAIRECommandType::CraftItem:
 		return TryExecuteCraftItem(Candidate);
 	case EAIRECommandType::EngageTarget:
 	case EAIRECommandType::DistractTarget:
 	case EAIRECommandType::MoveToLocation:
-	case EAIRECommandType::GatherResource:
 	case EAIRECommandType::Switch:
 		RejectCandidate(
 			Candidate,
@@ -689,9 +696,22 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteCancelCurrent(
 
 	const FAIRECompanionWorkOrderSnapshot Snapshot =
 		WorkOrderComponent->GetWorkOrderSnapshot();
+	const bool bCancelsTrackedCommand = bHasActiveCommand
+		&& IsWorkOrderCommandType(ActiveCandidate.Type)
+		&& Snapshot.WorkOrderId.IsValid()
+		&& ActiveWorkOrderId.IsValid()
+		&& ActiveWorkOrderId == Snapshot.WorkOrderId;
+	if (bCancelsTrackedCommand)
+	{
+		ActiveWorkOrderId.Invalidate();
+	}
 	if (!Snapshot.WorkOrderId.IsValid()
 		|| !WorkOrderComponent->TryCancelWorkOrder(Snapshot.WorkOrderId))
 	{
+		if (bCancelsTrackedCommand && bHasActiveCommand)
+		{
+			ActiveWorkOrderId = Snapshot.WorkOrderId;
+		}
 		RejectCandidate(
 			Candidate,
 			EAIRECommandResultReason::WorkOrderCancellationFailed);
@@ -797,6 +817,90 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteAttack(
 		return true;
 	}
 
+	World->GetTimerManager().SetTimer(
+		EvaluationTimerHandle,
+		FTimerDelegate::CreateUObject(
+			this,
+			&UAIRECompanionCommandGatewayComponent::EvaluateActiveCommand),
+		EvaluationPeriodSeconds,
+		true);
+	return true;
+}
+
+bool UAIRECompanionCommandGatewayComponent::TryExecuteGatherResource(
+	const FAIRECommandCandidate& Candidate)
+{
+	if (Candidate.GatherResource != EAIREGatherResourceKind::Wood)
+	{
+		RejectCandidate(Candidate, EAIRECommandResultReason::ResourceUnavailable);
+		return false;
+	}
+	if (HasHigherPriorityBehavior())
+	{
+		RejectCandidate(
+			Candidate,
+			EAIRECommandResultReason::HigherPriorityBehaviorActive);
+		return false;
+	}
+
+	AAIRECompanionCharacter* Character =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+		IsValid(Character) ? Character->GetWorkOrderComponent() : nullptr;
+	if (!IsValid(Character)
+		|| !IsValid(WorkOrderComponent)
+		|| WorkOrderComponent->HasActiveWorkOrder())
+	{
+		RejectCandidate(Candidate, EAIRECommandResultReason::WorkOrderUnavailable);
+		return false;
+	}
+
+	AAI_REHarvestableResourceActor* ResourceActor =
+		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(
+			*Character,
+			AI_REHarvestGameplayTags::Resource_Wood);
+	if (!IsValid(ResourceActor))
+	{
+		RejectCandidate(Candidate, EAIRECommandResultReason::ResourceUnavailable);
+		return false;
+	}
+
+	FGuid WorkOrderId;
+	if (!FAIRECompanionHarvestWorkRequest::TryRequest(
+			WorkOrderComponent,
+			ResourceActor,
+			WorkOrderId))
+	{
+		RejectCandidate(Candidate, EAIRECommandResultReason::WorkOrderUnavailable);
+		return false;
+	}
+
+	if (bHasActiveCommand)
+	{
+		CancelActiveCommand(EAIRECommandResultReason::ReplacedByNewCommand);
+	}
+	ActiveCandidate = Candidate;
+	ActiveAttackTarget.Reset();
+	ActiveWorkOrderId = WorkOrderId;
+	DirectCommandSnapshot = FAIREDirectCommandSnapshot();
+	bHasActiveCommand = true;
+	bActiveCommandRunning = false;
+	++Generation;
+	BroadcastResult(
+		Candidate,
+		EAIRECommandResultStatus::Accepted,
+		EAIRECommandResultReason::None);
+	if (!bHasActiveCommand || !IsSameActiveCommand(Candidate, ActiveCandidate))
+	{
+		return true;
+	}
+
+	UWorld* World = Character->GetWorld();
+	if (!IsValid(World))
+	{
+		CancelActiveCommand(EAIRECommandResultReason::OwnerEndingPlay);
+		return false;
+	}
 	World->GetTimerManager().SetTimer(
 		EvaluationTimerHandle,
 		FTimerDelegate::CreateUObject(
@@ -915,7 +1019,7 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteCraftItem(
 	}
 	ActiveCandidate = Candidate;
 	ActiveAttackTarget.Reset();
-	ActiveCraftWorkOrderId = WorkOrderId;
+	ActiveWorkOrderId = WorkOrderId;
 	DirectCommandSnapshot = FAIREDirectCommandSnapshot();
 	bHasActiveCommand = true;
 	bActiveCommandRunning = false;
@@ -952,9 +1056,9 @@ void UAIRECompanionCommandGatewayComponent::HandleWorkOrderChanged(
 {
 	(void)PreviousSnapshot;
 	if (!bHasActiveCommand
-		|| ActiveCandidate.Type != EAIRECommandType::CraftItem
-		|| !ActiveCraftWorkOrderId.IsValid()
-		|| CurrentSnapshot.WorkOrderId != ActiveCraftWorkOrderId)
+		|| !IsWorkOrderCommandType(ActiveCandidate.Type)
+		|| !ActiveWorkOrderId.IsValid()
+		|| CurrentSnapshot.WorkOrderId != ActiveWorkOrderId)
 	{
 		return;
 	}
@@ -1127,7 +1231,7 @@ void UAIRECompanionCommandGatewayComponent::CompleteActiveCommand(
 	ActiveCandidate = FAIRECommandCandidate();
 	DirectCommandSnapshot = FAIREDirectCommandSnapshot();
 	ActiveAttackTarget.Reset();
-	ActiveCraftWorkOrderId.Invalidate();
+	ActiveWorkOrderId.Invalidate();
 	BroadcastResult(CompletedCandidate, Status, Reason);
 }
 
@@ -1136,15 +1240,15 @@ void UAIRECompanionCommandGatewayComponent::CancelActiveCommand(
 {
 	if (bHasActiveCommand)
 	{
-		if (ActiveCandidate.Type == EAIRECommandType::CraftItem
-			&& ActiveCraftWorkOrderId.IsValid())
+		if (IsWorkOrderCommandType(ActiveCandidate.Type)
+			&& ActiveWorkOrderId.IsValid())
 		{
 			AAIRECompanionCharacter* Character =
 				Cast<AAIRECompanionCharacter>(GetOwner());
 			UAIRECompanionWorkOrderComponent* WorkOrderComponent =
 				IsValid(Character) ? Character->GetWorkOrderComponent() : nullptr;
-			const FGuid WorkOrderId = ActiveCraftWorkOrderId;
-			ActiveCraftWorkOrderId.Invalidate();
+			const FGuid WorkOrderId = ActiveWorkOrderId;
+			ActiveWorkOrderId.Invalidate();
 			if (IsValid(WorkOrderComponent))
 			{
 				WorkOrderComponent->TryCancelWorkOrder(WorkOrderId);
@@ -1251,7 +1355,7 @@ void UAIRECompanionCommandGatewayComponent::ShutdownGateway()
 	ActiveCandidate = FAIRECommandCandidate();
 	DirectCommandSnapshot = FAIREDirectCommandSnapshot();
 	ActiveAttackTarget.Reset();
-	ActiveCraftWorkOrderId.Invalidate();
+	ActiveWorkOrderId.Invalidate();
 	bActiveCommandRunning = false;
 	OnCommandResult.Clear();
 }

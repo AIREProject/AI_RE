@@ -66,7 +66,8 @@ enum class EAIRECommandResultReason : uint8
 	ThreatTargetLost,
 	ReplacedByNewCommand,
 	PreemptedByLocalBehavior,
-	OwnerEndingPlay
+	OwnerEndingPlay,
+	ResourceUnavailable
 };
 
 UENUM(BlueprintType)

@@ -71,6 +71,7 @@ private:
 	bool TryExecuteDirectCommand(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteCancelCurrent(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteAttack(const FAIRECommandCandidate& Candidate);
+	bool TryExecuteGatherResource(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteCraftItem(const FAIRECommandCandidate& Candidate);
 	void RejectCandidate(
 		const FAIRECommandCandidate& Candidate,
@@ -99,7 +100,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Companion|Command")
 	TObjectPtr<UDataTable> CraftingRecipeTable;
 
-	FGuid ActiveCraftWorkOrderId;
+	FGuid ActiveWorkOrderId;
 
 	TSet<FString> ProcessedCommandIds;
 	TArray<FString> ProcessedCommandOrder;

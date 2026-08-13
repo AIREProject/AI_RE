@@ -2,16 +2,22 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "AI_REItemDataAsset.h"
+#include "AI_REHarvestGameplayTags.h"
 
 UAI_REHarvestableResourceComponent::UAI_REHarvestableResourceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+	RequiredWorkTag = AI_REHarvestGameplayTags::Resource_Wood;
 	// SetIsReplicatedByDefault(true); // Removed for Singleplayer
 }
 
 void UAI_REHarvestableResourceComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	if (!RequiredWorkTag.IsValid())
+	{
+		RequiredWorkTag = AI_REHarvestGameplayTags::Resource_Wood;
+	}
 
 	// Removed Authority check for singleplayer
 	CurrentHealth = MaxHealth;

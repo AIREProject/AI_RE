@@ -9,6 +9,7 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
+#include "Work/AIRECompanionHarvestableResourceQuery.h"
 #include "Work/AIRECompanionWorkbenchQuery.h"
 #include "Work/AIRECompanionWorkOrderTypes.h"
 
@@ -263,7 +264,16 @@ FAIREWorldContextV1 FAIREWorldContextBuilder::Build(
 	FAIRECompanionWorkbenchQuery::GetNearbyCapabilityIds(
 		*Companion,
 		Context.AvailableWorkstations);
-	// Nearby resources stay empty until a bounded authoritative resource
-	// awareness source is available.
+	int32 NearbyWoodCount = 0;
+	if (FAIRECompanionHarvestableResourceQuery::GetNearbyWoodCount(
+			*Companion,
+			NearbyWoodCount)
+		&& NearbyWoodCount > 0)
+	{
+		FAIREWorldContextNearbyResource& Resource =
+			Context.NearbyResources.AddDefaulted_GetRef();
+		Resource.Kind = TEXT("wood");
+		Resource.Count = NearbyWoodCount;
+	}
 	return Context;
 }

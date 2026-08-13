@@ -33,12 +33,13 @@ namespace
 		TEXT("Command.DistractTarget"),
 		TEXT("Command.MoveToLocation"),
 		TEXT("Command.CancelCurrent"),
-		TEXT("Command.GatherResource"),
 		TEXT("Command.Attack"),
 		TEXT("Command.Switch"),
 	};
+	const TCHAR* const GatherResourceCommand = TEXT("Command.GatherResource");
 	const TCHAR* const CraftItemCommand = TEXT("Command.CraftItem");
 	const TCHAR* const RequiredCraftWorkbench = TEXT("Workbench.Blacksmith");
+	const TCHAR* const RequiredGatherResource = TEXT("wood");
 
 	FString GetPeriodName(const EAIREGameWorldPeriod Period)
 	{
@@ -555,32 +556,10 @@ namespace
 				{
 					OutCandidate.GatherResource = EAIREGatherResourceKind::Wood;
 				}
-				else if (Resource == TEXT("stone"))
-				{
-					OutCandidate.GatherResource = EAIREGatherResourceKind::Stone;
-				}
 				else
 				{
 					OutCandidate.bHasUnsupportedParameters = true;
 				}
-				continue;
-			}
-
-			if (Type == EAIRECommandType::GatherResource && FieldName == TEXT("quantity"))
-			{
-				double Quantity = 0.0;
-				if (!Field.Value.IsValid()
-					|| Field.Value->Type != EJson::Number
-					|| !Field.Value->TryGetNumber(Quantity)
-					|| !FMath::IsFinite(Quantity)
-					|| FMath::TruncToDouble(Quantity) != Quantity
-					|| Quantity < TNumericLimits<int32>::Lowest()
-					|| Quantity > TNumericLimits<int32>::Max())
-				{
-					return false;
-				}
-				OutCandidate.GatherQuantity = static_cast<int32>(Quantity);
-				OutCandidate.bHasGatherQuantity = true;
 				continue;
 			}
 
@@ -1016,14 +995,27 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 		TArray<TSharedPtr<FJsonValue>>());
 	Payload->SetObjectField(TEXT("game_context"), GameContext);
 	TArray<TSharedPtr<FJsonValue>> AllowedCommands;
+	const bool bCanAdvertiseGatherResource =
+		WorldContext.NearbyResources.ContainsByPredicate(
+			[](const FAIREWorldContextNearbyResource& Resource)
+			{
+				return Resource.Kind == RequiredGatherResource
+					&& Resource.Count > 0;
+			});
 	const bool bCanAdvertiseCraftItem =
 		bCraftItemRuntimeAvailable
 		&& WorldContext.AvailableWorkstations.Contains(RequiredCraftWorkbench);
 	AllowedCommands.Reserve(
-		UE_ARRAY_COUNT(FixedAllowedCommands) + (bCanAdvertiseCraftItem ? 1 : 0));
+		UE_ARRAY_COUNT(FixedAllowedCommands)
+			+ (bCanAdvertiseGatherResource ? 1 : 0)
+			+ (bCanAdvertiseCraftItem ? 1 : 0));
 	for (const TCHAR* Command : FixedAllowedCommands)
 	{
 		AllowedCommands.Add(MakeShared<FJsonValueString>(Command));
+	}
+	if (bCanAdvertiseGatherResource)
+	{
+		AllowedCommands.Add(MakeShared<FJsonValueString>(GatherResourceCommand));
 	}
 	if (bCanAdvertiseCraftItem)
 	{

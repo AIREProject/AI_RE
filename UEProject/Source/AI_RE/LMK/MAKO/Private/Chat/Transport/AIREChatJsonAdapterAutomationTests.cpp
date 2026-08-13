@@ -18,7 +18,6 @@ namespace
 		TEXT("Command.DistractTarget"),
 		TEXT("Command.MoveToLocation"),
 		TEXT("Command.CancelCurrent"),
-		TEXT("Command.GatherResource"),
 		TEXT("Command.Attack"),
 		TEXT("Command.Switch"),
 	};
@@ -119,6 +118,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	Context.Period = EAIREGameWorldPeriod::Morning;
 	FAIREWorldContextV1 WorldContext;
 	WorldContext.LocationId = TEXT("forest_camp");
+	WorldContext.NearbyResources.Add({TEXT("wood"), 1});
 	WorldContext.AvailableWorkstations.Add(TEXT("Workbench.Blacksmith"));
 	FString HttpBody;
 	FString WebSocketFrame;
@@ -157,7 +157,10 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 		return false;
 	}
 	TestEqual(TEXT("allowed_commands contains exactly eleven commands"), AllowedCommands->Num(), 11);
-	for (int32 Index = 0; Index < AllowedCommands->Num() && Index < 10; ++Index)
+	for (int32 Index = 0;
+		Index < AllowedCommands->Num()
+			&& Index < UE_ARRAY_COUNT(ExpectedAllowedCommands);
+		++Index)
 	{
 		FString Command;
 		TestTrue(
@@ -166,6 +169,14 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 				&& (*AllowedCommands)[Index]->TryGetString(Command));
 		TestEqual(TEXT("allowed_commands preserves fixed command order"), Command, FString(ExpectedAllowedCommands[Index]));
 	}
+	FString GatherCommand;
+	TestTrue(
+		TEXT("GatherResource is advertised when wood is nearby"),
+		(*AllowedCommands)[9]->TryGetString(GatherCommand));
+	TestEqual(
+		TEXT("GatherResource is the first appended capability"),
+		GatherCommand,
+		FString(TEXT("Command.GatherResource")));
 	FString CraftCommand;
 	TestTrue(
 		TEXT("CraftItem is advertised when a Blacksmith is available"),
@@ -247,10 +258,51 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 			&& CommandsWithoutWorkbench != nullptr
 			&& CommandsWithoutWorkbench->Num() == 10);
 
+	FAIREWorldContextV1 ContextWithoutWood = WorldContext;
+	ContextWithoutWood.NearbyResources.Reset();
+	FString RequestWithoutWood;
+	FString FrameWithoutWood;
+	TestTrue(
+		TEXT("Request without nearby wood serializes"),
+		FAIREChatJsonAdapter::BuildInGameRequest(
+			Context,
+			ContextWithoutWood,
+			TEXT("mako"),
+			TEXT("session-1"),
+			TEXT("request-4"),
+			TEXT("message-4"),
+			TEXT("hello"),
+			true,
+			RequestWithoutWood,
+			FrameWithoutWood,
+			BuildError));
+	TSharedPtr<FJsonObject> RequestWithoutWoodObject;
+	const TSharedRef<TJsonReader<>> RequestWithoutWoodReader =
+		TJsonReaderFactory<>::Create(RequestWithoutWood);
+	FJsonSerializer::Deserialize(
+		RequestWithoutWoodReader,
+		RequestWithoutWoodObject);
+	const TArray<TSharedPtr<FJsonValue>>* CommandsWithoutWood = nullptr;
+	TestTrue(
+		TEXT("GatherResource is not advertised without wood"),
+		RequestWithoutWoodObject.IsValid()
+			&& RequestWithoutWoodObject->TryGetArrayField(
+				TEXT("allowed_commands"),
+				CommandsWithoutWood)
+			&& CommandsWithoutWood != nullptr
+			&& CommandsWithoutWood->Num() == 10
+			&& !CommandsWithoutWood->ContainsByPredicate(
+				[](const TSharedPtr<FJsonValue>& Value)
+				{
+					FString Command;
+					return Value.IsValid()
+						&& Value->TryGetString(Command)
+						&& Command == TEXT("Command.GatherResource");
+				}));
+
 	const FAIREChatResponseCorrelation Correlation = MakeCorrelation();
 	TSharedPtr<FJsonObject> GatherParameters = MakeShared<FJsonObject>();
 	GatherParameters->SetStringField(TEXT("resource"), TEXT("wood"));
-	GatherParameters->SetNumberField(TEXT("quantity"), 7);
 	TSharedPtr<FJsonObject> GatherCandidate = MakeCandidate(
 		TEXT("command-gather"),
 		TEXT("Command.GatherResource"),
@@ -274,12 +326,50 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 		const FAIRECommandCandidate& Gather = Parsed.Result.CommandCandidates[0];
 		TestTrue(TEXT("Gather candidate type is parsed"), Gather.Type == EAIRECommandType::GatherResource);
 		TestTrue(TEXT("Gather resource wood is parsed"), Gather.GatherResource == EAIREGatherResourceKind::Wood);
-		TestTrue(TEXT("Gather quantity is present"), Gather.bHasGatherQuantity);
-		TestEqual(TEXT("Gather quantity is integral"), Gather.GatherQuantity, 7);
+		TestFalse(TEXT("Gather quantity is absent"), Gather.bHasGatherQuantity);
 		const FAIRECommandCandidate& Attack = Parsed.Result.CommandCandidates[1];
 		TestTrue(TEXT("Attack candidate type is parsed"), Attack.Type == EAIRECommandType::Attack);
 		TestEqual(TEXT("Attack target_id parameter is parsed"), Attack.ParameterTargetId, FString(TEXT("enemy-1")));
 	}
+
+	TSharedPtr<FJsonObject> GatherWithQuantity = MakeShared<FJsonObject>();
+	GatherWithQuantity->SetStringField(TEXT("resource"), TEXT("wood"));
+	GatherWithQuantity->SetNumberField(TEXT("quantity"), 1);
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-gather-quantity"),
+			TEXT("Command.GatherResource"),
+			GatherWithQuantity)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("Gather quantity is marked unsupported"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Response
+			&& Parsed.Result.CommandCandidates.Num() == 1
+			&& Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters);
+
+	TSharedPtr<FJsonObject> StoneParameters = MakeShared<FJsonObject>();
+	StoneParameters->SetStringField(TEXT("resource"), TEXT("stone"));
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-gather-stone"),
+			TEXT("Command.GatherResource"),
+			StoneParameters)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("Stone Gather is marked unsupported"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Response
+			&& Parsed.Result.CommandCandidates.Num() == 1
+			&& Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters);
 
 	TSharedPtr<FJsonObject> CraftParameters = MakeShared<FJsonObject>();
 	CraftParameters->SetStringField(TEXT("recipe_id"), TEXT("recipe-11"));

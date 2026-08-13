@@ -317,6 +317,17 @@ strict DTO, schema/content version, bounds와 Item 의미 검증 실패는 `400 
 OpenAPI 반영 또는 runtime smoke 성공을 주장하지 않습니다. 따라서 AX-I10 UE HTTP wiring과
 AX-W03 Mobile 조회는 배포 계약 확인 전 호출 가능 상태로 간주하지 않습니다.
 
+## 2026-08-13 M04-E03-T03 GatherResource InGame 계약
+
+Game surface의 첫 채집 후보는 `Command.GatherResource`와 정확한
+`{"resource":"wood"}`만 사용합니다. `quantity`, 추가 parameter, `stone`, 채집 방법 질문과
+모호한 대상은 후보를 만들지 않습니다. Mobile OfflineTask의 기존 자원·수량 계약은 유지합니다.
+
+UE는 `wood`를 `Resource.Wood` Gameplay Tag로 매핑하고 Candidate 수신 시 MAKO 중심
+5,000cm, 최대 8개의 bounded overlap query를 다시 실행합니다. 가장 가까운 유효·비고갈 나무
+한 그루를 기존 Harvesting WorkOrder로 고갈될 때까지 처리합니다. Context에는 같은 provider가
+`{"kind":"wood","count":N}`만 제공하며 Actor 이름·path·instance identity는 전송하지 않습니다.
+
 ## 연동 Gate
 
 UE/Web 클라이언트의 새 서버 연동을 완료하려면 파트너가 다음 중 하나로 계약을 동기화해야 합니다.

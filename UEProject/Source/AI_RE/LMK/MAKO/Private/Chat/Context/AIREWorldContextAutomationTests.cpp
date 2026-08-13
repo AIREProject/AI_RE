@@ -51,6 +51,7 @@ namespace
 		Context.LocationId = TEXT("forest_camp");
 		Context.Threat.bPresent = true;
 		Context.Threat.Count = 2;
+		Context.NearbyResources.Add({TEXT("wood"), 3});
 
 		Context.CurrentWork.Type = EAIREWorldContextWorkType::Harvesting;
 		Context.CurrentWork.State = EAIREWorldContextWorkState::Working;
@@ -139,10 +140,14 @@ bool FAIREWorldContextV1AutomationTest::RunTest(const FString& Parameters)
 	const TArray<TSharedPtr<FJsonValue>>* Resources = nullptr;
 	const TArray<TSharedPtr<FJsonValue>>* Workstations = nullptr;
 	TestTrue(
-		TEXT("Unavailable resources use an empty array"),
+		TEXT("Nearby wood uses a stable resource id"),
 		(*GameContext)->TryGetArrayField(TEXT("nearby_resources"), Resources)
 			&& Resources != nullptr
-			&& Resources->IsEmpty());
+			&& Resources->Num() == 1
+			&& (*Resources)[0]->AsObject()->GetStringField(TEXT("kind"))
+				== TEXT("wood")
+			&& static_cast<int32>(
+				(*Resources)[0]->AsObject()->GetNumberField(TEXT("count"))) == 3);
 	TestTrue(
 		TEXT("Unavailable workstations use an empty array"),
 		(*GameContext)->TryGetArrayField(TEXT("available_workstations"), Workstations)
