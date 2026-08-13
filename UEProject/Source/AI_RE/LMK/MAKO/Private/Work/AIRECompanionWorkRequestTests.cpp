@@ -3,7 +3,7 @@
 #include "Work/AIRECompanionCraftingWorkRequest.h"
 #include "Work/AIRECompanionHarvestWorkRequest.h"
 #include "Work/AIRECompanionStorageWorkRequest.h"
-
+#include "AI_REWorkBenchBase.h"
 #include "AIRESharedStorageActor.h"
 #include "AI_RECraftingTypes.h"
 #include "AI_REHarvestableResourceActor.h"

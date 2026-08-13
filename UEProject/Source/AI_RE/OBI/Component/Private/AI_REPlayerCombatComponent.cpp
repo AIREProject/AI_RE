@@ -201,6 +201,9 @@ bool UAI_REPlayerCombatComponent::TryEquipWeapon(UAI_REItemDataAsset* WeaponData
 		PlayerCharacter->GetMesh(),
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 		FName(TEXT("WeaponSocket_R")));
+		
+	// 무기 데이터 애셋에 설정된 위치/회전/크기 오프셋 적용
+	WeaponMesh->SetRelativeTransform(WeaponItem->AttachmentOffset);
 	if (IsValid(LoadedLayerClass))
 	{
 		PlayerCharacter->GetMesh()->LinkAnimClassLayers(LoadedLayerClass);

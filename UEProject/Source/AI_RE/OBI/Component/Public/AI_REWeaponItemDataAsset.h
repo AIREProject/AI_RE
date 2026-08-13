@@ -25,4 +25,8 @@ public:
 	// 무기의 실제 외형 메시 (캐릭터 손에 들려질 모델링)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
 	TObjectPtr<class UStaticMesh> WeaponMesh;
+
+	// 무기 장착 시 소켓을 기준으로 한 미세 조정 오프셋 (위치/회전/크기)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
+	FTransform AttachmentOffset;
 };
