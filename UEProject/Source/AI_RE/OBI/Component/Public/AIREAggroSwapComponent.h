@@ -54,6 +54,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Aggro Swap", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float CooldownDuration = 12.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Aggro Swap", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float RetreatDistance = 500.0f;
+
 	TWeakObjectPtr<APlayerController> OwnerController;
 	double NextAllowedSwapTime = 0.0;
 };

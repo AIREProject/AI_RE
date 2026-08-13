@@ -298,16 +298,17 @@ opportunities do not consume cooldown. Multiple active opportunities are rejecte
 as ambiguous and also consume no cooldown.
 
 A valid opportunity requires an active, non-area melee attack whose hit has not been
-committed or cancelled. After full preflight, the 12-second cooldown is consumed
-before the commit attempt and remains consumed if that attempt loses a race.
+committed or cancelled. The 12-second cooldown starts only after damage cancellation,
+retreat movement start, and aggro promotion all succeed.
 
 On success:
 
 1. Cancel only the active attack's pending damage; its recovery continues.
-2. Stop the old target's optional player primary action.
-3. Cancel the old target's movement and GAS abilities.
-4. Sweep both lateral directions and dash up to 300 cm over 0.25 seconds toward the
-   farther clear side; an equal result chooses right.
+2. Cancel the old target's movement and active GAS abilities, including an attack.
+3. Dash the old target 500 cm directly away from the Boss. This Q-only retreat may
+   start while attacking or airborne and remains collision-safe.
+4. Play the direction-matched evade section. Montages with only `Evade_L/R` fall back
+   to a lateral section while preserving the away-from-Boss movement vector.
 5. Promote the other party actor to `current maximum threat + 25`.
 
 The evade is code-driven swept movement. It does not teleport or exchange actor
@@ -334,16 +335,36 @@ After a dash actually starts, autonomous evade spends `25` Stamina, refreshes a
 `1.5 s` regeneration block, and commits its `5 s` cooldown. Stamina then regenerates
 at `15/s` to the `100` cap. The shared invulnerable tag starts `0.05 s` after dash
 start and lasts at most `0.12 s`; early dash termination removes it immediately.
-Basic attacks, Combat Skill, and Q aggro-swap evade remain Stamina-free. If Q arrives
-during an autonomous dash for the same threat and `ExecutionId`, it reuses that dash,
-cancels the strike, promotes aggro, and applies Q's cooldown without another movement
-start or Stamina cost. A different threat or execution is rejected while the dash is
-active.
+Basic attacks, Combat Skill, and Q aggro-swap evade remain Stamina-free. Q owns a
+dedicated retreat start and does not reuse an autonomous lateral dash. An actor already
+inside another evade cannot start a second overlapping Q retreat.
 
-T01 exposes the PlayerController input seam but does not own the production Player
-Input Action or Mapping Context. No `IA_AIREAggroSwap` or dedicated IMC is currently
-assigned. The Player Combat/Input owner creates and maps physical Q in
-`M03-E09-T03`; Enemy or MAKO asset work must not pre-empt that ownership.
+`IA_AIREAggroSwap` is assigned on `BP_AIREPlayerController` and mapped to Q in the
+active Player `IMC_Default`.
+
+### 5.1 Player manual directional evade
+
+The Player owns a separate manual evade seam and does not route it through Q aggro
+swap. `AAI_RECharacter` snapshots its current two-axis Move input when the evade action
+starts, converts it through controller yaw, and requests a world-direction dash from
+`UAIRECombatEvadeComponent`. With no Move input it uses the character forward vector.
+The Player component uses collision-safe 350 cm / 0.65 second swept movement;
+the manual path does not require a threat actor and does not consume the Q cooldown or
+autonomous-evade Stamina. It is grounded-only, stops movement, and cancels active GAS
+abilities when the dash starts.
+
+The production `IA_AIREPlayerEvade`, Left Ctrl mapping in the active Player IMC, Player
+Blueprint assignment, and directional presentation remain Editor-owned registration
+and verification work. Jump remains assigned separately to Space for this gate.
+
+Player pre-attack facing now uses a dedicated target scan. It accepts only a living
+combat target whose affiliation is `Enemy`, or a non-depleted
+`AAI_REHarvestableResourceActor`. The generic Visibility interaction scan remains
+unchanged so workbenches, Shared Storage, and other interactables are not excluded.
+
+Enemy capsule and skeletal mesh collision ignore the `Camera` channel at BeginPlay.
+Pawn and combat trace responses remain unchanged, allowing the Player spring arm to
+pass through Boss bodies while retaining normal world-geometry camera collision.
 
 ## 6. Current Editor baseline and remaining ownership
 
@@ -431,14 +452,14 @@ weighted selection, and AI behavior in PIE:
 - Active attacks keep their snapshotted target even if ordinary aggro changes during recovery.
 - Q outside an opportunity consumes no cooldown; Q during one valid opportunity cancels damage, evades the old target, promotes the other target, and starts a 12-second cooldown.
 - Two simultaneous enemy opportunities reject Q without consuming cooldown.
-- Obstruction chooses the farther lateral side; equal clearance chooses right; both blocked sides remain collision-safe.
+- Q retreats the old target 500 cm directly away from the Boss, including while
+  attacking or airborne, and remains collision-safe.
 - Autonomous evade evaluates one deterministic roll per selected single-target
   execution, respects reaction delay, cooldown, Stamina, and minimum clearance, and
   never queues during an active dash.
 - Invulnerability is absent before `+0.05 s`, terminally resolves contact from
   `+0.05 s` through `+0.17 s`, and is removed on early collision/cancel/death.
-- Same-execution Q reuses the autonomous dash without a second Stamina cost; another
-  execution is rejected.
+- Q does not overlap or reuse an already active autonomous dash.
 - Spawn/Possess/UnPossess/Destroy repeated three times leaves no Timer, Delegate, perception, StateTree, ASC, or focus residue.
 - Backend and LLM remain unavailable without breaking the local combat loop.
 

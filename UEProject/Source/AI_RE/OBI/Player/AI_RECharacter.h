@@ -74,6 +74,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> AttackAction;
 
+	/** Assign IA_AIREPlayerEvade and map it to Left Ctrl in the active Player IMC. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> EvadeAction;
+
 public:
 
 	/** Constructor */
@@ -88,6 +92,7 @@ protected:
 
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
+	void StopMove(const FInputActionValue& Value);
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
@@ -103,6 +108,11 @@ protected:
 
 	/** Called for attack input */
 	void DoAttack();
+
+	/** Starts a dash in the movement direction captured when the input begins. */
+	void DoEvade();
+
+	FVector2D CurrentMovementInput = FVector2D::ZeroVector;
 
 public:
 

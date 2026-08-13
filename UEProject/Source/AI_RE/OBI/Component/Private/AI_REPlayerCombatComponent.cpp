@@ -12,6 +12,8 @@
 #include "AI_REAbilitySetDataAsset.h"
 #include "Engine/Engine.h"
 #include "AI_RECharacter.h"
+#include "AI_REPlayerMeleeAttackAbility.h"
+#include "AIRECombatEvadeComponent.h"
 #include "AI_RETargetScannerComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Components/StaticMeshComponent.h"
@@ -37,6 +39,14 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 	AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
 	if (OwnerChar)
 	{
+		if (const AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(OwnerChar);
+			IsValid(PlayerChar)
+			&& IsValid(PlayerChar->GetCombatEvadeComponent())
+			&& PlayerChar->GetCombatEvadeComponent()->IsEvading())
+		{
+			return;
+		}
+
 		// 점프/체공 중에는 기본 공격(혹은 콤보)을 막습니다. (추후 공중 찍기 공격 추가 전까지)
 		if (UCharacterMovementComponent* MoveComp = OwnerChar->GetCharacterMovement())
 		{
@@ -52,7 +62,7 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 			if (UAI_RETargetScannerComponent* Scanner = PlayerChar->GetTargetScannerComponent())
 			{
 				// 반경 100(조금 넓게), 거리 500(5m) 내의 Pawn(캐릭터)을 스캔
-				AActor* TargetActor = Scanner->ScanForwardForTarget(100.0f, 500.0f, ECC_Pawn, false);
+				AActor* TargetActor = Scanner->ScanForwardForPlayerTarget(100.0f, 500.0f, ECC_Pawn, false);
 				if (TargetActor && TargetActor != PlayerChar)
 				{
 					// 대상을 향한 회전값 계산 후 몸을 즉각적으로 돌림 (Z축 기준 Yaw만)
@@ -80,6 +90,31 @@ void UAI_REPlayerCombatComponent::TryStartPrimaryAction()
 			}
 		}
 	}
+}
+
+bool UAI_REPlayerCombatComponent::IsPrimaryActionActive() const
+{
+	IAbilitySystemInterface* AbilitySystemOwner =
+		Cast<IAbilitySystemInterface>(GetOwner());
+	UAbilitySystemComponent* AbilitySystem = AbilitySystemOwner
+		? AbilitySystemOwner->GetAbilitySystemComponent()
+		: nullptr;
+	if (!IsValid(AbilitySystem))
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& AbilitySpec :
+		AbilitySystem->GetActivatableAbilities())
+	{
+		if (AbilitySpec.IsActive()
+			&& IsValid(AbilitySpec.Ability)
+			&& AbilitySpec.Ability->IsA<UAI_REPlayerMeleeAttackAbility>())
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void UAI_REPlayerCombatComponent::EquipWeapon(UAI_REItemDataAsset* WeaponData)

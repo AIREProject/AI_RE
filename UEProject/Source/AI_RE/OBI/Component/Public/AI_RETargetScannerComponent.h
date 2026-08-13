@@ -23,6 +23,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	AActor* ScanForwardForTarget(float Radius, float Distance, ECollisionChannel TraceChannel, bool bDrawDebug = false);
 
+	/** Returns only a living Enemy or an available harvestable resource. */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	AActor* ScanForwardForPlayerTarget(float Radius, float Distance, ECollisionChannel TraceChannel, bool bDrawDebug = false);
+
 	/** 현재 캐싱된 상호작용 타겟 반환 */
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	AActor* GetCachedInteractableTarget() const;
@@ -32,6 +36,13 @@ public:
 	void ResetCachedTarget();
 
 protected:
+	AActor* ScanForward(
+		float Radius,
+		float Distance,
+		ECollisionChannel TraceChannel,
+		bool bDrawDebug,
+		bool bRequirePlayerTarget);
+
 	/** 상호작용 프리체크 타이머 루프 */
 	void PerformInteractionPrecheck();
 

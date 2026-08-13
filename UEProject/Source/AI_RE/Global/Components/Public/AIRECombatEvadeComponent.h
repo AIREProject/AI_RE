@@ -14,7 +14,9 @@ UENUM(BlueprintType)
 enum class EAIRECombatEvadeSide : uint8
 {
 	Left,
-	Right
+	Right,
+	Forward,
+	Backward
 };
 
 USTRUCT(BlueprintType)
@@ -53,6 +55,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Combat|Evade")
 	bool TryStartLateralDash(AActor* ThreatActor);
 
+	/** Starts a collision-safe dash in an explicit world-space direction. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Combat|Evade")
+	bool TryStartDirectionalDash(const FVector& WorldDirection);
+
 	bool BuildLateralDashPlan(
 		const AActor* ThreatActor,
 		const FGuid& TriggerExecutionId,
@@ -61,6 +67,14 @@ public:
 	bool TryStartLateralDashPlan(
 		const FAIRECombatEvadePlan& Plan,
 		UGameplayAbility* IgnoredAbility = nullptr);
+
+	bool BuildThreatRetreatDashPlan(
+		const AActor* ThreatActor,
+		const FGuid& TriggerExecutionId,
+		float RetreatDistance,
+		FAIRECombatEvadePlan& OutPlan) const;
+
+	bool TryStartAggroSwapDashPlan(const FAIRECombatEvadePlan& Plan);
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Evade")
 	bool CanStartLateralDash(const AActor* ThreatActor) const;
@@ -90,6 +104,16 @@ protected:
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	bool TryStartDash(
+		const FVector& Direction,
+		float AvailableDistance,
+		EAIRECombatEvadeSide PresentationSide,
+		AActor* ThreatActor,
+		const FGuid& TriggerExecutionId,
+		UGameplayAbility* IgnoredAbility,
+		float MaximumDistance,
+		bool bAllowAirborne);
+	float MeasureClearance(const FVector& Direction) const;
 	void FinishEvade(bool bStopPresentation);
 	void StopEvadePresentation();
 
@@ -113,4 +137,5 @@ private:
 	EMovementMode PreviousMovementMode = MOVE_Walking;
 	uint8 PreviousCustomMovementMode = 0;
 	bool bEvading = false;
+	bool bRequiresActiveThreat = false;
 };

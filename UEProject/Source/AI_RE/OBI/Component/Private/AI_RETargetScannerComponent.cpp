@@ -5,9 +5,39 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "AI_REInteractableInterface.h"
+#include "AI_REHarvestDamageTarget.h"
+#include "AI_REHarvestableResourceComponent.h"
+#include "AIRECombatDamageTargetInterface.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Pawn.h"
+
+namespace
+{
+	bool IsPlayerTargetCandidate(const AActor* Candidate)
+	{
+		if (!IsValid(Candidate))
+		{
+			return false;
+		}
+		if (Candidate->Implements<UAI_REHarvestDamageTarget>())
+		{
+			const UAI_REHarvestableResourceComponent* ResourceComponent =
+				Candidate->FindComponentByClass<UAI_REHarvestableResourceComponent>();
+			return !IsValid(ResourceComponent) || !ResourceComponent->IsDepleted();
+		}
+		if (!Candidate->Implements<UAIRECombatDamageTargetInterface>())
+		{
+			return false;
+		}
+		const IAIRECombatDamageTargetInterface* CombatTarget =
+			Cast<IAIRECombatDamageTargetInterface>(Candidate);
+		return CombatTarget
+			&& CombatTarget->GetCombatAffiliation()
+				== EAIRECombatAffiliation::Enemy
+			&& AIRECombatDamageTarget::IsAlive(Candidate);
+	}
+}
 
 UAI_RETargetScannerComponent::UAI_RETargetScannerComponent()
 {
@@ -39,6 +69,25 @@ void UAI_RETargetScannerComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 }
 
 AActor* UAI_RETargetScannerComponent::ScanForwardForTarget(float Radius, float Distance, ECollisionChannel TraceChannel, bool bDrawDebug)
+{
+	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, false);
+}
+
+AActor* UAI_RETargetScannerComponent::ScanForwardForPlayerTarget(
+	const float Radius,
+	const float Distance,
+	const ECollisionChannel TraceChannel,
+	const bool bDrawDebug)
+{
+	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, true);
+}
+
+AActor* UAI_RETargetScannerComponent::ScanForward(
+	const float Radius,
+	const float Distance,
+	const ECollisionChannel TraceChannel,
+	const bool bDrawDebug,
+	const bool bRequirePlayerTarget)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return nullptr;
@@ -79,9 +128,14 @@ AActor* UAI_RETargetScannerComponent::ScanForwardForTarget(float Radius, float D
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
+			if (bRequirePlayerTarget && !IsPlayerTargetCandidate(HitActor))
+			{
+				continue;
+			}
+
 			// 전투 타겟팅용 스캔일 때 바닥(지형)이 잡히는 것을 방지합니다.
 			// 폰이거나 AbilitySystemComponent를 가진 개체(나무, 자원 등)만 타겟으로 인정합니다.
-			if (TraceChannel == ECC_Pawn)
+			if (!bRequirePlayerTarget && TraceChannel == ECC_Pawn)
 			{
 				bool bHasASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitActor) != nullptr;
 				if (!bHasASC && !HitActor->IsA(APawn::StaticClass()))

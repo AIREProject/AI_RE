@@ -21,6 +21,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void TryStartPrimaryAction();
 
+	bool IsPrimaryActionActive() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Combat|Equipment")
 	void EquipWeapon(UAI_REItemDataAsset* WeaponData);
 

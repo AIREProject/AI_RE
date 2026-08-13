@@ -91,20 +91,21 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 		Evade = OtherPartyActor->FindComponentByClass<
 			UAIRECombatEvadeComponent>();
 	}
-	const bool bReuseActiveEvade = IsValid(Evade)
-		&& Evade->IsEvadingFrom(Enemy.Get(), Attack.ExecutionId);
-	const bool bCanStartNewEvade = IsValid(Evade)
-		&& Evade->BuildLateralDashPlan(
+	const bool bCanStartRetreat = IsValid(Evade)
+		&& Evade->BuildThreatRetreatDashPlan(
 			Enemy.Get(),
 			Attack.ExecutionId,
+			RetreatDistance,
 			EvadePlan);
 	if (!IsValid(Aggro)
 		|| !FMath::IsFinite(CooldownDuration)
 		|| CooldownDuration < 0.0f
+		|| !FMath::IsFinite(RetreatDistance)
+		|| RetreatDistance <= 0.0f
 		|| !AIRECombatDamageTarget::IsAlive(CurrentTarget)
 		|| !AIRECombatDamageTarget::IsAlive(NewTarget)
 		|| !IsValid(Evade)
-		|| (!bReuseActiveEvade && !bCanStartNewEvade))
+		|| !bCanStartRetreat)
 	{
 		return EAIREAggroSwapResult::InvalidPartyState;
 	}
@@ -114,8 +115,6 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 	{
 		return EAIREAggroSwapResult::InvalidPartyState;
 	}
-	NextAllowedSwapTime = World->GetTimeSeconds() + CooldownDuration;
-
 	UAIREEnemyAttackComponent* BossAttack = Enemy->GetEnemyAttackComponent();
 	if (!IsValid(BossAttack)
 		|| !BossAttack->TryCancelDamageForAggroSwap(Attack.ExecutionId))
@@ -123,10 +122,7 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 		return EAIREAggroSwapResult::CommitRejected;
 	}
 	BossController->ClearFocus(EAIFocusPriority::Gameplay);
-	// Reuse an autonomous dash only for the exact Boss execution that opened Q.
-	// Otherwise the evade component owns a new movement and GAS cancellation.
-	if (!bReuseActiveEvade
-		&& !Evade->TryStartLateralDashPlan(EvadePlan))
+	if (!Evade->TryStartAggroSwapDashPlan(EvadePlan))
 	{
 		return EAIREAggroSwapResult::EvadeRejected;
 	}
@@ -134,16 +130,17 @@ EAIREAggroSwapResult UAIREAggroSwapComponent::TryAggroSwap()
 	{
 		return EAIREAggroSwapResult::AggroRejected;
 	}
+	NextAllowedSwapTime = World->GetTimeSeconds() + CooldownDuration;
 
 	UE_LOG(
 		LogAIREAggroSwap,
 		Log,
-		TEXT("Boss aggro swap applied. Boss=%s PreviousTarget=%s NewTarget=%s ExecutionId=%s ReusedEvade=%s"),
+		TEXT("Boss aggro swap applied. Boss=%s PreviousTarget=%s NewTarget=%s ExecutionId=%s RetreatDistance=%.1f"),
 		*GetNameSafe(Enemy.Get()),
 		*GetNameSafe(CurrentTarget),
 		*GetNameSafe(NewTarget),
 		*Attack.ExecutionId.ToString(),
-		bReuseActiveEvade ? TEXT("true") : TEXT("false"));
+		RetreatDistance);
 	return EAIREAggroSwapResult::Applied;
 }
 

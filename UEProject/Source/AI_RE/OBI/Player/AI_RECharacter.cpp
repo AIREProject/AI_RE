@@ -89,6 +89,8 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AAI_RECharacter::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AAI_RECharacter::StopMove);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AAI_RECharacter::StopMove);
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AAI_RECharacter::Look);
 
 		// Looking
@@ -124,6 +126,11 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoAttack);
 		}
 
+		if (EvadeAction)
+		{
+			EnhancedInputComponent->BindAction(EvadeAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoEvade);
+		}
+
 		// QuickSlots (1~0 키 바인딩)
 		for (int32 i = 0; i < QuickSlotActions.Num(); ++i)
 		{
@@ -143,9 +150,16 @@ void AAI_RECharacter::Move(const FInputActionValue& Value)
 {
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
+	CurrentMovementInput = MovementVector;
 
 	// route the input
 	DoMove(MovementVector.X, MovementVector.Y);
+}
+
+void AAI_RECharacter::StopMove(const FInputActionValue& Value)
+{
+	(void)Value;
+	CurrentMovementInput = FVector2D::ZeroVector;
 }
 
 void AAI_RECharacter::Look(const FInputActionValue& Value)
@@ -391,8 +405,36 @@ void AAI_RECharacter::DoEquip(const FInputActionValue& Value)
 
 void AAI_RECharacter::DoAttack()
 {
-	if (CombatComponent)
+	if (IsValid(CombatComponent)
+		&& (!IsValid(CombatEvadeComponent)
+			|| !CombatEvadeComponent->IsEvading()))
 	{
 		CombatComponent->TryStartPrimaryAction();
 	}
+}
+
+void AAI_RECharacter::DoEvade()
+{
+	if (!IsValid(CombatEvadeComponent)
+		|| (IsValid(CombatComponent)
+			&& CombatComponent->IsPrimaryActionActive()))
+	{
+		return;
+	}
+
+	FVector EvadeDirection = GetActorForwardVector();
+	if (!CurrentMovementInput.IsNearlyZero())
+	{
+		const FRotator ControlRotation = IsValid(GetController())
+			? GetController()->GetControlRotation()
+			: GetActorRotation();
+		const FRotator YawRotation(0.0f, ControlRotation.Yaw, 0.0f);
+		const FVector ForwardDirection =
+			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		const FVector RightDirection =
+			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		EvadeDirection = ForwardDirection * CurrentMovementInput.Y
+			+ RightDirection * CurrentMovementInput.X;
+	}
+	CombatEvadeComponent->TryStartDirectionalDash(EvadeDirection);
 }

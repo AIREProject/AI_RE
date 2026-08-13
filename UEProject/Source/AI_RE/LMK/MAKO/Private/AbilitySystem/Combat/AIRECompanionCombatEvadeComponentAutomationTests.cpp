@@ -221,6 +221,28 @@ bool FAIRECompanionCombatEvadeComponentTest::RunTest(
 			Companion->GetCharacterMovement()->MovementMode,
 			PreviousMovementMode);
 	}
+
+	Companion->SetActorLocation(
+		FVector::ZeroVector,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics);
+	const FVector DirectionalDashStart = Companion->GetActorLocation();
+	TestTrue(
+		TEXT("A threat-free directional dash starts"),
+		Evade->TryStartDirectionalDash(FVector::ForwardVector));
+	for (int32 TickIndex = 0; TickIndex < 6; ++TickIndex)
+	{
+		TestWorld->Tick(LEVELTICK_All, 0.05f);
+	}
+	TestFalse(
+		TEXT("The directional dash finishes without a threat actor"),
+		Evade->IsEvading());
+	TestTrue(
+		TEXT("The directional dash follows the requested world direction"),
+		FVector::DistSquared2D(
+			Companion->GetActorLocation(),
+			DirectionalDashStart + FVector(300.0f, 0.0f, 0.0f)) <= 1.0f);
 	return true;
 }
 

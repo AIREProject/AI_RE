@@ -9,6 +9,8 @@
 #include "AIREEnemyReactionComponent.h"
 #include "AIREEnemyVitalityComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionStimuliSourceComponent.h"
 #include "Perception/AISense_Sight.h"
@@ -129,6 +131,16 @@ const UAIREEnemyConfigDataAsset* AAIREEnemyBase::GetEnemyConfig() const
 void AAIREEnemyBase::BeginPlay()
 {
 	Super::BeginPlay();
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		if (IsValid(PrimitiveComponent))
+		{
+			PrimitiveComponent->SetCollisionResponseToChannel(
+				ECC_Camera,
+				ECR_Ignore);
+		}
+	}
 	ApplyEnemyConfig();
 	check(AbilitySystemComponent);
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
