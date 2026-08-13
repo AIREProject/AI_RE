@@ -2244,7 +2244,8 @@ h2 {
 }
 
 .slide--overview-focus .feature-list {
-  margin-top: 2.3cqw;
+  gap: 1.25cqw;
+  margin-top: 2.8cqw;
 }
 
 .slide--overview-focus .feature-list li {
@@ -2315,7 +2316,7 @@ h2 {
   font-size: 1.45cqw;
 }
 
-/* Slide 4: reveal the three audience groups once, in reading order. */
+/* Slide 5: reveal the three audience groups once, in reading order. */
 .slide--audience .audience-grid article {
   opacity: 0;
   transform: translateY(0.8cqw) scale(0.985);
@@ -2365,7 +2366,16 @@ h2 {
 }
 
 .ax-comparison {
-  grid-template-columns: 1fr 6.8cqw 1fr;
+  grid-template-columns: 1fr 8.2cqw 1fr;
+  gap: 1cqw;
+}
+
+.ax-shift {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45cqw;
 }
 
 .ax-comparison > article {
@@ -3488,7 +3498,8 @@ button:focus-visible {
   position: relative;
   display: grid;
   grid-template-columns: 2.5cqw 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto;
+  align-content: center;
   min-height: 19.5cqw;
   padding: 1.7cqw 1.55cqw;
   border: 1px solid rgba(108, 94, 132, 0.16);
@@ -3510,7 +3521,8 @@ button:focus-visible {
   display: block;
   width: 1.45cqw;
   height: 1.45cqw;
-  margin-top: 0.1cqw;
+  align-self: center;
+  margin-top: 0;
   border: 0.13cqw solid #8875a6;
   border-radius: 0.32cqw;
   background: rgba(255, 255, 255, 0.64);
@@ -3525,7 +3537,7 @@ button:focus-visible {
 }
 
 .todo-board div {
-  align-self: end;
+  align-self: start;
 }
 
 .todo-board strong {
