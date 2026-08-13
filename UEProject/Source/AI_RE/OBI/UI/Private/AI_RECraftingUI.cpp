@@ -34,7 +34,9 @@ void UAI_RECraftingUI::InitializeCrafting(UAI_REPlayerCraftingComponent* InCraft
 		{
 			case EWorkbenchType::Basic: TypeString = TEXT("Basic Workbench"); break;
 			case EWorkbenchType::Blacksmith: TypeString = TEXT("Blacksmith Forge"); break;
+			case EWorkbenchType::Smelter: TypeString = TEXT("Smelting Furnace"); break;
 			case EWorkbenchType::Alchemy: TypeString = TEXT("Alchemy Table"); break;
+			case EWorkbenchType::Cook: TypeString = TEXT("Cooking Station"); break;
 			case EWorkbenchType::None: TypeString = TEXT("Handcraft"); break;
 			default: TypeString = TEXT("Workbench"); break;
 		}

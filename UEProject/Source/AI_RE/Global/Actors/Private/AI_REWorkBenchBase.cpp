@@ -34,9 +34,13 @@ void AAI_REWorkBenchBase::Interact_Implementation(AActor* Interactor)
 		{
 			WorkbenchType = EWorkbenchType::Alchemy;
 		}
-		else if (WorkbenchTags.HasTagExact(AI_REWorkbenchGameplayTags::Workbench_Blacksmith) || WorkbenchTags.HasTagExact(AI_REWorkbenchGameplayTags::Workbench_Forge))
+		else if (WorkbenchTags.HasTagExact(AI_REWorkbenchGameplayTags::Workbench_Blacksmith))
 		{
 			WorkbenchType = EWorkbenchType::Blacksmith;
+		}
+		else if (WorkbenchTags.HasTagExact(AI_REWorkbenchGameplayTags::Workbench_Smelter))
+		{
+			WorkbenchType = EWorkbenchType::Smelter;
 		}
 		else if (WorkbenchTags.HasTagExact(AI_REWorkbenchGameplayTags::Workbench_Cook))
 		{
