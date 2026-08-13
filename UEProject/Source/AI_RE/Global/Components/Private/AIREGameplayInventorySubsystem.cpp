@@ -22,6 +22,11 @@
 
 namespace
 {
+	constexpr int32 FreshIronIngotCount = 3;
+	constexpr int32 FreshWoodHandleCount = 1;
+	const FName FreshIronIngotItemId(TEXT("IronIngot"));
+	const FName FreshWoodHandleItemId(TEXT("WoodHandle"));
+
 	FName NormalizeContainerId(const FName ContainerId)
 	{
 		static const FName LegacySharedStorageId(
@@ -57,6 +62,14 @@ namespace
 		if (ItemId == FName(TEXT("AIRE.Test.GenericStack4")))
 		{
 			OutMaxStackSize = 4;
+			bOutIsCompanionItem = false;
+			bOutIsWeapon = false;
+			return true;
+		}
+		if (ItemId == FreshIronIngotItemId
+			|| ItemId == FreshWoodHandleItemId)
+		{
+			OutMaxStackSize = 99;
 			bOutIsCompanionItem = false;
 			bOutIsWeapon = false;
 			return true;
@@ -538,6 +551,7 @@ void UAIREGameplayInventorySubsystem::Deinitialize()
 	bPersistenceLoadComplete = false;
 	bPersistenceSaveInFlight = false;
 	bMakoInventoryInitialized = false;
+	bShouldSeedFreshSharedStorage = false;
 	Super::Deinitialize();
 }
 
@@ -1797,6 +1811,7 @@ FGuid UAIREGameplayInventorySubsystem::ResetInventorySession(
 	bPersistenceDirty = false;
 	bPersistenceShuttingDown = false;
 	bMakoInventoryInitialized = false;
+	bShouldSeedFreshSharedStorage = false;
 	CreateEmptyContainers();
 	bSuppressPersistenceDirty = true;
 	BroadcastContainerChanged(Containers.FindChecked(GetMakoContainerId()));
@@ -2128,7 +2143,9 @@ bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
 	}
 
 	FAIREContainerState* MakoContainer = FindContainer(GetMakoContainerId());
-	if (!MakoContainer)
+	FAIREContainerState* StorageContainer = FindContainer(
+		GetSharedStorageContainerId());
+	if (!MakoContainer || !StorageContainer)
 	{
 		return false;
 	}
@@ -2177,8 +2194,36 @@ bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
 		EquippedItemId = CompanionConfig->DefaultEquippedWeaponItemId;
 	}
 
+	TArray<FAIREInventoryItemStackSnapshot> NewStorageStacks;
+	if (bShouldSeedFreshSharedStorage)
+	{
+		const TPair<FName, int32> FreshStorageItems[] =
+		{
+			{ FreshIronIngotItemId, FreshIronIngotCount },
+			{ FreshWoodHandleItemId, FreshWoodHandleCount }
+		};
+		for (const TPair<FName, int32>& Item : FreshStorageItems)
+		{
+			FAIREItemRules Rules;
+			if (!ResolveItemRules(Item.Key, false, Rules)
+				|| !TryAddToStacks(
+					NewStorageStacks,
+					StorageContainer->Capacity,
+					Item.Key,
+					Item.Value,
+					Rules.MaxStackSize))
+			{
+				return false;
+			}
+		}
+	}
+
 	MakoContainer->ItemStacks = MoveTemp(NewStacks);
 	MakoContainer->EquippedItemId = EquippedItemId;
+	if (bShouldSeedFreshSharedStorage)
+	{
+		StorageContainer->ItemStacks = MoveTemp(NewStorageStacks);
+	}
 	bMakoInventoryInitialized = true;
 	if (!MakoContainer->ItemStacks.IsEmpty()
 		|| !MakoContainer->EquippedItemId.IsNone())
@@ -2186,6 +2231,12 @@ bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
 		++MakoContainer->Revision;
 		BroadcastContainerChanged(*MakoContainer);
 	}
+	if (bShouldSeedFreshSharedStorage)
+	{
+		++StorageContainer->Revision;
+		BroadcastContainerChanged(*StorageContainer);
+	}
+	bShouldSeedFreshSharedStorage = false;
 	PendingCompanionConfig.Reset();
 	if (!bPersistenceReady)
 	{
@@ -3150,6 +3201,7 @@ void UAIREGameplayInventorySubsystem::FinalizePersistenceLoad(
 
 	if (!bAnyExisting && !bAnyIoFailure)
 	{
+		bShouldSeedFreshSharedStorage = true;
 		FinalizeFreshPersistenceStateIfPossible();
 		return;
 	}
@@ -3174,6 +3226,7 @@ void UAIREGameplayInventorySubsystem::FinalizePersistenceLoad(
 	bHasPlayerPersistenceState = true;
 	PendingCompanionConfig.Reset();
 	bMakoInventoryInitialized = true;
+	bShouldSeedFreshSharedStorage = false;
 	BroadcastContainerChanged(Containers.FindChecked(GetMakoContainerId()));
 	BroadcastContainerChanged(
 		Containers.FindChecked(GetSharedStorageContainerId()));
@@ -3745,6 +3798,7 @@ bool UAIREGameplayInventorySubsystem::CommitPersistenceEnvelope(
 	bHasPlayerPersistenceState = true;
 	PendingCompanionConfig.Reset();
 	bMakoInventoryInitialized = true;
+	bShouldSeedFreshSharedStorage = false;
 	bPersistenceDirty = bSaveRequestedBeforeCommit;
 	ApplyOrInitializeRegisteredPlayerState();
 	BroadcastContainerChanged(Containers.FindChecked(GetMakoContainerId()));

@@ -106,6 +106,18 @@ bool FAIRECompanionCommandGatewayLifecycleTest::RunTest(
 		return false;
 	}
 
+	FAIRECommandCandidate ToleratedClockSkew = MakeCandidate(
+		TEXT("command-clock-skew-tolerated"),
+		EAIRECommandType::HoldPosition);
+	ToleratedClockSkew.IssuedAtUtc =
+		FDateTime::UtcNow() + FTimespan::FromSeconds(15.0);
+	ToleratedClockSkew.ExpiresAtUtc =
+		ToleratedClockSkew.IssuedAtUtc + FTimespan::FromSeconds(30.0);
+	EmitCandidates(*ChatComponent, {ToleratedClockSkew});
+	TestTrue(
+		TEXT("A candidate within the server clock tolerance becomes active"),
+		Gateway->HasActiveDirectCommand());
+
 	EmitCandidates(
 		*ChatComponent,
 		{MakeCandidate(TEXT("command-hold-1"), EAIRECommandType::HoldPosition)});
@@ -116,6 +128,20 @@ bool FAIRECompanionCommandGatewayLifecycleTest::RunTest(
 		TEXT("The first active command owns its stable ID"),
 		FirstSnapshot.CommandId,
 		FString(TEXT("command-hold-1")));
+
+	FAIRECommandCandidate ExcessiveClockSkew = MakeCandidate(
+		TEXT("command-clock-skew-excessive"),
+		EAIRECommandType::HoldPosition);
+	ExcessiveClockSkew.IssuedAtUtc =
+		FDateTime::UtcNow() + FTimespan::FromSeconds(45.0);
+	ExcessiveClockSkew.ExpiresAtUtc =
+		ExcessiveClockSkew.IssuedAtUtc + FTimespan::FromSeconds(30.0);
+	EmitCandidates(*ChatComponent, {ExcessiveClockSkew});
+	FAIREDirectCommandSnapshot Snapshot = Gateway->GetDirectCommandSnapshot();
+	TestEqual(
+		TEXT("A candidate beyond the server clock tolerance is rejected"),
+		Snapshot.Generation,
+		FirstSnapshot.Generation);
 
 	EmitCandidates(
 		*ChatComponent,
@@ -139,7 +165,7 @@ bool FAIRECompanionCommandGatewayLifecycleTest::RunTest(
 	EmitCandidates(
 		*ChatComponent,
 		{MakeCandidate(TEXT("command-hold-2"), EAIRECommandType::HoldPosition)});
-	FAIREDirectCommandSnapshot Snapshot = Gateway->GetDirectCommandSnapshot();
+	Snapshot = Gateway->GetDirectCommandSnapshot();
 	TestEqual(
 		TEXT("A duplicate does not replace the active intent"),
 		Snapshot.Generation,

@@ -240,56 +240,6 @@ namespace
 			false);
 	}
 
-	bool BuildCraftWorkRequest(
-		AAIRECompanionCharacter& CompanionCharacter,
-		UAIRECompanionInventoryComponent& InventoryComponent,
-		const FGuid& WorkOrderId,
-		const FAI_RECraftingRecipe& Recipe,
-		const bool bCanWorldDrop,
-		FAIREMakoCraftWorkRequest& OutRequest)
-	{
-		FAIREInventoryContainerSnapshot MakoSnapshot;
-		if (!InventoryComponent.GetInventorySnapshot(MakoSnapshot))
-		{
-			return false;
-		}
-
-		const UWorld* World = CompanionCharacter.GetWorld();
-		const UGameInstance* GameInstance =
-			IsValid(World) ? World->GetGameInstance() : nullptr;
-		UAIREGameplayInventorySubsystem* GameplayInventory =
-			IsValid(GameInstance)
-				? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
-				: nullptr;
-		FAIREInventoryContainerSnapshot StorageSnapshot;
-		if (!IsValid(GameplayInventory)
-			|| !GameplayInventory->GetContainerSnapshot(
-				UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
-				StorageSnapshot)
-			|| MakoSnapshot.SessionId != StorageSnapshot.SessionId)
-		{
-			return false;
-		}
-
-		OutRequest = FAIREMakoCraftWorkRequest();
-		OutRequest.SessionId = MakoSnapshot.SessionId;
-		OutRequest.WorkOrderId = WorkOrderId;
-		OutRequest.ExpectedMakoRevision = MakoSnapshot.Revision;
-		OutRequest.ExpectedStorageRevision = StorageSnapshot.Revision;
-		OutRequest.Result.ItemId = Recipe.ResultItemId;
-		OutRequest.Result.Count = Recipe.ResultAmount;
-		OutRequest.bCanWorldDrop = bCanWorldDrop;
-		OutRequest.Ingredients.Reserve(Recipe.Ingredients.Num());
-		for (const FAI_RECraftingIngredient& Ingredient : Recipe.Ingredients)
-		{
-			FAIREInventoryItemQuantity& Quantity =
-				OutRequest.Ingredients.AddDefaulted_GetRef();
-			Quantity.ItemId = Ingredient.ItemId;
-			Quantity.Count = Ingredient.Amount;
-		}
-		return true;
-	}
-
 	UAI_REItemDataAsset* ResolveItemAsset(
 		const UObject& WorldContext,
 		const FName ItemId)
@@ -1796,7 +1746,7 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 			const bool bCanWorldDrop =
 				InstanceData.DroppedItemActorClass != nullptr
 				&& IsValid(ResultItemAsset);
-			if (!BuildCraftWorkRequest(
+			if (!FAIRECompanionCraftingWorkRequest::BuildInventoryWorkRequest(
 					*InstanceData.CompanionCharacter,
 					*InstanceData.InventoryComponent,
 					Snapshot.WorkOrderId,
@@ -1807,6 +1757,9 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 					->CanCompleteMakoCraftWork(
 						CraftRequest,
 						PreflightResult)
+				|| (Snapshot.bRequireMakoDestination
+					&& PreflightResult.Destination
+						!= EAIREInventoryWorkResultDestination::Mako)
 				|| !InstanceData.WorkOrderComponent->TryStartWorking(
 					Snapshot.WorkOrderId))
 			{
@@ -1868,7 +1821,7 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 			&& IsValid(ResultItemAsset);
 		FAIREMakoCraftWorkRequest CraftRequest;
 		FAIREInventoryWorkResult PreflightResult;
-		if (!BuildCraftWorkRequest(
+		if (!FAIRECompanionCraftingWorkRequest::BuildInventoryWorkRequest(
 				*InstanceData.CompanionCharacter,
 				*InstanceData.InventoryComponent,
 				Snapshot.WorkOrderId,
@@ -1877,7 +1830,10 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 				CraftRequest)
 			|| !InstanceData.InventoryComponent->CanCompleteMakoCraftWork(
 				CraftRequest,
-				PreflightResult))
+				PreflightResult)
+			|| (Snapshot.bRequireMakoDestination
+				&& PreflightResult.Destination
+					!= EAIREInventoryWorkResultDestination::Mako))
 		{
 			InstanceData.WorkOrderComponent->TryFailWorkOrder(
 				Snapshot.WorkOrderId);

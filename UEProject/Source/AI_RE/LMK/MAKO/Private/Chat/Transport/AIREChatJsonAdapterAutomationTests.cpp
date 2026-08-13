@@ -119,6 +119,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	Context.Period = EAIREGameWorldPeriod::Morning;
 	FAIREWorldContextV1 WorldContext;
 	WorldContext.LocationId = TEXT("forest_camp");
+	WorldContext.AvailableWorkstations.Add(TEXT("Workbench.Blacksmith"));
 	FString HttpBody;
 	FString WebSocketFrame;
 	FString BuildError;
@@ -132,6 +133,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 			TEXT("request-1"),
 			TEXT("message-1"),
 			TEXT("hello"),
+			true,
 			HttpBody,
 			WebSocketFrame,
 			BuildError));
@@ -154,7 +156,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	{
 		return false;
 	}
-	TestEqual(TEXT("allowed_commands contains exactly ten commands"), AllowedCommands->Num(), 10);
+	TestEqual(TEXT("allowed_commands contains exactly eleven commands"), AllowedCommands->Num(), 11);
 	for (int32 Index = 0; Index < AllowedCommands->Num() && Index < 10; ++Index)
 	{
 		FString Command;
@@ -164,6 +166,86 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 				&& (*AllowedCommands)[Index]->TryGetString(Command));
 		TestEqual(TEXT("allowed_commands preserves fixed command order"), Command, FString(ExpectedAllowedCommands[Index]));
 	}
+	FString CraftCommand;
+	TestTrue(
+		TEXT("CraftItem is advertised when a Blacksmith is available"),
+		(*AllowedCommands)[10]->TryGetString(CraftCommand));
+	TestEqual(
+		TEXT("CraftItem is the appended capability"),
+		CraftCommand,
+		FString(TEXT("Command.CraftItem")));
+
+	FString RequestWithoutCraftRuntime;
+	FString FrameWithoutCraftRuntime;
+	TestTrue(
+		TEXT("Request without valid Craft runtime serializes successfully"),
+		FAIREChatJsonAdapter::BuildInGameRequest(
+			Context,
+			WorldContext,
+			TEXT("mako"),
+			TEXT("session-1"),
+			TEXT("request-3"),
+			TEXT("message-3"),
+			TEXT("hello"),
+			false,
+			RequestWithoutCraftRuntime,
+			FrameWithoutCraftRuntime,
+			BuildError));
+	TSharedPtr<FJsonObject> RequestWithoutCraftRuntimeObject;
+	const TSharedRef<TJsonReader<>> RequestWithoutCraftRuntimeReader =
+		TJsonReaderFactory<>::Create(RequestWithoutCraftRuntime);
+	TestTrue(
+		TEXT("Request without valid Craft runtime parses as JSON"),
+		FJsonSerializer::Deserialize(
+			RequestWithoutCraftRuntimeReader,
+			RequestWithoutCraftRuntimeObject)
+			&& RequestWithoutCraftRuntimeObject.IsValid());
+	const TArray<TSharedPtr<FJsonValue>>* CommandsWithoutCraftRuntime = nullptr;
+	TestTrue(
+		TEXT("CraftItem is not advertised without valid Craft runtime"),
+		RequestWithoutCraftRuntimeObject.IsValid()
+			&& RequestWithoutCraftRuntimeObject->TryGetArrayField(
+				TEXT("allowed_commands"),
+				CommandsWithoutCraftRuntime)
+			&& CommandsWithoutCraftRuntime != nullptr
+			&& CommandsWithoutCraftRuntime->Num() == 10);
+
+	FAIREWorldContextV1 ContextWithoutWorkbench = WorldContext;
+	ContextWithoutWorkbench.AvailableWorkstations.Reset();
+	FString RequestWithoutWorkbench;
+	FString FrameWithoutWorkbench;
+	TestTrue(
+		TEXT("Request without a nearby Blacksmith serializes successfully"),
+		FAIREChatJsonAdapter::BuildInGameRequest(
+			Context,
+			ContextWithoutWorkbench,
+			TEXT("mako"),
+			TEXT("session-1"),
+			TEXT("request-2"),
+			TEXT("message-2"),
+			TEXT("hello"),
+			true,
+			RequestWithoutWorkbench,
+			FrameWithoutWorkbench,
+			BuildError));
+	TSharedPtr<FJsonObject> RequestWithoutWorkbenchObject;
+	const TSharedRef<TJsonReader<>> RequestWithoutWorkbenchReader =
+		TJsonReaderFactory<>::Create(RequestWithoutWorkbench);
+	TestTrue(
+		TEXT("Request without a nearby Blacksmith parses as JSON"),
+		FJsonSerializer::Deserialize(
+			RequestWithoutWorkbenchReader,
+			RequestWithoutWorkbenchObject)
+			&& RequestWithoutWorkbenchObject.IsValid());
+	const TArray<TSharedPtr<FJsonValue>>* CommandsWithoutWorkbench = nullptr;
+	TestTrue(
+		TEXT("CraftItem is not advertised without a nearby Blacksmith"),
+		RequestWithoutWorkbenchObject.IsValid()
+			&& RequestWithoutWorkbenchObject->TryGetArrayField(
+				TEXT("allowed_commands"),
+				CommandsWithoutWorkbench)
+			&& CommandsWithoutWorkbench != nullptr
+			&& CommandsWithoutWorkbench->Num() == 10);
 
 	const FAIREChatResponseCorrelation Correlation = MakeCorrelation();
 	TSharedPtr<FJsonObject> GatherParameters = MakeShared<FJsonObject>();
@@ -198,6 +280,98 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 		TestTrue(TEXT("Attack candidate type is parsed"), Attack.Type == EAIRECommandType::Attack);
 		TestEqual(TEXT("Attack target_id parameter is parsed"), Attack.ParameterTargetId, FString(TEXT("enemy-1")));
 	}
+
+	TSharedPtr<FJsonObject> CraftParameters = MakeShared<FJsonObject>();
+	CraftParameters->SetStringField(TEXT("recipe_id"), TEXT("recipe-11"));
+	CraftParameters->SetNumberField(TEXT("quantity"), 1);
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-craft"),
+			TEXT("Command.CraftItem"),
+			CraftParameters)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("A strict CraftItem candidate parses"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Response);
+	if (Parsed.Result.CommandCandidates.Num() == 1)
+	{
+		const FAIRECommandCandidate& Craft = Parsed.Result.CommandCandidates[0];
+		TestTrue(
+			TEXT("CraftItem candidate type is parsed"),
+			Craft.Type == EAIRECommandType::CraftItem);
+		TestEqual(
+			TEXT("CraftItem stable recipe id is parsed"),
+			Craft.CraftRecipeId,
+			FString(TEXT("recipe-11")));
+		TestTrue(TEXT("CraftItem quantity is present"), Craft.bHasCraftQuantity);
+		TestEqual(TEXT("CraftItem quantity is fixed to one"), Craft.CraftQuantity, 1);
+	}
+
+	TSharedPtr<FJsonObject> InvalidCraftParameters = MakeShared<FJsonObject>();
+	InvalidCraftParameters->SetStringField(TEXT("recipe_id"), TEXT("recipe-11"));
+	InvalidCraftParameters->SetNumberField(TEXT("quantity"), 2);
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-invalid-craft"),
+			TEXT("Command.CraftItem"),
+			InvalidCraftParameters)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("CraftItem quantity other than one invalidates the frame"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Invalid);
+
+	TSharedPtr<FJsonObject> CraftWithExtraParameter =
+		MakeShared<FJsonObject>();
+	CraftWithExtraParameter->SetStringField(
+		TEXT("recipe_id"),
+		TEXT("recipe-11"));
+	CraftWithExtraParameter->SetNumberField(TEXT("quantity"), 1);
+	CraftWithExtraParameter->SetBoolField(TEXT("future_flag"), true);
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-extra-craft"),
+			TEXT("Command.CraftItem"),
+			CraftWithExtraParameter)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("CraftItem extra parameter is surfaced for gateway rejection"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Response
+			&& Parsed.Result.CommandCandidates.Num() == 1
+			&& Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters);
+
+	TSharedPtr<FJsonObject> CraftWithoutQuantity = MakeShared<FJsonObject>();
+	CraftWithoutQuantity->SetStringField(
+		TEXT("recipe_id"),
+		TEXT("recipe-11"));
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-missing-craft"),
+			TEXT("Command.CraftItem"),
+			CraftWithoutQuantity)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("CraftItem missing quantity invalidates the frame"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Invalid);
 
 	const TCHAR* const OtherBackendGeneratedTypes[] =
 	{

@@ -3,8 +3,12 @@
 #include "CoreMinimal.h"
 
 class AAI_REWorkBenchBase;
+class AAIRECompanionCharacter;
+class UAIRECompanionInventoryComponent;
 class UAIRECompanionWorkOrderComponent;
 class UDataTable;
+struct FAI_RECraftingRecipe;
+struct FAIREMakoCraftWorkRequest;
 
 class AI_RE_API FAIRECompanionCraftingWorkRequest final
 {
@@ -19,5 +23,14 @@ public:
 		AAI_REWorkBenchBase* Workbench,
 		UDataTable* RecipeTable,
 		FName RecipeRowId,
-		FGuid& OutWorkOrderId);
+		FGuid& OutWorkOrderId,
+		bool bRequireMakoDestination = false);
+
+	static bool BuildInventoryWorkRequest(
+		AAIRECompanionCharacter& CompanionCharacter,
+		UAIRECompanionInventoryComponent& InventoryComponent,
+		const FGuid& WorkOrderId,
+		const FAI_RECraftingRecipe& Recipe,
+		bool bCanWorldDrop,
+		FAIREMakoCraftWorkRequest& OutRequest);
 };

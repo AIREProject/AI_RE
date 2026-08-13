@@ -25,11 +25,13 @@ bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
 		|| (Request.WorkType == EAIRECompanionWorkOrderType::Harvesting
 			&& !IsValid(Request.RecipeTable)
 			&& Request.RecipeRowId.IsNone()
+			&& !Request.bRequireMakoDestination
 			&& IsValid(Cast<AAI_REHarvestableResourceActor>(TargetActor)))
 		|| (Request.WorkType
 				== EAIRECompanionWorkOrderType::StorageTransfer
 			&& !IsValid(Request.RecipeTable)
 			&& Request.RecipeRowId.IsNone()
+			&& !Request.bRequireMakoDestination
 			&& Request.StorageTransfer.RequestSessionId.IsValid()
 			&& !Request.StorageTransfer.ItemId.IsNone()
 			&& Request.StorageTransfer.Count > 0
@@ -63,6 +65,8 @@ bool UAIRECompanionWorkOrderComponent::TryRequestWorkOrder(
 	CurrentWorkOrder.WorkType = Request.WorkType;
 	CurrentWorkOrder.RecipeTable = Request.RecipeTable;
 	CurrentWorkOrder.RecipeRowId = Request.RecipeRowId;
+	CurrentWorkOrder.bRequireMakoDestination =
+		Request.bRequireMakoDestination;
 	CurrentWorkOrder.StorageTransfer = Request.StorageTransfer;
 	CurrentWorkOrder.State = EAIRECompanionWorkOrderState::Requested;
 	BindTargetDestroyed();

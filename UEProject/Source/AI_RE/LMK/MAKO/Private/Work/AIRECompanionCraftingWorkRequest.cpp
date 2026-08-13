@@ -1,8 +1,13 @@
 #include "Work/AIRECompanionCraftingWorkRequest.h"
 
 #include "AI_RECraftingTypes.h"
+#include "AIREGameplayInventorySubsystem.h"
+#include "AIREGameplayInventoryTypes.h"
 #include "AI_REWorkBenchBase.h"
+#include "Core/AIRECompanionCharacter.h"
 #include "Engine/DataTable.h"
+#include "Engine/GameInstance.h"
+#include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "Work/AIRECompanionWorkOrderTypes.h"
 
@@ -53,7 +58,8 @@ bool FAIRECompanionCraftingWorkRequest::TryRequest(
 	AAI_REWorkBenchBase* Workbench,
 	UDataTable* RecipeTable,
 	FName RecipeRowId,
-	FGuid& OutWorkOrderId)
+	FGuid& OutWorkOrderId,
+	const bool bRequireMakoDestination)
 {
 	OutWorkOrderId.Invalidate();
 	if (!IsValid(WorkOrderComponent)
@@ -68,5 +74,57 @@ bool FAIRECompanionCraftingWorkRequest::TryRequest(
 	Request.TargetActor = Workbench;
 	Request.RecipeTable = RecipeTable;
 	Request.RecipeRowId = RecipeRowId;
+	Request.bRequireMakoDestination = bRequireMakoDestination;
 	return WorkOrderComponent->TryRequestWorkOrder(Request, OutWorkOrderId);
+}
+
+bool FAIRECompanionCraftingWorkRequest::BuildInventoryWorkRequest(
+	AAIRECompanionCharacter& CompanionCharacter,
+	UAIRECompanionInventoryComponent& InventoryComponent,
+	const FGuid& WorkOrderId,
+	const FAI_RECraftingRecipe& Recipe,
+	const bool bCanWorldDrop,
+	FAIREMakoCraftWorkRequest& OutRequest)
+{
+	FAIREInventoryContainerSnapshot MakoSnapshot;
+	if (!WorkOrderId.IsValid()
+		|| !InventoryComponent.GetInventorySnapshot(MakoSnapshot))
+	{
+		return false;
+	}
+
+	const UWorld* World = CompanionCharacter.GetWorld();
+	const UGameInstance* GameInstance =
+		IsValid(World) ? World->GetGameInstance() : nullptr;
+	UAIREGameplayInventorySubsystem* GameplayInventory =
+		IsValid(GameInstance)
+			? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+			: nullptr;
+	FAIREInventoryContainerSnapshot StorageSnapshot;
+	if (!IsValid(GameplayInventory)
+		|| !GameplayInventory->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			StorageSnapshot)
+		|| MakoSnapshot.SessionId != StorageSnapshot.SessionId)
+	{
+		return false;
+	}
+
+	OutRequest = FAIREMakoCraftWorkRequest();
+	OutRequest.SessionId = MakoSnapshot.SessionId;
+	OutRequest.WorkOrderId = WorkOrderId;
+	OutRequest.ExpectedMakoRevision = MakoSnapshot.Revision;
+	OutRequest.ExpectedStorageRevision = StorageSnapshot.Revision;
+	OutRequest.Result.ItemId = Recipe.ResultItemId;
+	OutRequest.Result.Count = Recipe.ResultAmount;
+	OutRequest.bCanWorldDrop = bCanWorldDrop;
+	OutRequest.Ingredients.Reserve(Recipe.Ingredients.Num());
+	for (const FAI_RECraftingIngredient& Ingredient : Recipe.Ingredients)
+	{
+		FAIREInventoryItemQuantity& Quantity =
+			OutRequest.Ingredients.AddDefaulted_GetRef();
+		Quantity.ItemId = Ingredient.ItemId;
+		Quantity.Count = Ingredient.Amount;
+	}
+	return true;
 }

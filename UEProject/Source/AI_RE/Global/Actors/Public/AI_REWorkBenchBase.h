@@ -14,7 +14,7 @@ class UStaticMeshComponent;
 /**
  * Base class for all crafting workbenches in the world.
  */
-UCLASS(Abstract)
+UCLASS()
 class AI_RE_API AAI_REWorkBenchBase : public AActor, public IAI_REInteractableInterface
 {
 	GENERATED_BODY()
