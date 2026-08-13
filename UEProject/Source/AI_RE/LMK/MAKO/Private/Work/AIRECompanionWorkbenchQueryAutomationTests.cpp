@@ -122,7 +122,7 @@ bool FAIRECompanionWorkbenchQueryAutomationTest::RunTest(
 	}
 	NearestBlacksmith->WorkbenchType = EWorkbenchType::Blacksmith;
 	NearestBlacksmith->WorkbenchTags.AddTag(
-		AI_REWorkbenchGameplayTags::Workbench_Forge);
+		AI_REWorkbenchGameplayTags::Workbench_Blacksmith);
 
 	for (int32 Index = 2; Index < 9; ++Index)
 	{
