@@ -3,14 +3,13 @@
 #include "Work/AIRECompanionCraftingWorkRequest.h"
 #include "Work/AIRECompanionHarvestWorkRequest.h"
 #include "Work/AIRECompanionStorageWorkRequest.h"
-
+#include "AI_REWorkBenchBase.h"
 #include "AIRESharedStorageActor.h"
 #include "AI_RECraftingTypes.h"
 #include "AI_REHarvestableResourceActor.h"
 #include "AI_REHarvestableResourceComponent.h"
 #include "AI_REItemActor.h"
 #include "AI_REItemDataAsset.h"
-#include "AI_REWorkBench.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -122,8 +121,8 @@ bool FAIRECompanionWorkRequestValidationTest::RunTest(
 	SpawnParameters.SpawnCollisionHandlingOverride =
 		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	AAI_REWorkBench* Workbench =
-		TestWorld->SpawnActor<AAI_REWorkBench>(
+	AAI_REWorkBenchBase* Workbench =
+		TestWorld->SpawnActor<AAI_REWorkBenchBase>(
 			FVector::ZeroVector,
 			FRotator::ZeroRotator,
 			SpawnParameters);
