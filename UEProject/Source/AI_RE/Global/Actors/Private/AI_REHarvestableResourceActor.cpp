@@ -25,6 +25,28 @@ bool AAI_REHarvestableResourceActor::ApplyHarvestDamage_Implementation(float Dam
 	return ResourceComponent != nullptr && ResourceComponent->ApplyHarvestDamage(DamageAmount, InstigatorActor);
 }
 
+bool AAI_REHarvestableResourceActor::TryGetHarvestInteractionLocation(
+	const FVector& FromLocation,
+	FVector& OutInteractionLocation) const
+{
+	if (FromLocation.ContainsNaN()
+		|| !FMath::IsFinite(HarvestInteractionRadius)
+		|| HarvestInteractionRadius < 0.0f)
+	{
+		return false;
+	}
+
+	FVector ActorToRequester = FromLocation - GetActorLocation();
+	ActorToRequester.Z = 0.0f;
+	if (!ActorToRequester.Normalize())
+	{
+		ActorToRequester = GetActorForwardVector().GetSafeNormal2D();
+	}
+	OutInteractionLocation = GetActorLocation()
+		+ ActorToRequester * HarvestInteractionRadius;
+	return !OutInteractionLocation.ContainsNaN();
+}
+
 // void AAI_REHarvestableResourceActor::ApplyDepletedVisualState_Implementation(bool bNewIsDepleted)
 // {
 // }

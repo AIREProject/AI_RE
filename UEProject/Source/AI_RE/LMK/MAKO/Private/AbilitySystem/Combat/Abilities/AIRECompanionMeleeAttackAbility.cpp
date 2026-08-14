@@ -88,6 +88,7 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 	{
 		AttackRange = ActiveExecutionMode == EExecutionMode::Harvest
 			? ActiveWeaponDefinition->HarvestAttackRange
+				+ AIRECompanionWeaponDefinition::HarvestRangeAcceptanceTolerance
 			: ActiveWeaponDefinition->AttackRange;
 	}
 	ResetCurrentStepState();

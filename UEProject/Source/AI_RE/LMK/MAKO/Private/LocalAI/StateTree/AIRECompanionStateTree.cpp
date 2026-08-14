@@ -61,6 +61,18 @@ namespace
 	constexpr float WorkActivationRetryInterval = 0.1f;
 	constexpr float HarvestMovementTimeout = 30.0f;
 	constexpr float HarvestNoProgressTimeout = 15.0f;
+	constexpr float HarvestApproachAngles[] =
+	{
+		0.0f,
+		45.0f,
+		-45.0f,
+		90.0f,
+		-90.0f,
+		135.0f,
+		-135.0f,
+		180.0f
+	};
+	constexpr int32 HarvestApproachCount = UE_ARRAY_COUNT(HarvestApproachAngles);
 	constexpr int32 MaxRememberedEvadeExecutions = 4096;
 
 	TAutoConsoleVariable<int32> CVarAIRECompanionDistanceDebug(
@@ -145,7 +157,8 @@ namespace
 	FVector CalculateHarvestApproachLocation(
 		const APawn& CompanionPawn,
 		const AAI_REHarvestableResourceActor& ResourceActor,
-		const float AttackRange)
+		const float AttackRange,
+		const int32 ApproachAttemptIndex)
 	{
 		FVector InteractionLocation;
 		if (!ResourceActor.TryGetHarvestInteractionLocation(
@@ -155,13 +168,27 @@ namespace
 			InteractionLocation = ResourceActor.GetActorLocation();
 		}
 
-		FVector ResourceToCompanion =
-			CompanionPawn.GetActorLocation() - InteractionLocation;
+		FVector ResourceToCompanion = InteractionLocation
+			- ResourceActor.GetActorLocation();
 		ResourceToCompanion.Z = 0.0f;
 		if (!ResourceToCompanion.Normalize())
 		{
-			ResourceToCompanion = -ResourceActor.GetActorForwardVector().GetSafeNormal2D();
+			ResourceToCompanion = (
+				CompanionPawn.GetActorLocation()
+				- ResourceActor.GetActorLocation()).GetSafeNormal2D();
 		}
+		if (ResourceToCompanion.IsNearlyZero())
+		{
+			ResourceToCompanion =
+				-ResourceActor.GetActorForwardVector().GetSafeNormal2D();
+		}
+		const int32 WrappedAttemptIndex = FMath::Abs(ApproachAttemptIndex)
+			% HarvestApproachCount;
+		ResourceToCompanion = ResourceToCompanion.RotateAngleAxis(
+			HarvestApproachAngles[WrappedAttemptIndex],
+			FVector::UpVector);
+		InteractionLocation = ResourceActor.GetActorLocation()
+			+ ResourceToCompanion * ResourceActor.HarvestInteractionRadius;
 
 		const float DesiredCenterDistance = CompanionPawn.GetSimpleCollisionRadius()
 			+ FMath::Max(
@@ -1609,6 +1636,7 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::EnterState(
 		InstanceData.ElapsedHarvestMovementTime = 0.0f;
 		InstanceData.ElapsedHarvestNoProgressTime = 0.0f;
 		InstanceData.LastObservedHarvestHealth = -1.0f;
+		InstanceData.HarvestApproachAttemptIndex = 0;
 		InstanceData.ElapsedStorageMovementTime = 0.0f;
 		InstanceData.ElapsedStorageWorkTime = 0.0f;
 		InstanceData.RetryTimeRemaining = 0.0f;
@@ -1715,9 +1743,10 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 	InstanceData.RetryTimeRemaining = FMath::Max(
 		0.0f,
 		InstanceData.RetryTimeRemaining - DeltaTime);
-	if (InstanceData.bMoveRequested
+	const bool bMoveRequestFinished = InstanceData.bMoveRequested
 		&& InstanceData.CompanionController->GetMoveStatus()
-			!= EPathFollowingStatus::Moving)
+			!= EPathFollowingStatus::Moving;
+	if (bMoveRequestFinished)
 	{
 		InstanceData.bMoveRequested = false;
 	}
@@ -2009,10 +2038,13 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 		const float AttackRange = IsValid(WeaponDefinition)
 			? WeaponDefinition->HarvestAttackRange
 			: -1.0f;
+		const float EffectiveAttackRange = AttackRange
+			+ AIRECompanionWeaponDefinition::HarvestRangeAcceptanceTolerance;
 		if (!IsValid(WeaponDefinition)
 			|| !WeaponDefinition->IsMeleeWeapon()
 			|| !FMath::IsFinite(AttackRange)
-			|| AttackRange < 0.0f)
+			|| AttackRange < 0.0f
+			|| !FMath::IsFinite(EffectiveAttackRange))
 		{
 			InstanceData.WorkOrderComponent->TryFailWorkOrder(
 				Snapshot.WorkOrderId);
@@ -2023,9 +2055,16 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 		const bool bInAttackRange = IsWithinHarvestRange(
 			*CompanionPawn,
 			*ResourceActor,
-			AttackRange);
+			EffectiveAttackRange);
 		if (!bInAttackRange)
 		{
+			if (bMoveRequestFinished)
+			{
+				InstanceData.HarvestApproachAttemptIndex =
+					(InstanceData.HarvestApproachAttemptIndex + 1)
+					% HarvestApproachCount;
+				InstanceData.RetryTimeRemaining = 0.0f;
+			}
 			InstanceData.ElapsedHarvestMovementTime +=
 				FMath::Max(0.0f, DeltaTime);
 			InstanceData.ElapsedHarvestNoProgressTime = 0.0f;
@@ -2049,7 +2088,8 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 				const FVector ApproachLocation = CalculateHarvestApproachLocation(
 					*CompanionPawn,
 					*ResourceActor,
-					AttackRange);
+					AttackRange,
+					InstanceData.HarvestApproachAttemptIndex);
 				const EPathFollowingRequestResult::Type MoveResult =
 					InstanceData.CompanionController->MoveToLocation(
 						ApproachLocation,
@@ -2065,6 +2105,18 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 						== EPathFollowingRequestResult::RequestSuccessful;
 				if (MoveResult == EPathFollowingRequestResult::Failed)
 				{
+					InstanceData.HarvestApproachAttemptIndex =
+						(InstanceData.HarvestApproachAttemptIndex + 1)
+						% HarvestApproachCount;
+					InstanceData.RetryTimeRemaining =
+						WorkMovementRetryInterval;
+				}
+				else if (MoveResult
+					== EPathFollowingRequestResult::AlreadyAtGoal)
+				{
+					InstanceData.HarvestApproachAttemptIndex =
+						(InstanceData.HarvestApproachAttemptIndex + 1)
+						% HarvestApproachCount;
 					InstanceData.RetryTimeRemaining =
 						WorkMovementRetryInterval;
 				}
@@ -2073,6 +2125,7 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 		}
 
 		InstanceData.ElapsedHarvestMovementTime = 0.0f;
+		InstanceData.HarvestApproachAttemptIndex = 0;
 		InstanceData.CompanionController->StopMovement();
 		InstanceData.bMoveRequested = false;
 		InstanceData.CompanionController->SetFocus(

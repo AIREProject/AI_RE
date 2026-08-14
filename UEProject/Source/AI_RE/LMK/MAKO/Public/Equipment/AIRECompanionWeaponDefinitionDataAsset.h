@@ -115,6 +115,11 @@ struct AI_RE_API FAIREWeaponCombatSkillDefinition
 	float FallbackRecoveryDuration = 0.6f;
 };
 
+namespace AIRECompanionWeaponDefinition
+{
+	inline constexpr float HarvestRangeAcceptanceTolerance = 25.0f;
+}
+
 UCLASS(BlueprintType)
 class AI_RE_API UAIRECompanionWeaponDefinitionDataAsset : public UDataAsset
 {

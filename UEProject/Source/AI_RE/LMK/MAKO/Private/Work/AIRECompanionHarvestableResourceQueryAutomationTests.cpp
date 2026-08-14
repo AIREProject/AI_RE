@@ -9,6 +9,7 @@
 #include "AI_REItemDataAsset.h"
 #include "AI_REWorkbenchGameplayTags.h"
 #include "Components/BoxComponent.h"
+#include "Components/SceneComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
@@ -140,9 +141,17 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		AI_REHarvestGameplayTags::Resource_Wood,
 		RewardItem);
 	AActor* FilterOrigin = TestWorld->SpawnActor<AActor>(
-		FVector(20000.0f, 0.0f, 0.0f),
+		FVector::ZeroVector,
 		FRotator::ZeroRotator,
 		SpawnParameters);
+	if (IsValid(FilterOrigin))
+	{
+		USceneComponent* FilterRoot = NewObject<USceneComponent>(FilterOrigin);
+		FilterOrigin->AddInstanceComponent(FilterRoot);
+		FilterOrigin->SetRootComponent(FilterRoot);
+		FilterRoot->RegisterComponent();
+		FilterOrigin->SetActorLocation(FVector(20000.0f, 0.0f, 0.0f));
+	}
 	for (int32 Index = 1; Index <= 8; ++Index)
 	{
 		SpawnResource(
@@ -190,6 +199,19 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(
 			*Origin,
 			AI_REHarvestGameplayTags::Resource_Wood) == NearestWood);
+	FVector HarvestInteractionLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("Harvest interaction location is available"),
+		NearestWood->TryGetHarvestInteractionLocation(
+			Origin->GetActorLocation(),
+			HarvestInteractionLocation));
+	TestTrue(
+		TEXT("Harvest interaction radius is independent of mesh collision bounds"),
+		FMath::IsNearlyEqual(
+			FVector::Dist2D(
+				NearestWood->GetActorLocation(),
+				HarvestInteractionLocation),
+			50.0));
 	TestTrue(
 		TEXT("Tag filtering happens before the eight-resource cap"),
 		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(

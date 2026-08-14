@@ -139,7 +139,7 @@ int32 UAI_REHarvestableResourceComponent::ConsumeRewardIntervals(float AppliedDa
 	{
 		return 1;
 	}
-
+ 
 	RewardDamageProgress += AppliedDamage;
 	const int32 RewardMultiplier = FMath::FloorToInt(RewardDamageProgress / RewardDamageInterval);
 	if (RewardMultiplier > 0)
