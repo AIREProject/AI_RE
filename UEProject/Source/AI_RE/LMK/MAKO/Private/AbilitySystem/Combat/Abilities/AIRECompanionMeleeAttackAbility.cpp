@@ -409,6 +409,26 @@ bool UAIRECompanionMeleeAttackAbility::IsTargetInRange(
 		return false;
 	}
 
+	if (const AAI_REHarvestableResourceActor* ResourceActor =
+			Cast<AAI_REHarvestableResourceActor>(TargetActor))
+	{
+		FVector InteractionLocation;
+		if (!ResourceActor->TryGetHarvestInteractionLocation(
+				AvatarActor->GetActorLocation(),
+				InteractionLocation))
+		{
+			return false;
+		}
+
+		const float HorizontalDistance = FVector::Dist2D(
+			AvatarActor->GetActorLocation(),
+			InteractionLocation);
+		const float EffectiveDistance = FMath::Max(
+			0.0f,
+			HorizontalDistance - AvatarActor->GetSimpleCollisionRadius());
+		return EffectiveDistance <= AttackRange;
+	}
+
 	const float HorizontalDistance = FVector::Dist2D(
 		AvatarActor->GetActorLocation(),
 		TargetActor->GetActorLocation());

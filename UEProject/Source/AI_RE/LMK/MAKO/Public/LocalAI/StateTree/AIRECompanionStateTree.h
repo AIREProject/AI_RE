@@ -662,6 +662,15 @@ struct FAIRECompanionExecuteWorkOrderTaskInstanceData
 	float ElapsedCraftingTime = 0.0f;
 
 	UPROPERTY(Transient)
+	float ElapsedHarvestMovementTime = 0.0f;
+
+	UPROPERTY(Transient)
+	float ElapsedHarvestNoProgressTime = 0.0f;
+
+	UPROPERTY(Transient)
+	float LastObservedHarvestHealth = -1.0f;
+
+	UPROPERTY(Transient)
 	float ElapsedStorageMovementTime = 0.0f;
 
 	UPROPERTY(Transient)
