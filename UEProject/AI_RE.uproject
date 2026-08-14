@@ -72,10 +72,6 @@
 			"Enabled": true
 		},
 		{
-			"Name": "CutsceneProvider",
-			"Enabled": true
-		},
-		{
 			"Name": "MovieRenderPipeline",
 			"Enabled": true
 		}
