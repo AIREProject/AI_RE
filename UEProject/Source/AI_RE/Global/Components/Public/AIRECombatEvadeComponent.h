@@ -9,6 +9,7 @@ class AActor;
 class ACharacter;
 class UAnimMontage;
 class UGameplayAbility;
+class UCurveFloat;
 
 UENUM(BlueprintType)
 enum class EAIRECombatEvadeSide : uint8
@@ -126,6 +127,10 @@ private:
 	/** Must reference an in-place montage with Enable Root Motion disabled. */
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Evade")
 	TObjectPtr<UAnimMontage> EvadeMontage;
+
+	/** Optional curve to control dash speed over time. If left empty, dash speed is linear. X=Time (0 to 1), Y=Distance Fraction (0 to 1) */
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Evade")
+	TObjectPtr<UCurveFloat> DashPacingCurve;
 
 	TWeakObjectPtr<ACharacter> OwnerCharacter;
 	TWeakObjectPtr<AActor> ActiveThreatActor;

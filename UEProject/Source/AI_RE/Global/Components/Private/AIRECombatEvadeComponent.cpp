@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
+#include "Curves/CurveFloat.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECombatEvade, Log, All);
 
@@ -460,8 +461,14 @@ void UAIRECombatEvadeComponent::TickComponent(
 	}
 
 	ElapsedTime += FMath::Max(0.0f, DeltaTime);
-	const float TargetDistance = ActiveDashDistance
-		* FMath::Clamp(ElapsedTime / DashDuration, 0.0f, 1.0f);
+	
+	float DistanceFraction = FMath::Clamp(ElapsedTime / DashDuration, 0.0f, 1.0f);
+	if (IsValid(DashPacingCurve))
+	{
+		DistanceFraction = DashPacingCurve->GetFloatValue(DistanceFraction);
+	}
+	
+	const float TargetDistance = ActiveDashDistance * DistanceFraction;
 	const float StepDistance = FMath::Max(0.0f, TargetDistance - MovedDistance);
 	FHitResult HitResult;
 	const FVector PreviousLocation = Character->GetActorLocation();
