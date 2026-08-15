@@ -38,6 +38,14 @@ browser-session `session_id`. Each submit creates new request and message IDs.
 Chat failures are displayed without automatic retry, and the Memory tab remains
 a placeholder until a user Memory API is available.
 
+While a Chat request is waiting, the user can cancel the browser-side wait. The
+already displayed user message remains, no companion response is appended for
+that cancelled request, and the input controls become available immediately.
+Cancellation does not guarantee that Backend processing or persistence was
+rolled back because the server may already have received the request. Cancelled
+or timed-out Chat requests are never retried automatically; a later explicit
+submit creates new request and message IDs.
+
 ## Offline Tasks
 
 The Task tab uses `POST /api/v1/tasks` and

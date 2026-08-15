@@ -145,7 +145,8 @@ button {
 }
 
 .tab-button svg,
-.send-button svg {
+.send-button svg,
+.cancel-chat-button svg {
   width: 19px;
   fill: none;
   stroke: currentcolor;
@@ -374,6 +375,33 @@ button {
   opacity: 0.55;
 }
 
+.cancel-chat-button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #e8c9c1;
+  border-radius: 50%;
+  color: #9a493d;
+  background: #fff8f5;
+  cursor: pointer;
+}
+
+.cancel-chat-button[hidden] {
+  display: none;
+}
+
+.cancel-chat-button:focus-visible {
+  outline: 3px solid rgb(154 73 61 / 24%);
+  outline-offset: 2px;
+}
+
+.cancel-chat-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .composer-notice {
   margin: 8px 4px 0;
   color: var(--muted);
@@ -383,6 +411,10 @@ button {
 
 .composer-notice[data-state="sending"] {
   color: var(--amber-deep);
+}
+
+.composer-notice[data-state="cancelled"] {
+  color: #9a493d;
 }
 
 .composer-notice[data-state="error"] {
