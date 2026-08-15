@@ -26,6 +26,16 @@
 동시에 지원하지 않습니다. 차이를 기록한 뒤 파트너가 `AIRE_SERVER` 계약·구현·배포 중 어느
 쪽을 갱신할지 결정합니다.
 
+## 2026-08-14 Companion AI 로드맵 연결
+
+대화 품질, canonical Message/Event, 출처 기반 Memory, 관계 상태와 Cross-device 구현 순서는
+워크스페이스 로컬의 [`.agents/docs/planning/CAI_README.md`](../../../.agents/docs/planning/CAI_README.md)에서 관리합니다. 저장소의 `Docs/`에는 현재 계약과 구현 사실만 둡니다.
+
+이 로드맵에 적힌 Event, Command Result, Memory endpoint와 optional response field는 현재 제안입니다.
+`AIRE_SERVER` model·migration·route·test와 배포 `/openapi.json`이 함께 갱신되기 전에는 UE/Web이
+호출하거나 지원한다고 주장하지 않습니다. 현재 Chat 계약은 그대로 유지하며, 실제 계약 변경 Task에서
+이 문서, OpenAPI, UE USTRUCT, Web validator와 fixture를 함께 갱신합니다.
+
 ## 2026-07-27 과거 확인 결과
 
 로컬 `ai_companion_server` Build 1은 다음 API를 구현합니다.

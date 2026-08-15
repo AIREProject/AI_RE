@@ -41,6 +41,10 @@ bool FAIRECompanionWeaponTraceDefinitionTest::RunTest(
 		WeaponDefinition->HarvestAttackRange,
 		75.0f);
 	TestEqual(
+		TEXT("Harvest range accepts the movement arrival tolerance"),
+		AIRECompanionWeaponDefinition::HarvestRangeAcceptanceTolerance,
+		25.0f);
+	TestEqual(
 		TEXT("Left blade uses the project-owned handle socket"),
 		WeaponDefinition->LeftTraceSockets.TraceStartSocket,
 		FName(TEXT("weapon_l")));

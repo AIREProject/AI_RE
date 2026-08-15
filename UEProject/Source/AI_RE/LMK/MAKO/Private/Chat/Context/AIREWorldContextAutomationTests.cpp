@@ -292,6 +292,7 @@ bool FAIREWorldContextV1AutomationTest::RunTest(const FString& Parameters)
 
 	FAIREWorldContextV1 BoundaryContext = FullContext;
 	BoundaryContext.Threat.Count = AIREWorldContext::MaxThreatCount;
+	BoundaryContext.NearbyResources.Reset();
 	for (int32 Index = 0;
 		Index < AIREWorldContext::MaxNearbyResourceTypes;
 		++Index)

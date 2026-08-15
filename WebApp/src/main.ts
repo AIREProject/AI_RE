@@ -17,7 +17,7 @@ import {
 } from "./api/offlineTasks";
 import { apiBaseUrl, companionId, saveSlotId } from "./config";
 
-type ChatUiState = "idle" | "sending" | "success" | "error";
+type ChatUiState = "idle" | "sending" | "success" | "cancelled" | "error";
 type TaskUiState = "idle" | "loading" | "success" | "warning" | "error";
 type CreatableOfflineTaskType = Extract<
   OfflineTaskType,
@@ -27,6 +27,10 @@ type CreatableOfflineTaskType = Extract<
 interface TaskItemOption {
   id: string;
   label: string;
+}
+
+interface ActiveChatRequest {
+  controller: AbortController;
 }
 
 const taskItemOptions: Record<
@@ -171,6 +175,16 @@ app.innerHTML = `
           <button id="send-button" class="send-button" type="submit" aria-label="메시지 보내기">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
+          <button
+            id="cancel-chat-button"
+            class="cancel-chat-button"
+            type="button"
+            aria-label="대화 요청 취소"
+            hidden
+            disabled
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
         </form>
         <p id="composer-notice" class="composer-notice" data-state="idle" aria-live="polite" hidden></p>
       </section>
@@ -276,6 +290,7 @@ const chatMessages = requireElement<HTMLElement>("#chat-messages");
 const chatForm = requireElement<HTMLFormElement>("#chat-form");
 const chatInput = requireElement<HTMLTextAreaElement>("#chat-input");
 const sendButton = requireElement<HTMLButtonElement>("#send-button");
+const cancelChatButton = requireElement<HTMLButtonElement>("#cancel-chat-button");
 const composerNotice = requireElement<HTMLElement>("#composer-notice");
 const suggestionList = requireElement<HTMLElement>(".suggestion-list");
 const taskForm = requireElement<HTMLFormElement>("#task-form");
@@ -290,7 +305,7 @@ const taskRefreshButton = requireElement<HTMLButtonElement>("#task-refresh-butto
 const taskList = requireElement<HTMLElement>("#task-list");
 
 const sessionId = createStableId("session");
-let isSending = false;
+let activeChatRequest: ActiveChatRequest | null = null;
 let isCreatingTask = false;
 let isListingTasks = false;
 let deletingTaskId: string | null = null;
@@ -315,6 +330,31 @@ function setChatState(state: ChatUiState, message?: string): void {
   composerNotice.hidden = false;
 }
 
+function setChatControls(isSending: boolean): void {
+  sendButton.disabled = isSending;
+  chatInput.disabled = isSending;
+  cancelChatButton.hidden = !isSending;
+  cancelChatButton.disabled = !isSending;
+}
+
+function finishChatRequest(
+  request: ActiveChatRequest,
+  state?: ChatUiState,
+  message?: string,
+): boolean {
+  if (activeChatRequest !== request) {
+    return false;
+  }
+
+  activeChatRequest = null;
+  setChatControls(false);
+  if (state !== undefined) {
+    setChatState(state, message);
+  }
+  chatInput.focus();
+  return true;
+}
+
 function appendMessage(text: string, kind: "user" | "companion"): void {
   const message = document.createElement("article");
   message.className = `message ${kind}-message`;
@@ -332,6 +372,8 @@ function appendMessage(text: string, kind: "user" | "companion"): void {
 
 function chatFailureMessage(error: ApiClientError): string {
   switch (error.kind) {
+    case "cancelled":
+      return "요청 대기를 취소했어요. Backend에서는 이미 처리됐을 수 있으며 자동으로 다시 보내지지 않아요.";
     case "timeout":
       return "MAKO의 응답 시간이 초과됐어요. 자동으로 다시 보내지는 않았어요.";
     case "network":
@@ -873,7 +915,7 @@ taskRefreshButton.addEventListener("click", () => {
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 120)}px`;
-  if (!isSending) {
+  if (activeChatRequest === null) {
     setChatState("idle");
   }
 });
@@ -885,9 +927,25 @@ chatInput.addEventListener("keydown", (event) => {
   }
 });
 
+cancelChatButton.addEventListener("click", () => {
+  const request = activeChatRequest;
+  if (request === null) {
+    return;
+  }
+
+  const didFinish = finishChatRequest(
+    request,
+    "cancelled",
+    "요청 대기를 취소했어요. Backend에서는 이미 처리됐을 수 있으며 자동으로 다시 보내지지 않아요.",
+  );
+  if (didFinish) {
+    request.controller.abort();
+  }
+});
+
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (isSending) {
+  if (activeChatRequest !== null) {
     return;
   }
 
@@ -896,9 +954,11 @@ chatForm.addEventListener("submit", (event) => {
     return;
   }
 
-  isSending = true;
-  sendButton.disabled = true;
-  chatInput.disabled = true;
+  const activeRequest: ActiveChatRequest = {
+    controller: new AbortController(),
+  };
+  activeChatRequest = activeRequest;
+  setChatControls(true);
   setChatState("sending", "MAKO가 답을 준비하고 있어요…");
   appendMessage(message, "user");
   chatInput.value = "";
@@ -917,12 +977,18 @@ chatForm.addEventListener("submit", (event) => {
     allowed_commands: [],
   };
 
-  void createMobileChat(apiBaseUrl, request)
+  void createMobileChat(apiBaseUrl, request, activeRequest.controller.signal)
     .then((response) => {
+      if (activeChatRequest !== activeRequest) {
+        return;
+      }
       appendMessage(response.display_text, "companion");
       setChatState("success");
     })
     .catch((error: unknown) => {
+      if (activeChatRequest !== activeRequest) {
+        return;
+      }
       if (error instanceof ApiClientError) {
         setChatState("error", chatFailureMessage(error));
         return;
@@ -930,10 +996,7 @@ chatForm.addEventListener("submit", (event) => {
       setChatState("error", "대화 요청 중 알 수 없는 오류가 발생했어요.");
     })
     .finally(() => {
-      isSending = false;
-      sendButton.disabled = false;
-      chatInput.disabled = false;
-      chatInput.focus();
+      finishChatRequest(activeRequest);
     });
 });
 
@@ -941,4 +1004,5 @@ populateTaskItems("Gathering");
 updateTaskQuantityPolicy("Gathering");
 syncTaskControls();
 setTaskCreateState("idle");
+setChatControls(false);
 setChatState("idle");

@@ -77,6 +77,7 @@ export interface ErrorEnvelope {
 }
 
 export type ChatFailureKind =
+  | "cancelled"
   | "timeout"
   | "network"
   | "invalid-json"
@@ -284,9 +285,30 @@ function throwResponseError(
 export async function createMobileChat(
   apiBaseUrl: string,
   request: MobileChatRequest,
+  externalSignal?: AbortSignal,
 ): Promise<ChatResponse> {
   const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), chatTimeoutMs);
+  let abortKind: "cancelled" | "timeout" | null = null;
+  const abortRequest = (kind: "cancelled" | "timeout"): void => {
+    if (abortKind !== null) {
+      return;
+    }
+    abortKind = kind;
+    controller.abort();
+  };
+  const handleExternalAbort = (): void => abortRequest("cancelled");
+  const timeoutHandle = setTimeout(
+    () => abortRequest("timeout"),
+    chatTimeoutMs,
+  );
+  let hasExternalAbortListener = false;
+
+  if (externalSignal?.aborted === true) {
+    handleExternalAbort();
+  } else if (externalSignal !== undefined) {
+    externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
+    hasExternalAbortListener = true;
+  }
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/v1/chat`, {
@@ -316,14 +338,20 @@ export async function createMobileChat(
     }
     return body;
   } catch (error: unknown) {
+    if (abortKind === "cancelled") {
+      throw new ApiClientError("cancelled", "RequestCancelled", false);
+    }
+    if (abortKind === "timeout") {
+      throw new ApiClientError("timeout", "RequestTimeout", false);
+    }
     if (error instanceof ApiClientError) {
       throw error;
-    }
-    if (controller.signal.aborted) {
-      throw new ApiClientError("timeout", "RequestTimeout", false);
     }
     throw new ApiClientError("network", "NetworkFailure", false);
   } finally {
     clearTimeout(timeoutHandle);
+    if (hasExternalAbortListener) {
+      externalSignal?.removeEventListener("abort", handleExternalAbort);
+    }
   }
 }

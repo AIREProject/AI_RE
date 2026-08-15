@@ -17,8 +17,8 @@ public:
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Chat|Style")
-	FSlateColor PlayerTextColor = FLinearColor(0.36f, 0.76f, 1.0f);
+	FSlateColor PlayerTextColor = FLinearColor(1.0f, 0.95f, 0.84f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Chat|Style")
-	FSlateColor CompanionTextColor = FLinearColor::White;
+	FSlateColor CompanionTextColor = FLinearColor(0.65f, 1.0f, 0.90f);
 };

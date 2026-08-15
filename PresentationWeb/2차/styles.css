@@ -2266,6 +2266,24 @@ h2 {
   height: 40cqw;
 }
 
+/* Keep the PC game scene and mobile web device visible together on slide 2. */
+.slide--overview-focus .split--overview {
+  grid-template-columns: 0.92fr 1.08fr;
+  gap: 2.8cqw;
+}
+
+.slide--overview-focus h2 {
+  font-size: 3.6cqw;
+}
+
+.slide--overview-focus .media-frame--hero {
+  height: 25.5cqw;
+}
+
+.slide--overview-focus .media-frame--hero img {
+  object-position: center center;
+}
+
 .audience-header {
   display: block;
   margin-bottom: 0;
@@ -4270,6 +4288,53 @@ body.is-cursor-idle iframe {
 }
 
 @media print {
+  @page {
+    size: 16in 9in;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 16in;
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .deck {
+    position: static;
+    width: 16in;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  .slide {
+    position: relative;
+    width: 16in;
+    height: 9in;
+    min-height: 9in;
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: none !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .slide:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .menu-toggle,
+  .slide-menu,
+  .menu-scrim,
+  .deck-footer,
+  .progress-track {
+    display: none !important;
+  }
+
   .phone-modal {
     display: none !important;
   }

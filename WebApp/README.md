@@ -15,14 +15,36 @@ npm.cmd run dev
 ```
 
 The development server listens on the LAN and proxies `/health` and `/api` to
-`https://traip.mtvs2026.work`. Set only `VITE_API_BASE_URL` when an explicit API
-origin is needed; save slot, companion, and Web bearer values are fixed in the
-application.
+`https://traip.mtvs2026.work` when `VITE_DEV_API_PROXY_TARGET` is unset or empty.
+To use a local Backend instead, start it on port 8000 and run:
+
+```powershell
+$env:VITE_DEV_API_PROXY_TARGET = "http://127.0.0.1:8000"
+npm.cmd run dev
+```
+
+The development proxy target is trimmed and trailing slashes are removed before
+the same target is applied to both routes. `VITE_API_BASE_URL` has a different
+purpose: when set, the browser calls that explicit API origin instead of the
+same-origin Vite proxy. Save slot, companion, and Web bearer values are fixed in
+the application.
+
+A successful `/health` response confirms HTTP connectivity and server
+configuration only. It does not verify database migrations or queries, or an
+actual LLM request.
 
 Opening or refreshing the page enters Chat immediately and creates a new
 browser-session `session_id`. Each submit creates new request and message IDs.
 Chat failures are displayed without automatic retry, and the Memory tab remains
 a placeholder until a user Memory API is available.
+
+While a Chat request is waiting, the user can cancel the browser-side wait. The
+already displayed user message remains, no companion response is appended for
+that cancelled request, and the input controls become available immediately.
+Cancellation does not guarantee that Backend processing or persistence was
+rolled back because the server may already have received the request. Cancelled
+or timed-out Chat requests are never retried automatically; a later explicit
+submit creates new request and message IDs.
 
 ## Offline Tasks
 
@@ -110,7 +132,9 @@ The production build emits static assets under `dist/client` and adds the
 Cloudflare Worker entry point required by GPT Sites. The Worker serves the
 Vite application and proxies same-origin `/health` and `/api/*` requests to
 `https://traip.mtvs2026.work`, so the hosted client keeps the same relative API
-boundary as local development.
+boundary as local development. `VITE_DEV_API_PROXY_TARGET` configures only the
+Vite development server; it is not injected as a production API origin and does
+not change the Sites Worker target.
 
 The current public deployment is available at
 `https://aire-mako-chat.lunau1f320.chatgpt.site`. Public access was explicitly

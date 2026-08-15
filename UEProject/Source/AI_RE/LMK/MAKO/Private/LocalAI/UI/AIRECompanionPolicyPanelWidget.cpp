@@ -392,10 +392,7 @@ void UAIRECompanionPolicyPanelWidget::SetPanelOpen(const bool bOpen)
 	}
 	if (IsValid(CollapsedHint))
 	{
-		CollapsedHint->SetVisibility(
-			bPanelOpen
-				? ESlateVisibility::Collapsed
-				: ESlateVisibility::HitTestInvisible);
+		CollapsedHint->SetVisibility(ESlateVisibility::Collapsed);
 	}
 	if (bPanelOpen)
 	{
