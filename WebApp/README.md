@@ -35,8 +35,30 @@ actual LLM request.
 
 Opening or refreshing the page enters Chat immediately and creates a new
 browser-session `session_id`. Each submit creates new request and message IDs.
-Chat failures are displayed without automatic retry, and the Memory tab remains
-a placeholder until a user Memory API is available.
+Chat failures are displayed without automatic retry. The Memory tab uses the
+same-origin `/api/v1/memories` boundary with the fixed `demo-slot-1` / `mako`
+scope. It lists and searches active memories, loads a selected memory detail,
+allows a user correction (`corrected_text` plus a required `correction_reason`),
+toggles the server-side pinned flag, forgets one memory after confirmation, and
+resets the complete scope after two confirmations. It never creates memories or
+changes UE gameplay state.
+
+Memory cards show only the memory type, current text, created time, correction
+state, and safe source descriptions. Internal memory IDs, source IDs, numeric
+importance, archived memories, and provider details are not rendered. Additive
+`sources[]` entries are mapped to user-facing descriptions:
+
+- `Message + RealWorld`: “모바일에서 직접 공유한 기억”
+- `Event + GameWorld`: “게임에서 함께 겪은 기억”
+- `Legacy + LegacyUnknown`: “이전 대화에서 가져온 기억”
+
+Memory requests validate response shape and `X-Request-ID` correlation before
+updating the UI. Loading, empty, no-result, and error states are explicit. Error
+states expose a manual retry action only; the WebApp never retries a failed or
+timed-out Memory request automatically.
+
+The Memory tab is deployment-gated with `VITE_MEMORY_ENABLED`. The deployed
+OpenAPI now exposes every Memory endpoint, so production builds use `true`.
 
 While a Chat request is waiting, the user can cancel the browser-side wait. The
 already displayed user message remains, no companion response is appended for

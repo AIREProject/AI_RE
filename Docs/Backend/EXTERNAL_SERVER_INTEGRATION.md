@@ -36,6 +36,17 @@
 호출하거나 지원한다고 주장하지 않습니다. 현재 Chat 계약은 그대로 유지하며, 실제 계약 변경 Task에서
 이 문서, OpenAPI, UE USTRUCT, Web validator와 fixture를 함께 갱신합니다.
 
+## 2026-08-18 CAI-P1~P5 배포 준비 계약
+
+`AIRE_SERVER` 목표 구현에는 `/ready`, Event, Command Result와 사용자 Memory endpoint가
+포함됩니다. Memory 응답의 additive `sources[]`는 내부 source ID 없이 source type/mode/시각만
+제공하고, Web은 목록·검색·정정·고정·개별 삭제·scope reset을 지원합니다. 저장 문장은 LLM이
+생성하지 않고 canonical player Message 원문을 사용하며 Event 관계 기억은 결정론적으로 렌더링합니다.
+
+2026-08-18 공개 `/ready`가 DB revision `0014`, Local LLM `ready`를 반환하고 공개
+`/openapi.json`에서 Memory 전체 경로가 확인되었습니다. 따라서 Web production build는
+`VITE_MEMORY_ENABLED=true`로 활성화합니다.
+
 ## 2026-07-27 과거 확인 결과
 
 로컬 `ai_companion_server` Build 1은 다음 API를 구현합니다.
