@@ -48,7 +48,9 @@ const taskItemOptions: Record<
   CreatableOfflineTaskType,
   readonly TaskItemOption[]
 > = {
-  Gathering: [{ id: "PlantStem", label: "나무" }],
+  Gathering: [
+    { id: "PlantStem", label: "나무" },
+  ],
   Crafting: [{ id: "ShoddyBandage", label: "엉성한 붕대" }],
 };
 
@@ -143,7 +145,7 @@ app.innerHTML = `
       <div class="header-copy">
         <p class="companion-label">나의 동료</p>
         <h1>MAKO</h1>
-        <p class="connection-status" data-state="connected">모바일 대화 준비됨</p>
+        <p class="connection-status" data-state="connected">마코랑 이야기할 준비 됐어</p>
       </div>
     </header>
 
@@ -167,7 +169,7 @@ app.innerHTML = `
         <div class="date-divider"><span>오늘</span></div>
         <article class="message companion-message">
           <div class="message-bubble">
-            <p>여기서 나눈 이야기는 다음 모험에서도 이어져. 오늘은 어떤 하루였어?</p>
+            <p>오, 왔네 ㅋㅋ 오늘은 뭐부터 얘기해볼까?</p>
           </div>
           <time>방금</time>
         </article>
@@ -176,7 +178,7 @@ app.innerHTML = `
       <section class="composer-area">
         <p class="time-context"><span aria-hidden="true">◷</span>현실 시간 기준으로 대화해요</p>
         <div class="suggestion-list" aria-label="추천 대화">
-          <button type="button" class="suggestion-chip">오늘 나에게 해주고 싶은 말이 있어?</button>
+          <button type="button" class="suggestion-chip">오늘 좀 어땠어?</button>
           <button type="button" class="suggestion-chip">돌 도끼 제작 방법을 알려줘</button>
           <button type="button" class="suggestion-chip">나무 30개만 캐놔줘</button>
         </div>
@@ -206,7 +208,7 @@ app.innerHTML = `
         <section class="task-intro">
           <p class="section-kicker">오프라인 작업</p>
           <h2>MAKO에게 할 일을 맡겨요</h2>
-          <p>현실 시간이 지난 뒤 게임을 켜면 완성된 수량을 UE Inventory에 적용해요.</p>
+          <p>제작 재료는 서버 Inventory에서 먼저 예약하고, 완성품은 게임 접속 시 안전하게 받아요.</p>
         </section>
 
         <section class="task-create-card" aria-labelledby="task-create-title">
@@ -455,6 +457,12 @@ function chatFailureMessage(error: ApiClientError): string {
     case "forbidden":
       return "현재 Web 신원에는 이 대화 요청 권한이 없어요.";
     case "server-error": {
+      if (error.code === "InventorySnapshotRequired") {
+        return "저장된 게임 Inventory가 없어요. 게임에서 인벤토리를 한 번 동기화한 뒤 다시 요청해 주세요.";
+      }
+      if (error.code === "InsufficientCraftingMaterials") {
+        return "서버에 저장된 Inventory의 나무가 부족해서 제작을 시작하지 못했어요.";
+      }
       const publicMessage = error.publicMessage === null ? "" : ` ${error.publicMessage}`;
       return `Backend가 대화 요청을 처리하지 못했어요 (${error.code}).${publicMessage}`;
     }
@@ -592,6 +600,15 @@ function taskFailureMessage(
     case "forbidden":
       return `현재 Web 신원에는 ${subject} 권한이 없어요.`;
     case "server-error":
+      if (operation === "create" && error.code === "InventorySnapshotRequired") {
+        return "저장된 게임 Inventory가 없어요. 게임에서 인벤토리를 한 번 동기화한 뒤 다시 요청해 주세요.";
+      }
+      if (
+        operation === "create" &&
+        error.code === "InsufficientCraftingMaterials"
+      ) {
+        return "서버에 저장된 Inventory의 나무가 부족해요. 엉성한 붕대 1개당 나무 2개가 필요해요.";
+      }
       if (operation === "delete" && error.code === "OfflineTaskNotFound") {
         return "이미 삭제됐거나 현재 프로필의 예약이 아니에요. 목록을 새로고침해 주세요.";
       }
@@ -712,7 +729,10 @@ async function removeOfflineTask(
     setTaskListMessage("error", "완료 처리된 작업은 삭제할 수 없어요.");
     return;
   }
-  if (!window.confirm("이 예약 작업을 삭제할까요? 진행된 시간은 복구되지 않아요.")) {
+  const confirmation = task.task_type === "Crafting"
+    ? "이 제작 예약을 삭제할까요? 서버에 예약한 재료는 Inventory로 돌려놔요."
+    : "이 예약 작업을 삭제할까요? 진행된 시간은 복구되지 않아요.";
+  if (!window.confirm(confirmation)) {
     return;
   }
 
@@ -849,6 +869,25 @@ async function submitOfflineTask(): Promise<void> {
   }
 }
 
+async function reconcileChatCreatedTask(taskId: string): Promise<void> {
+  taskStatusFilter.value = "";
+  setTaskCreateState("loading", "채팅에서 등록한 작업을 목록에서 확인하고 있어요…");
+  const reconciliation = await loadOfflineTaskList(taskId);
+  if (reconciliation === "found") {
+    setTaskCreateState("success", "채팅에서 요청한 작업을 현재 작업 목록에 등록했어요.");
+  } else if (reconciliation === "missing") {
+    setTaskCreateState(
+      "warning",
+      "채팅 작업은 등록됐지만 현재 목록에서 같은 Task를 확인하지 못했어요.",
+    );
+  } else {
+    setTaskCreateState(
+      "warning",
+      "채팅 작업은 등록됐지만 목록 갱신에 실패했어요. 작업 탭에서 새로고침해 주세요.",
+    );
+  }
+}
+
 type MemoryListState = "idle" | "loading" | "success" | "empty" | "no-results" | "error";
 
 function memoryTypeLabel(memoryType: string): string {
@@ -871,6 +910,9 @@ function formatMemoryDate(value: string): string {
 function memorySourceLabel(source: MemorySourceView): string {
   if (source.source_type === "Message" && source.source_mode === "RealWorld") {
     return "모바일에서 직접 공유한 기억";
+  }
+  if (source.source_type === "Message" && source.source_mode === "GameWorld") {
+    return "게임에서 직접 공유한 기억";
   }
   if (source.source_type === "Event" && source.source_mode === "GameWorld") {
     return "게임에서 함께 겪은 기억";
@@ -1691,7 +1733,7 @@ chatForm.addEventListener("submit", (event) => {
     user_message: message,
     surface: "mobile",
     time_context: createRealWorldTimeContext(new Date()),
-    allowed_commands: [],
+    allowed_commands: ["Command.GatherResource", "Command.CraftItem"],
   };
 
   void createMobileChat(apiBaseUrl, request, activeRequest.controller.signal)
@@ -1700,7 +1742,12 @@ chatForm.addEventListener("submit", (event) => {
         return;
       }
       appendMessage(response.display_text, "companion");
-      setChatState("success");
+      if (response.offline_task_id !== null) {
+        setChatState("success", "작업 요청을 등록했어요. 작업 목록에서 확인하고 있어요.");
+        void reconcileChatCreatedTask(response.offline_task_id);
+      } else {
+        setChatState("success");
+      }
     })
     .catch((error: unknown) => {
       if (activeChatRequest !== activeRequest) {

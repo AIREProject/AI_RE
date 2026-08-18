@@ -10,6 +10,7 @@ const commandTypes = new Set<string>([
   "Command.MoveToLocation",
   "Command.CancelCurrent",
   "Command.GatherResource",
+  "Command.CraftItem",
   "Command.Attack",
   "Command.Switch",
 ]);
@@ -35,7 +36,7 @@ export interface MobileChatRequest {
     hour: number;
     period: string;
   };
-  allowed_commands: [];
+  allowed_commands: ["Command.GatherResource", "Command.CraftItem"];
 }
 
 export interface CommandCandidate {
@@ -195,6 +196,11 @@ function isChatResponse(
       isCommandCandidate(candidate, request.request_id),
     )
   ) {
+    return false;
+  }
+  // Mobile may request a server-owned Offline Task, but it never executes UE
+  // gameplay Commands. Any returned candidate is therefore a contract violation.
+  if (value.command_candidates.length !== 0) {
     return false;
   }
 

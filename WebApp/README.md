@@ -57,6 +57,12 @@ updating the UI. Loading, empty, no-result, and error states are explicit. Error
 states expose a manual retry action only; the WebApp never retries a failed or
 timed-out Memory request automatically.
 
+Mobile Chat advertises only `Command.GatherResource`. The Backend converts a
+validated request such as `나무30개 캐줘` into a server-owned Offline Task and
+returns no UE command candidate. When `offline_task_id` is present, the WebApp
+keeps the companion reply visible and immediately reconciles that exact ID with
+the Task list. A malformed response containing a UE command candidate is rejected.
+
 The Memory tab is deployment-gated with `VITE_MEMORY_ENABLED`. The deployed
 OpenAPI now exposes every Memory endpoint, so production builds use `true`.
 
@@ -77,14 +83,29 @@ seed-backed demo requests:
 - Gathering: `PlantStem` (`나무`), quantity 1 through 50
 - Crafting: `ShoddyBandage`, quantity 1 through 50
 
+`PlantStem` is the only canonical wood item ID. The WebApp neither creates nor
+displays the retired `Branch` ID.
+
+Crafting uses the latest server Game State as its inventory authority. Creating
+one `ShoddyBandage` reserves two `PlantStem` from MAKO first and Shared Storage
+second in the same Backend transaction. A missing snapshot or insufficient
+materials is shown as a specific user-facing error; the browser never pretends
+that the Task was created. Deleting an active Crafting reservation refunds the
+server-reserved materials.
+
+Mobile Chat advertises both `Command.GatherResource` and `Command.CraftItem`.
+Validated bandage requests such as `엉성한붕대 3개 만들어놔줘` are converted to
+the same Offline Task API path. Recipe questions remain facts-only and do not
+create a Task.
+
 Scouting cannot be selected for creation. Existing Scouting tasks are still
 validated and displayed when returned by the list API.
 
-The list refreshes only when the Task tab is opened, the status filter changes,
-the refresh button is pressed, or a create request succeeds. There is no polling
-or automatic retry. Create and list responses are accepted only after runtime
-validation from `unknown`, including request-ID correlation and canonical save
-slot scope.
+The list refreshes when the Task tab is opened, the status filter changes, the
+refresh button is pressed, a create request succeeds, or Chat returns an
+`offline_task_id`. There is no polling or automatic retry. Create and list
+responses are accepted only after runtime validation from `unknown`, including
+request-ID correlation and canonical save slot scope.
 
 Quantity tasks start InProgress immediately. Each explicit list refresh displays
 the server-calculated integer `progress_quantity`; the browser does not estimate
@@ -100,6 +121,11 @@ Pending and InProgress cards expose an explicit reservation delete action using
 the list after a 204 response. Completed and Claimed cards cannot be deleted.
 Delete timeout does not retry automatically because the server may already have
 applied it; refresh the list to reconcile the result.
+
+After UE has no unfinished Crafting reservation, its Offline Task synchronization
+reads the current server Game State version and uploads the saved Player, MAKO,
+and Shared Storage inventory with `X-Base-State-Version`. It does not upload a
+pre-deduction local snapshot while Crafting is still in progress.
 
 The WebApp does not present a client-owned duration. The deployed Backend owns
 the elapsed-time policy. `Pending` waits for UE synchronization, `Completed`
