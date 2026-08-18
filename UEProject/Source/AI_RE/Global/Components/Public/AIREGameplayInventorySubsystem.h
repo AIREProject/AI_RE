@@ -74,6 +74,10 @@ public:
 		FName ContainerId,
 		FAIREInventoryContainerSnapshot& OutSnapshot) const;
 
+	/** Returns the validated Player state used by the current SaveGame generation. */
+	bool GetPlayerPersistenceSnapshot(
+		FAIREInventoryPersistedPlayerState& OutSnapshot) const;
+
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
 	FAIREInventoryMutationResult TryAddItem(
 		const FAIREInventoryMutationRequest& Request);

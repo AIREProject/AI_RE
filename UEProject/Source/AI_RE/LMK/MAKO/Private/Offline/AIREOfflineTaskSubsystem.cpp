@@ -1,13 +1,18 @@
 #include "Offline/AIREOfflineTaskSubsystem.h"
 
 #include "AIREGameplayInventorySubsystem.h"
+#include "AIRESyncOutboxSubsystem.h"
+#include "Dom/JsonObject.h"
 #include "Engine/GameInstance.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Offline/AIREOfflineTaskJsonAdapter.h"
 #include "Offline/AIREOfflineTaskSettings.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonWriter.h"
 #include "Subsystems/SubsystemCollection.h"
+#include "Policies/CondensedJsonPrintPolicy.h"
 
 namespace
 {
@@ -32,6 +37,116 @@ namespace
 			Result += TEXT("/");
 		}
 		return Result + Path;
+	}
+
+	TSharedRef<FJsonObject> MakeAIREEquipmentJson(const FName EquippedItemId)
+	{
+		TSharedRef<FJsonObject> Equipment = MakeShared<FJsonObject>();
+		if (EquippedItemId.IsNone())
+		{
+			Equipment->SetField(TEXT("equipped_item_id"), MakeShared<FJsonValueNull>());
+		}
+		else
+		{
+			Equipment->SetStringField(
+				TEXT("equipped_item_id"),
+				EquippedItemId.ToString());
+		}
+		return Equipment;
+	}
+
+	template <typename StackType>
+	TArray<TSharedPtr<FJsonValue>> MakeAIREStackJson(const TArray<StackType>& Stacks)
+	{
+		TArray<TSharedPtr<FJsonValue>> Values;
+		Values.Reserve(Stacks.Num());
+		for (const StackType& Stack : Stacks)
+		{
+			TSharedRef<FJsonObject> Value = MakeShared<FJsonObject>();
+			Value->SetNumberField(TEXT("slot_index"), Stack.SlotIndex);
+			Value->SetStringField(TEXT("item_id"), Stack.ItemId.ToString());
+			Value->SetNumberField(TEXT("count"), Stack.Count);
+			Values.Add(MakeShared<FJsonValueObject>(Value));
+		}
+		return Values;
+	}
+
+	bool BuildAIREGameStateBody(
+		const FString& OperationId,
+		const int64 StateVersion,
+		const FGuid& WorldSessionId,
+		const FAIREInventoryPersistedPlayerState& Player,
+		const FAIREInventoryContainerSnapshot& Mako,
+		const FAIREInventoryContainerSnapshot& Storage,
+		TArray<uint8>& OutContent,
+		FString& OutSha256)
+	{
+		if (OperationId.IsEmpty()
+			|| StateVersion <= 0
+			|| !WorldSessionId.IsValid()
+			|| Player.InventoryCapacity != 30)
+		{
+			return false;
+		}
+		TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
+		Root->SetNumberField(TEXT("schema_version"), 1);
+		Root->SetNumberField(TEXT("content_version"), 1);
+		Root->SetStringField(TEXT("operation_id"), OperationId);
+		Root->SetNumberField(TEXT("state_version"), StateVersion);
+		Root->SetStringField(
+			TEXT("world_session_id"),
+			WorldSessionId.ToString(EGuidFormats::DigitsWithHyphensLower));
+		Root->SetStringField(TEXT("captured_at"), FDateTime::UtcNow().ToIso8601());
+		Root->SetStringField(TEXT("save_slot_id"), AIREOfflineTaskSaveSlotId);
+		Root->SetStringField(TEXT("companion_id"), TEXT("mako"));
+
+		TSharedRef<FJsonObject> Inventory = MakeShared<FJsonObject>();
+		TSharedRef<FJsonObject> PlayerJson = MakeShared<FJsonObject>();
+		PlayerJson->SetNumberField(TEXT("capacity"), Player.InventoryCapacity);
+		PlayerJson->SetNumberField(TEXT("revision"), Player.Revision);
+		PlayerJson->SetArrayField(TEXT("stacks"), MakeAIREStackJson(Player.ItemStacks));
+		PlayerJson->SetObjectField(
+			TEXT("equipment"),
+			MakeAIREEquipmentJson(Player.Equipment.EquippedItemId));
+		Inventory->SetObjectField(TEXT("player"), PlayerJson);
+
+		TArray<TSharedPtr<FJsonValue>> Containers;
+		auto AppendContainer = [&Containers](
+			const FAIREInventoryContainerSnapshot& Snapshot)
+		{
+			TSharedRef<FJsonObject> Container = MakeShared<FJsonObject>();
+			Container->SetStringField(
+				TEXT("container_id"),
+				Snapshot.ContainerId.ToString());
+			Container->SetNumberField(TEXT("capacity"), Snapshot.Capacity);
+			Container->SetNumberField(TEXT("revision"), Snapshot.Revision);
+			Container->SetArrayField(
+				TEXT("stacks"),
+				MakeAIREStackJson(Snapshot.ItemStacks));
+			Container->SetObjectField(
+				TEXT("equipment"),
+				MakeAIREEquipmentJson(Snapshot.Equipment.EquippedItemId));
+			Containers.Add(MakeShared<FJsonValueObject>(Container));
+		};
+		AppendContainer(Mako);
+		AppendContainer(Storage);
+		Inventory->SetArrayField(TEXT("containers"), Containers);
+		Root->SetObjectField(TEXT("inventory"), Inventory);
+
+		FString Body;
+		const TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+			TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Body);
+		if (!FJsonSerializer::Serialize(Root, Writer))
+		{
+			return false;
+		}
+		FTCHARToUTF8 Utf8(*Body);
+		OutContent.Reset(Utf8.Length());
+		OutContent.Append(
+			reinterpret_cast<const uint8*>(Utf8.Get()),
+			Utf8.Length());
+		OutSha256 = UAIRESyncOutboxSubsystem::ComputeBodyHash(OutContent);
+		return OutContent.Num() > 0 && OutSha256.Len() == 64;
 	}
 }
 
@@ -100,6 +215,8 @@ bool UAIREOfflineTaskSubsystem::SyncOfflineTasks()
 	SyncInventorySessionId = MakoSnapshot.SessionId;
 	PendingTasks.Reset();
 	NextTaskIndex = 0;
+	PendingCraftReservations = 0;
+	BaseGameStateVersion = 0;
 	PendingSaveGeneration = 0;
 	bSaveWasCoalesced = false;
 	LastSyncResult = FAIREOfflineTaskSyncResult();
@@ -250,6 +367,18 @@ void UAIREOfflineTaskSubsystem::HandleListResponse(
 		return;
 	}
 	PendingTasks = Parsed.Tasks;
+	PendingCraftReservations = 0;
+
+	for (const FAIREOfflineTask& Task : PendingTasks)
+	{
+		if (FAIREOfflineTaskJsonAdapter::IsSupportedTask(Task)
+			&& Task.TaskType == TEXT("Crafting")
+			&& Task.Status != EAIREOfflineTaskStatus::Claimed)
+		{
+			++PendingCraftReservations;
+		}
+	}
+
 	ProcessNextTask(RequestEpoch);
 }
 
@@ -276,7 +405,15 @@ void UAIREOfflineTaskSubsystem::ProcessNextTask(const uint64 RequestEpoch)
 	}
 	if (!PendingTasks.IsValidIndex(NextTaskIndex))
 	{
-		Finish(EAIREOfflineTaskSyncState::Succeeded, TEXT("Succeeded"));
+		if (PendingCraftReservations > 0)
+		{
+			Finish(
+				EAIREOfflineTaskSyncState::Succeeded,
+				TEXT("SucceededCraftReservationPending"));
+			return;
+		}
+		LastSyncResult.State = EAIREOfflineTaskSyncState::Syncing;
+		SendGameStateVersionRequest(RequestEpoch);
 		return;
 	}
 	switch (ActiveTask.Status)
@@ -301,6 +438,233 @@ void UAIREOfflineTaskSubsystem::ProcessNextTask(const uint64 RequestEpoch)
 	case EAIREOfflineTaskStatus::Claimed:
 		break;
 	}
+}
+
+void UAIREOfflineTaskSubsystem::SendGameStateVersionRequest(
+	const uint64 RequestEpoch)
+{
+	const UAIREOfflineTaskSettings* Settings =
+		GetDefault<UAIREOfflineTaskSettings>();
+	const FString RequestId = NewAIREOfflineTaskStableId(TEXT("game-state-get"));
+	if (!IsValid(Settings))
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidTaskSettings"));
+		return;
+	}
+	const FString Path = FString::Printf(
+		TEXT("%s?save_slot_id=%s&companion_id=mako"),
+		*Settings->GameStatePath,
+		AIREOfflineTaskSaveSlotId);
+	ActiveRequest = FHttpModule::Get().CreateRequest();
+	ActiveRequest->SetURL(JoinAIREOfflineTaskUrl(Settings->BackendBaseUrl, Path));
+	ActiveRequest->SetVerb(TEXT("GET"));
+	ActiveRequest->SetHeader(
+		TEXT("Authorization"),
+		TEXT("Bearer ") + FString(AIREOfflineTaskGameClientToken));
+	ActiveRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	ActiveRequest->SetHeader(TEXT("X-Request-ID"), RequestId);
+	ActiveRequest->SetTimeout(Settings->ResponseTimeoutSeconds);
+	ActiveRequest->OnProcessRequestComplete().BindWeakLambda(
+		this,
+		[this, RequestEpoch, RequestId](
+			FHttpRequestPtr Request,
+			FHttpResponsePtr Response,
+			const bool bWasSuccessful)
+		{
+			HandleGameStateVersionResponse(
+				Request,
+				Response,
+				bWasSuccessful,
+				RequestEpoch,
+				RequestId);
+		});
+	if (!ActiveRequest->ProcessRequest())
+	{
+		ActiveRequest.Reset();
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStateGetRequestFailed"));
+	}
+}
+
+void UAIREOfflineTaskSubsystem::HandleGameStateVersionResponse(
+	FHttpRequestPtr Request,
+	FHttpResponsePtr Response,
+	const bool bWasSuccessful,
+	const uint64 RequestEpoch,
+	const FString& RequestId)
+{
+	if (bShuttingDown
+		|| RequestEpoch != Epoch
+		|| Request != ActiveRequest
+		|| LastSyncResult.State != EAIREOfflineTaskSyncState::Syncing)
+	{
+		return;
+	}
+	if (!IsActiveContextValid())
+	{
+		AbortStaleContext();
+		return;
+	}
+	ActiveRequest.Reset();
+	if (!bWasSuccessful
+		|| !Response.IsValid()
+		|| Response->GetContent().Num() > AIREOfflineTaskMaxHttpResponseBytes)
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStateGetNetworkFailure"));
+		return;
+	}
+	if (Response->GetResponseCode() == 404)
+	{
+		BaseGameStateVersion = 0;
+		SendGameStatePutRequest(RequestEpoch);
+		return;
+	}
+	if (!EHttpResponseCodes::IsOk(Response->GetResponseCode()))
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStateGetRejected"));
+		return;
+	}
+	TSharedPtr<FJsonObject> Body;
+	const TSharedRef<TJsonReader<>> Reader =
+		TJsonReaderFactory<>::Create(Response->GetContentAsString());
+	double ParsedVersion = 0.0;
+	FString ResponseRequestId;
+	if (!FJsonSerializer::Deserialize(Reader, Body)
+		|| !Body.IsValid()
+		|| !Body->TryGetStringField(TEXT("request_id"), ResponseRequestId)
+		|| ResponseRequestId != RequestId
+		|| !Body->TryGetNumberField(TEXT("state_version"), ParsedVersion)
+		|| ParsedVersion < 1.0
+		|| ParsedVersion > static_cast<double>(MAX_int64)
+		|| ParsedVersion != FMath::FloorToDouble(ParsedVersion))
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidGameStateGetResponse"));
+		return;
+	}
+	BaseGameStateVersion = static_cast<int64>(ParsedVersion);
+	SendGameStatePutRequest(RequestEpoch);
+}
+
+void UAIREOfflineTaskSubsystem::SendGameStatePutRequest(
+	const uint64 RequestEpoch)
+{
+	const UAIREOfflineTaskSettings* Settings =
+		GetDefault<UAIREOfflineTaskSettings>();
+	if (!IsValid(Settings) || BaseGameStateVersion == MAX_int64)
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidGameStateVersion"));
+		return;
+	}
+	FAIREInventoryPersistedPlayerState Player;
+	FAIREInventoryContainerSnapshot Mako;
+	FAIREInventoryContainerSnapshot Storage;
+	if (!InventorySubsystem->GetPlayerPersistenceSnapshot(Player)
+		|| !InventorySubsystem->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetMakoContainerId(),
+			Mako)
+		|| !InventorySubsystem->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			Storage))
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStateInventoryUnavailable"));
+		return;
+	}
+	const FString RequestId = NewAIREOfflineTaskStableId(TEXT("game-state-put"));
+	TArray<uint8> Content;
+	FString ContentHash;
+	if (!BuildAIREGameStateBody(
+			RequestId,
+			BaseGameStateVersion + 1,
+			SyncInventorySessionId,
+			Player,
+			Mako,
+			Storage,
+			Content,
+			ContentHash))
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStateSerializationFailed"));
+		return;
+	}
+	ActiveRequest = FHttpModule::Get().CreateRequest();
+	ActiveRequest->SetURL(
+		JoinAIREOfflineTaskUrl(Settings->BackendBaseUrl, Settings->GameStatePath));
+	ActiveRequest->SetVerb(TEXT("PUT"));
+	ActiveRequest->SetHeader(
+		TEXT("Authorization"),
+		TEXT("Bearer ") + FString(AIREOfflineTaskGameClientToken));
+	ActiveRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	ActiveRequest->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	ActiveRequest->SetHeader(TEXT("X-Request-ID"), RequestId);
+	ActiveRequest->SetHeader(TEXT("X-Content-SHA256"), ContentHash);
+	if (BaseGameStateVersion > 0)
+	{
+		ActiveRequest->SetHeader(
+			TEXT("X-Base-State-Version"),
+			LexToString(BaseGameStateVersion));
+	}
+	ActiveRequest->SetContent(MoveTemp(Content));
+	ActiveRequest->SetTimeout(Settings->ResponseTimeoutSeconds);
+	ActiveRequest->OnProcessRequestComplete().BindWeakLambda(
+		this,
+		[this, RequestEpoch, RequestId](
+			FHttpRequestPtr Request,
+			FHttpResponsePtr Response,
+			const bool bWasSuccessful)
+		{
+			HandleGameStatePutResponse(
+				Request,
+				Response,
+				bWasSuccessful,
+				RequestEpoch,
+				RequestId);
+		});
+	if (!ActiveRequest->ProcessRequest())
+	{
+		ActiveRequest.Reset();
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStatePutRequestFailed"));
+	}
+}
+
+void UAIREOfflineTaskSubsystem::HandleGameStatePutResponse(
+	FHttpRequestPtr Request,
+	FHttpResponsePtr Response,
+	const bool bWasSuccessful,
+	const uint64 RequestEpoch,
+	const FString& RequestId)
+{
+	if (bShuttingDown
+		|| RequestEpoch != Epoch
+		|| Request != ActiveRequest
+		|| LastSyncResult.State != EAIREOfflineTaskSyncState::Syncing)
+	{
+		return;
+	}
+	ActiveRequest.Reset();
+	if (!IsActiveContextValid())
+	{
+		AbortStaleContext();
+		return;
+	}
+	if (!bWasSuccessful
+		|| !Response.IsValid()
+		|| !EHttpResponseCodes::IsOk(Response->GetResponseCode())
+		|| Response->GetContent().Num() > AIREOfflineTaskMaxHttpResponseBytes)
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("GameStatePutRejected"));
+		return;
+	}
+	TSharedPtr<FJsonObject> Body;
+	const TSharedRef<TJsonReader<>> Reader =
+		TJsonReaderFactory<>::Create(Response->GetContentAsString());
+	FString ResponseRequestId;
+	if (!FJsonSerializer::Deserialize(Reader, Body)
+		|| !Body.IsValid()
+		|| !Body->TryGetStringField(TEXT("request_id"), ResponseRequestId)
+		|| ResponseRequestId != RequestId)
+	{
+		Finish(EAIREOfflineTaskSyncState::Failed, TEXT("InvalidGameStatePutResponse"));
+		return;
+	}
+	Finish(EAIREOfflineTaskSyncState::Succeeded, TEXT("Succeeded"));
 }
 
 void UAIREOfflineTaskSubsystem::SendTaskTransition(
@@ -415,6 +779,10 @@ void UAIREOfflineTaskSubsystem::HandleTaskTransitionResponse(
 	}
 	if (ExpectedStatus == EAIREOfflineTaskStatus::Claimed)
 	{
+		if (ActiveTask.TaskType == TEXT("Crafting"))
+		{
+			PendingCraftReservations = FMath::Max(0, PendingCraftReservations - 1);
+		}
 		if (ActiveTask.bHasResultQuantity && ActiveTask.ResultQuantity > 0)
 		{
 			++LastSyncResult.AppliedCount;

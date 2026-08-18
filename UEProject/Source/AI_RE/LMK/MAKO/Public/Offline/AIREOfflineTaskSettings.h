@@ -15,6 +15,9 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Offline")
 	FString TasksPath = TEXT("/api/v1/tasks");
 
+	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Offline")
+	FString GameStatePath = TEXT("/api/v1/game-state");
+
 	UPROPERTY(
 		Config,
 		EditAnywhere,

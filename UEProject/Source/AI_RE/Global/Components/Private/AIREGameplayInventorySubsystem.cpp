@@ -763,6 +763,31 @@ bool UAIREGameplayInventorySubsystem::GetContainerSnapshot(
 	return true;
 }
 
+bool UAIREGameplayInventorySubsystem::GetPlayerPersistenceSnapshot(
+	FAIREInventoryPersistedPlayerState& OutSnapshot) const
+{
+	OutSnapshot = FAIREInventoryPersistedPlayerState();
+	if (!bPersistenceReady)
+	{
+		return false;
+	}
+	if (RegisteredPlayerInventory.IsValid())
+	{
+		EAIREInventoryPersistenceResultCode Code =
+			EAIREInventoryPersistenceResultCode::NotStarted;
+		return CapturePlayerPersistenceState(
+			*RegisteredPlayerInventory.Get(),
+			OutSnapshot,
+			Code);
+	}
+	EAIREInventoryPersistenceResultCode Code =
+		EAIREInventoryPersistenceResultCode::NotStarted;
+	return ValidatePlayerPersistenceState(
+		CachedPlayerPersistenceState,
+		OutSnapshot,
+		Code);
+}
+
 FAIREInventoryMutationResult UAIREGameplayInventorySubsystem::TryAddItem(
 	const FAIREInventoryMutationRequest& Request)
 {

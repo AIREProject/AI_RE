@@ -60,14 +60,14 @@ namespace
 		Storage.ContainerId = TEXT("AIRE.Inventory.SharedStorage");
 		Storage.FreeSlots = 48;
 		Storage.ItemTotals.Add({TEXT("Stone"), 5});
-		Storage.ItemTotals.Add({TEXT("Branch"), 4});
+		Storage.ItemTotals.Add({TEXT("PlantStem"), 4});
 		Context.Inventories.Add(MoveTemp(Storage));
 
 		FAIREWorldContextInventory Mako;
 		Mako.ContainerId = TEXT("AIRE.Inventory.MAKO");
 		Mako.FreeSlots = 12;
 		Mako.ItemTotals.Add({TEXT("Stone"), 2});
-		Mako.ItemTotals.Add({TEXT("Branch"), 4});
+		Mako.ItemTotals.Add({TEXT("PlantStem"), 4});
 		Mako.bTruncated = true;
 		Context.Inventories.Add(MoveTemp(Mako));
 		return Context;
@@ -198,14 +198,14 @@ bool FAIREWorldContextV1AutomationTest::RunTest(const FString& Parameters)
 				&& ItemTotals->Num() == 2);
 		if (ItemTotals != nullptr && ItemTotals->Num() == 2)
 		{
-			const TSharedPtr<FJsonObject> Branch = (*ItemTotals)[0]->AsObject();
+			const TSharedPtr<FJsonObject> PlantStem = (*ItemTotals)[0]->AsObject();
 			TestEqual(
 				TEXT("Item totals are ordered by stable item id"),
-				Branch->GetStringField(TEXT("item_id")),
-				FString(TEXT("Branch")));
+				PlantStem->GetStringField(TEXT("item_id")),
+				FString(TEXT("PlantStem")));
 			TestEqual(
 				TEXT("Selected item count is serialized"),
-				static_cast<int32>(Branch->GetNumberField(TEXT("count"))),
+				static_cast<int32>(PlantStem->GetNumberField(TEXT("count"))),
 				4);
 		}
 	}

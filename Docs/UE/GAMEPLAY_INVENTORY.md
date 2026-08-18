@@ -268,8 +268,9 @@ single-flight로 병합합니다. 진행 중인 저장이 있으면 최신 값�
 이전 유효 세대를 보존하고 Local Work·Inventory·Combat를 중단시키지 않습니다.
 
 Backend HTTP, Outbox, Offline Settlement와 모바일 상태 조회는 포함하지 않으며, 실제 외부
-정산은 후속 계약 Gate 이후 별도 Task에서 다룹니다. 즉 이 저장은 PC 로컬 SaveGame이며
-Backend Inventory 동기화를 의미하지 않습니다.
+정산은 후속 계약 Gate 이후 별도 Task에서 다룹니다. SaveGame 자체는 PC 로컬 저장이지만,
+Offline Task 동기화가 안전하게 끝난 뒤에는 이 저장 세대의 Player·MAKO·Shared Storage를
+`PUT /api/v1/game-state`로 업로드합니다.
 
 ## 9. AX-P01 제한 Offline Task 결과 적용 경계
 
@@ -277,6 +278,12 @@ AX-P01은 기존 Task API가 확정한 `PlantStem` Gathering과 `ShoddyBandage` 
 AX-I07 저장 경계에 적용합니다. GameInstance Offline Task Subsystem이 목록과 상태 전이 DTO를
 검증하고, Gameplay Inventory Subsystem은 비용·보상과 문자열 `task_id` ledger를 MAKO 우선·
 Shared Storage fallback 규칙으로 한 번에 계산한 뒤 전량 성공할 때만 commit합니다.
+
+Web `ShoddyBandage` 제작은 Backend가 먼저 최신 서버 Snapshot의 재료를 예약 차감합니다.
+UE의 비용 적용은 제작 가능 여부를 다시 결정하는 권위가 아니라 서버 결정을 local SaveGame에
+동일하게 반영하는 단계입니다. 미완료 제작 예약이 하나라도 있으면 Offline Task Subsystem은
+차감 전 local Snapshot을 업로드하지 않습니다. 모든 완료 Task의 apply/save/claim이 끝난 뒤
+서버의 현재 `state_version`을 GET하고 다음 version을 `X-Base-State-Version`과 함께 PUT합니다.
 
 Offline Task ledger는 최대 256개이며 SaveGame format 2 envelope에 함께 저장됩니다. 같은
 Task ID 재적용은 `AlreadyApplied`이며 수량과 revision을 바꾸지 않습니다. 저장 완료 delegate는

@@ -40,6 +40,9 @@ public:
 	void SetTransport(TSharedPtr<IAIRESyncOutboxTransport> InTransport);
 	FAIRESyncOutboxPersistenceCompleted& OnPersistenceCompleted();
 
+	/** SHA-256 used by persisted outbox bodies and exact HTTP content hashing. */
+	static FString ComputeBodyHash(const TArray<uint8>& Body);
+
 private:
 	friend class FAIRESyncOutboxTestAccess;
 
@@ -55,7 +58,6 @@ private:
 	static FAIRESyncOutboxScope MakeCanonicalScope();
 	static bool IsCanonicalScope(const FAIRESyncOutboxScope& Scope);
 	static bool IsValidUtf8(const TArray<uint8>& Bytes);
-	static FString ComputeBodyHash(const TArray<uint8>& Body);
 	static bool IsValidBodyHash(const FString& BodyHash);
 	static bool IsValidCoalescingKey(const FString& Key);
 

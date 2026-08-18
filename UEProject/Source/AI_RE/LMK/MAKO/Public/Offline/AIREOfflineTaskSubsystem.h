@@ -43,6 +43,20 @@ private:
 		uint64 RequestEpoch,
 		const FString& RequestId);
 	void ProcessNextTask(uint64 RequestEpoch);
+	void SendGameStateVersionRequest(uint64 RequestEpoch);
+	void HandleGameStateVersionResponse(
+		FHttpRequestPtr Request,
+		FHttpResponsePtr Response,
+		bool bWasSuccessful,
+		uint64 RequestEpoch,
+		const FString& RequestId);
+	void SendGameStatePutRequest(uint64 RequestEpoch);
+	void HandleGameStatePutResponse(
+		FHttpRequestPtr Request,
+		FHttpResponsePtr Response,
+		bool bWasSuccessful,
+		uint64 RequestEpoch,
+		const FString& RequestId);
 	void SendTaskTransition(
 		uint64 RequestEpoch,
 		const FString& Action,
@@ -71,6 +85,8 @@ private:
 	uint64 Epoch = 0;
 	int64 PendingSaveGeneration = 0;
 	int32 NextTaskIndex = 0;
+	int32 PendingCraftReservations = 0;
+	int64 BaseGameStateVersion = 0;
 	bool bAutomaticSyncStarted = false;
 	bool bSaveWasCoalesced = false;
 	bool bShuttingDown = false;

@@ -17,7 +17,6 @@ namespace
 {
 	const FName IncludedInventoryItemIds[] =
 	{
-		TEXT("Branch"),
 		TEXT("IronIngot"),
 		TEXT("Sword_Iron"),
 		TEXT("PlantStem"),

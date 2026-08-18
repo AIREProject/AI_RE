@@ -42,6 +42,9 @@
 포함됩니다. Memory 응답의 additive `sources[]`는 내부 source ID 없이 source type/mode/시각만
 제공하고, Web은 목록·검색·정정·고정·개별 삭제·scope reset을 지원합니다. 저장 문장은 LLM이
 생성하지 않고 canonical player Message 원문을 사용하며 Event 관계 기억은 결정론적으로 렌더링합니다.
+Mobile/RealWorld와 InGame/GameWorld의 직접 player Message를 모두 기억 후보로 처리하며,
+Web은 `Message + GameWorld`를 인게임에서 직접 공유한 기억으로 표시합니다. 회상된 Active 기억은
+대사 Prompt에만 들어가고 Command·Recipe 사실이나 실행 권한을 변경하지 않습니다.
 
 2026-08-18 공개 `/ready`가 DB revision `0014`, Local LLM `ready`를 반환하고 공개
 `/openapi.json`에서 Memory 전체 경로가 확인되었습니다. 따라서 Web production build는
@@ -259,9 +262,16 @@ claim합니다. 이미 저장된 `task_id`가 다시 `Completed`로 조회되면
 claim만 복구합니다. timeout 뒤 자동 retry나 polling은 하지 않습니다.
 
 클라이언트 allowlist는 수량 1~50의 `PlantStem` Gathering과 `ShoddyBandage` Crafting입니다.
-Gathering은 결과 수량만큼 `PlantStem`을 지급하고 Crafting은 결과 1개당 `PlantStem` 2개를
-차감한 뒤 `ShoddyBandage` 1개를 지급합니다. 이 비용·보상 mapping은 현재 Task 응답에 별도
-receipt가 없기 때문에 검증된 Task type/item 조합에 한해 UE가 소유합니다.
+Gathering은 결과 수량만큼 `PlantStem`을 지급합니다. Crafting은 Backend가 최신 Game State의
+MAKO → Shared Storage 순서로 결과 1개당 `PlantStem` 2개를 Task 생성 transaction에서 예약
+차감하고, UE는 완료된 Task에서 같은 차감을 local Inventory에 재현한 뒤 `ShoddyBandage`를
+지급합니다. 제작 Task가 아직 `InProgress`이면 UE는 차감 전 local Snapshot을 서버에 올리지
+않습니다. Task 응답에 별도 settlement receipt가 없는 제한 수직 슬라이스라는 점은 유지합니다.
+
+Snapshot이 없으면 `InventorySnapshotRequired`, 재료가 부족하면
+`InsufficientCraftingMaterials`로 Task 전체를 거절합니다. 활성 제작 예약 삭제는 예약했던
+컨테이너별 수량을 환불합니다. 서버 제작 예약·환불 이후 Game State PUT은 GET으로 확인한
+version을 `X-Base-State-Version`으로 보내 stale overwrite를 막습니다.
 
 현재 배포 Backend는 관리자 Offline Task 정책을 Task 생성 시 snapshot합니다. 기본 정책은
 `PlantStem` Gathering 5초/개와 `ShoddyBandage` Crafting 10초/개이며, 클라이언트는 이 값을
@@ -300,8 +310,9 @@ GET /api/v1/game-state?save_slot_id={id}&companion_id={id}
 
 PUT은 `AIRE_GAME` GameClient 전용이고 GET은 `AIRE_GAME`과 `AIRE_WEB`이 읽을 수 있습니다.
 Bearer에서 얻은 `profile_id`가 scope 권위이며 WebClient는 Snapshot을 변경하지 않습니다.
-서버 Snapshot도 UE Gameplay의 실행 권위가 아니라 UE가 검증·저장한 bounded value의 조회용
-복사본입니다.
+일반 Gameplay 실행 권위는 계속 UE에 있습니다. 단, Web에서 시작한 `ShoddyBandage` 제작의
+재료 가능 여부와 예약 차감은 서버 Snapshot이 권위이며, UE는 완료 Task를 적용한 뒤 그 결과를
+다음 Game State PUT으로 맞춥니다.
 
 PUT body는 `schema_version=1`, `content_version=1`, `operation_id`, 1 이상 단조 증가
 `state_version`, `world_session_id`, UTC offset 포함 `captured_at`, `save_slot_id`,
