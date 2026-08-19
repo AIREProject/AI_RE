@@ -34,6 +34,8 @@ public:
 	void SetPanelOpen(bool bOpen);
 	bool IsPanelOpen() const;
 	void RefreshCompanionBinding();
+	void BindCompanion(AAIRECompanionCharacter* Companion);
+	void UnbindCompanion();
 
 protected:
 	virtual void NativeConstruct() override;
@@ -78,8 +80,6 @@ private:
 	void UpdateWheelSelection(const FGeometry& Geometry);
 	FAIRECompanionLocalBehaviorPolicy GetPreviewPolicy(
 		const FAIRECompanionLocalBehaviorPolicy& CurrentPolicy) const;
-	void BindCompanion(AAIRECompanionCharacter* Companion);
-	void UnbindCompanion();
 	void RefreshPolicyDisplay();
 	void SetPolicyButtonsEnabled(bool bEnabled);
 

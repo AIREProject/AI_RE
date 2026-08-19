@@ -12,6 +12,8 @@ class UAIREChatPanelWidget;
 class UAIREResponseStackWidget;
 class UWidget;
 
+DECLARE_MULTICAST_DELEGATE(FAIREChatUIStateChanged);
+
 UCLASS(Abstract, Blueprintable)
 class AI_RE_API UAIREChatHUDWidget : public UUserWidget
 {
@@ -33,6 +35,12 @@ public:
 	void HandleGlobalEnterInput();
 	void HandleGlobalLogInput();
 	void CloseAllChatUI();
+	bool IsChatInputOpen() const;
+	bool IsChatLogOpen() const;
+	UWidget* GetChatInputFocusTarget() const;
+	UWidget* GetChatLogFocusTarget();
+
+	FAIREChatUIStateChanged OnChatUIStateChanged;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -65,8 +73,7 @@ private:
 	void OpenChatInput();
 	void CloseChatInput();
 	void OpenChatLog();
-	void ApplyUIInputMode(UWidget* FocusTarget, bool bShowMouseCursor);
-	void RestoreGameInputMode();
+	void NotifyChatUIStateChanged();
 	UAIREChatHistorySubsystem* GetChatHistory() const;
 	void UnbindChatComponent();
 	void ClearResponseTimers();
@@ -87,5 +94,4 @@ private:
 	TObjectPtr<UAIREChatLogWidget> RuntimeChatLog;
 
 	TArray<FVisibleResponse> VisibleResponses;
-	bool bOwnsInputSuppression = false;
 };

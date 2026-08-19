@@ -11,7 +11,6 @@
 #include "EnhancedInputSubsystems.h"
 #include "InputActionValue.h"
 #include "AI_RE.h"
-#include "AI_REMainUI.h"
 #include "AI_REInventoryUI.h"
 #include "AI_REStatusComponent.h"
 #include "AI_REPlayerCombatComponent.h"
@@ -351,6 +350,18 @@ void AAI_RECharacter::CloseCraftingUI()
 	}
 }
 
+bool AAI_RECharacter::IsInventoryUIOpen() const
+{
+	return IsValid(InventoryUIInstance)
+		&& InventoryUIInstance->IsInViewport();
+}
+
+bool AAI_RECharacter::IsCraftingUIOpen() const
+{
+	return IsValid(CraftingUIInstance)
+		&& CraftingUIInstance->IsInViewport();
+}
+
 void AAI_RECharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -359,16 +370,6 @@ void AAI_RECharacter::BeginPlay()
 	if (CraftingComponent && InventoryComponent)
 	{
 		CraftingComponent->SetInventoryComponent(InventoryComponent);
-	}
-	
-	if (MainUIClass != nullptr)
-	{
-		MainUIInstance = CreateWidget<UAI_REMainUI>(GetWorld(), MainUIClass);
-		if (MainUIInstance)
-		{
-			MainUIInstance->AddToViewport();
-			MainUIInstance->InitializeHUD(StatusComponent);
-		}
 	}
 }
 

@@ -1,15 +1,12 @@
 #include "Chat/UI/AIREChatHUDWidget.h"
 
 #include "Chat/AIRECompanionChatComponent.h"
-#include "Core/AIRECompanionCharacter.h"
 #include "Chat/UI/AIREChatLogWidget.h"
 #include "Chat/UI/AIREChatPanelWidget.h"
 #include "Chat/UI/AIREResponseStackWidget.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
-#include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 
 void UAIREChatHUDWidget::NativeConstruct()
@@ -34,35 +31,6 @@ void UAIREChatHUDWidget::NativeConstruct()
 		RuntimeChatPanel->InitializeChatPanel(this);
 	}
 
-	if (IsValid(RuntimeChatComponent))
-	{
-		return;
-	}
-
-	if (UWorld* World = GetWorld())
-	{
-		for (TActorIterator<AAIRECompanionCharacter> It(World); It; ++It)
-		{
-			if (AAIRECompanionCharacter* Companion = *It; IsValid(Companion))
-			{
-				UAIRECompanionChatComponent* CompanionChat =
-					Companion->GetChatComponent();
-				if (IsValid(CompanionChat)
-					&& !CompanionChat->HasInGameContext())
-				{
-					FAIREInGameChatContext DefaultContext;
-					DefaultContext.SaveSlotId = TEXT("demo-slot-1");
-					DefaultContext.Day = 1;
-					DefaultContext.Hour = 12.0f;
-					DefaultContext.Period =
-						EAIREGameWorldPeriod::Afternoon;
-					CompanionChat->ConfigureInGameContext(DefaultContext);
-				}
-				InitializeChatRuntime(CompanionChat);
-				break;
-			}
-		}
-	}
 }
 
 void UAIREChatHUDWidget::InitializeChatRuntime(
@@ -183,7 +151,7 @@ void UAIREChatHUDWidget::CloseChatLog()
 	{
 		RuntimeChatLog->SetChatLogOpen(false);
 	}
-	RestoreGameInputMode();
+	NotifyChatUIStateChanged();
 }
 
 void UAIREChatHUDWidget::CloseAllChatUI()
@@ -196,7 +164,33 @@ void UAIREChatHUDWidget::CloseAllChatUI()
 	{
 		RuntimeChatLog->SetChatLogOpen(false);
 	}
-	RestoreGameInputMode();
+	NotifyChatUIStateChanged();
+}
+
+bool UAIREChatHUDWidget::IsChatInputOpen() const
+{
+	return IsValid(RuntimeChatPanel)
+		&& RuntimeChatPanel->IsChatInputOpen();
+}
+
+bool UAIREChatHUDWidget::IsChatLogOpen() const
+{
+	return IsValid(RuntimeChatLog)
+		&& RuntimeChatLog->IsChatLogOpen();
+}
+
+UWidget* UAIREChatHUDWidget::GetChatInputFocusTarget() const
+{
+	return IsValid(RuntimeChatPanel)
+		? RuntimeChatPanel->GetInputFocusTarget()
+		: nullptr;
+}
+
+UWidget* UAIREChatHUDWidget::GetChatLogFocusTarget()
+{
+	return IsValid(RuntimeChatLog)
+		? RuntimeChatLog->GetLogFocusTarget()
+		: nullptr;
 }
 
 void UAIREChatHUDWidget::NativeDestruct()
@@ -362,7 +356,7 @@ void UAIREChatHUDWidget::OpenChatInput()
 	}
 	RefreshChatHistoryViews();
 	RuntimeChatPanel->SetChatInputOpen(true);
-	ApplyUIInputMode(RuntimeChatPanel->GetInputFocusTarget(), false);
+	NotifyChatUIStateChanged();
 }
 
 void UAIREChatHUDWidget::CloseChatInput()
@@ -371,7 +365,7 @@ void UAIREChatHUDWidget::CloseChatInput()
 	{
 		RuntimeChatPanel->SetChatInputOpen(false);
 	}
-	RestoreGameInputMode();
+	NotifyChatUIStateChanged();
 }
 
 void UAIREChatHUDWidget::OpenChatLog()
@@ -387,57 +381,12 @@ void UAIREChatHUDWidget::OpenChatLog()
 	}
 	RefreshChatHistoryViews();
 	RuntimeChatLog->SetChatLogOpen(true);
-	ApplyUIInputMode(RuntimeChatLog->GetLogFocusTarget(), true);
+	NotifyChatUIStateChanged();
 }
 
-void UAIREChatHUDWidget::ApplyUIInputMode(
-	UWidget* FocusTarget,
-	const bool bShowMouseCursor)
+void UAIREChatHUDWidget::NotifyChatUIStateChanged()
 {
-	APlayerController* PlayerController = GetOwningPlayer();
-	if (!IsValid(PlayerController))
-	{
-		return;
-	}
-
-	if (!bOwnsInputSuppression)
-	{
-		PlayerController->SetIgnoreMoveInput(true);
-		PlayerController->SetIgnoreLookInput(true);
-		bOwnsInputSuppression = true;
-	}
-
-	FInputModeGameAndUI InputMode;
-	InputMode.SetLockMouseToViewportBehavior(
-		EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(!bShowMouseCursor);
-	if (IsValid(FocusTarget))
-	{
-		InputMode.SetWidgetToFocus(FocusTarget->TakeWidget());
-	}
-	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(bShowMouseCursor);
-}
-
-void UAIREChatHUDWidget::RestoreGameInputMode()
-{
-	APlayerController* PlayerController = GetOwningPlayer();
-	if (!IsValid(PlayerController))
-	{
-		bOwnsInputSuppression = false;
-		return;
-	}
-
-	if (bOwnsInputSuppression)
-	{
-		PlayerController->SetIgnoreMoveInput(false);
-		PlayerController->SetIgnoreLookInput(false);
-		bOwnsInputSuppression = false;
-	}
-
-	FInputModeGameOnly InputMode;
-	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(false);
+	OnChatUIStateChanged.Broadcast();
 }
 
 UAIREChatHistorySubsystem* UAIREChatHUDWidget::GetChatHistory() const
