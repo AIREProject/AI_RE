@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
 #include "AIRECombatDamageTargetInterface.h"
+#include "LocalAI/Support/AIREHealingTargetInterface.h"
 #include "AI_RECharacterBase.generated.h"
 
 class UAI_REStatusComponent;
@@ -19,6 +20,7 @@ class AI_RE_API AAI_RECharacterBase
 	: public ACharacter
 	, public IAbilitySystemInterface
 	, public IAIRECombatDamageTargetInterface
+	, public IAIREHealingTargetInterface
 {
 	GENERATED_BODY()
 
@@ -28,6 +30,9 @@ public:
 	virtual class UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	virtual FGameplayAttribute GetCombatHealthAttribute() const override;
 	virtual EAIRECombatAffiliation GetCombatAffiliation() const override;
+	virtual FGameplayAttribute GetHealingHealthAttribute() const override;
+	virtual FGameplayAttribute GetHealingMaxHealthAttribute() const override;
+	virtual bool CanReceiveHealingFrom(const AActor* Healer) const override;
 	virtual void PossessedBy(AController* NewController) override;
 
 protected:

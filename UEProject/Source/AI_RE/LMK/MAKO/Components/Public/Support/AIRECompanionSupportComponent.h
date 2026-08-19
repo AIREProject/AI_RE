@@ -41,11 +41,16 @@ public:
 	FGameplayAbilitySpecHandle FindSupportAbilityHandle() const;
 
 protected:
+	virtual void TickComponent(
+		float DeltaTime,
+		ELevelTick TickType,
+		FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	bool GrantSupportAbilities();
 	void ReleaseSupportAbilities();
+	bool IsPlayerBelowAutoSupportThreshold(AActor* PlayerActor) const;
 	void HandleDeadStateChanged(FGameplayTag Tag, int32 NewCount);
 	void HandleAttackStateChanged(FGameplayTag Tag, int32 NewCount);
 
@@ -59,4 +64,5 @@ private:
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	FDelegateHandle DeadStateChangedDelegateHandle;
 	FDelegateHandle AttackStateChangedDelegateHandle;
+	bool bAutoSupportRequestActive = false;
 };

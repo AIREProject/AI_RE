@@ -230,6 +230,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
 	FName DefaultHealingItemId;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float AutoSupportHealthPercent = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Support")
 	TObjectPtr<UAI_REAbilitySetDataAsset> SupportAbilitySet;
 };

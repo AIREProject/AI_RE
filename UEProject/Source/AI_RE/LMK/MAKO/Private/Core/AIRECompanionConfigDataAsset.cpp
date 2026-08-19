@@ -244,6 +244,17 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!FMath::IsFinite(AutoSupportHealthPercent)
+		|| AutoSupportHealthPercent < 0.0f
+		|| AutoSupportHealthPercent > 1.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidAutoSupportHealthPercent",
+			"Auto support health percent must be finite and between zero and one.");
+		return false;
+	}
+
 	TSet<FName> StorageRuleItemIds;
 	for (const FAIRECompanionStorageRule& Rule
 		: StorageRules)

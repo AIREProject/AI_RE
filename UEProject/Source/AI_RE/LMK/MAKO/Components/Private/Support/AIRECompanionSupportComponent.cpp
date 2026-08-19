@@ -8,12 +8,15 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "LocalAI/Support/AIREHealingTargetInterface.h"
+#include "Kismet/GameplayStatics.h"
+#include "AbilitySystemGlobals.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionSupport, Log, All);
 
 UAIRECompanionSupportComponent::UAIRECompanionSupportComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickInterval = 0.25f;
 }
 
 bool UAIRECompanionSupportComponent::InitializeSupport(
@@ -128,6 +131,7 @@ void UAIRECompanionSupportComponent::CancelSupportRequest()
 			&UAIRECompanionSupportComponent::HandleSupportTargetDestroyed);
 	}
 	SupportTarget.Reset();
+	bAutoSupportRequestActive = false;
 
 	if (AbilitySystem.IsValid())
 	{
@@ -188,6 +192,91 @@ void UAIRECompanionSupportComponent::CompleteSupportRequest(
 			&UAIRECompanionSupportComponent::HandleSupportTargetDestroyed);
 	}
 	SupportTarget.Reset();
+	bAutoSupportRequestActive = false;
+}
+
+void UAIRECompanionSupportComponent::TickComponent(
+	const float DeltaTime,
+	const ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!ActiveConfig.IsValid()
+		|| !InventoryComponent.IsValid()
+		|| !AbilitySystem.IsValid()
+		|| AbilitySystem->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateDisabledDead))
+	{
+		return;
+	}
+
+	AActor* PlayerActor = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!IsValid(PlayerActor))
+	{
+		return;
+	}
+
+	if (bAutoSupportRequestActive
+		&& SupportTarget.Get() == PlayerActor
+		&& !IsPlayerBelowAutoSupportThreshold(PlayerActor))
+	{
+		CancelSupportRequest();
+		return;
+	}
+
+	if (!IsSupportRequested()
+		&& IsPlayerBelowAutoSupportThreshold(PlayerActor)
+		&& RequestSupport(PlayerActor))
+	{
+		bAutoSupportRequestActive = true;
+	}
+}
+
+bool UAIRECompanionSupportComponent::IsPlayerBelowAutoSupportThreshold(
+	AActor* PlayerActor) const
+{
+	if (!ActiveConfig.IsValid()
+		|| !IsValid(PlayerActor))
+	{
+		return false;
+	}
+
+	const float Threshold = ActiveConfig->AutoSupportHealthPercent;
+	if (!FMath::IsFinite(Threshold)
+		|| Threshold <= 0.0f)
+	{
+		return false;
+	}
+
+	float MissingHealth = 0.0f;
+	if (!AIREHealingTarget::GetMissingHealth(
+			PlayerActor,
+			GetOwner(),
+			MissingHealth))
+	{
+		return false;
+	}
+
+	const IAIREHealingTargetInterface* HealingTarget =
+		Cast<IAIREHealingTargetInterface>(PlayerActor);
+	const UAbilitySystemComponent* PlayerAbilitySystem =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(
+			PlayerActor,
+			true);
+	if (!HealingTarget || !IsValid(PlayerAbilitySystem))
+	{
+		return false;
+	}
+
+	const float Health = PlayerAbilitySystem->GetNumericAttribute(
+		HealingTarget->GetHealingHealthAttribute());
+	const float MaxHealth = PlayerAbilitySystem->GetNumericAttribute(
+		HealingTarget->GetHealingMaxHealthAttribute());
+	return FMath::IsFinite(Health)
+		&& FMath::IsFinite(MaxHealth)
+		&& MaxHealth > 0.0f
+		&& Health / MaxHealth <= Threshold;
 }
 
 FGameplayAbilitySpecHandle

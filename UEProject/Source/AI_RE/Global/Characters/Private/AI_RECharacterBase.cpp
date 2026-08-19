@@ -40,6 +40,30 @@ EAIRECombatAffiliation AAI_RECharacterBase::GetCombatAffiliation() const
 	return EAIRECombatAffiliation::PlayerParty;
 }
 
+FGameplayAttribute AAI_RECharacterBase::GetHealingHealthAttribute() const
+{
+	return UAI_REAttributeSet::GetHPAttribute();
+}
+
+FGameplayAttribute AAI_RECharacterBase::GetHealingMaxHealthAttribute() const
+{
+	return UAI_REAttributeSet::GetMaxHPAttribute();
+}
+
+bool AAI_RECharacterBase::CanReceiveHealingFrom(
+	const AActor* Healer) const
+{
+	const IAIRECombatDamageTargetInterface* HealerCombatTarget =
+		Cast<IAIRECombatDamageTargetInterface>(Healer);
+	return GetCombatAffiliation() == EAIRECombatAffiliation::PlayerParty
+		&& IsValid(Healer)
+		&& Healer != this
+		&& HealerCombatTarget
+		&& HealerCombatTarget->GetCombatAffiliation()
+			== EAIRECombatAffiliation::PlayerParty
+		&& IsCombatTargetAlive();
+}
+
 void AAI_RECharacterBase::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
