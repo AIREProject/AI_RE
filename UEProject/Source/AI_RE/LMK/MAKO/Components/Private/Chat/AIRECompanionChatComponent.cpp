@@ -156,9 +156,36 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 	++Generation;
 	ActiveRequestId = NewStableId(TEXT("request"));
 	ActiveMessageId = NewStableId(TEXT("message"));
+
+	FAIREInGameChatContext EffectiveContext = ChatContext;
+	const FDateTime Now = FDateTime::Now();
+	EffectiveContext.Day = Now.GetDay();
+	EffectiveContext.Hour = static_cast<float>(Now.GetHour()) + static_cast<float>(Now.GetMinute()) / 60.0f;
+	const int32 HourInt = Now.GetHour();
+	if (HourInt >= 5 && HourInt < 8)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Dawn;
+	}
+	else if (HourInt >= 8 && HourInt < 12)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Morning;
+	}
+	else if (HourInt >= 12 && HourInt < 18)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Afternoon;
+	}
+	else if (HourInt >= 18 && HourInt < 22)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Evening;
+	}
+	else
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Night;
+	}
+
 	const FAIREWorldContextV1 WorldContext = FAIREWorldContextBuilder::Build(
 		Cast<AAIRECompanionCharacter>(GetOwner()),
-		ChatContext.LocationId);
+		EffectiveContext.LocationId);
 	const AAIRECompanionCharacter* Character =
 		Cast<AAIRECompanionCharacter>(GetOwner());
 	const UAIRECompanionCommandGatewayComponent* Gateway =
@@ -167,7 +194,7 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 		&& Gateway->CanAdvertiseCraftItem(WorldContext);
 	FString SerializationError;
 	if (!FAIREChatJsonAdapter::BuildInGameRequest(
-		ChatContext,
+		EffectiveContext,
 		WorldContext,
 		CanonicalCompanionId,
 		SessionId,

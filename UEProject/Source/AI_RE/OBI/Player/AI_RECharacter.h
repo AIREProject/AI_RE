@@ -11,7 +11,6 @@
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_RECharacter.generated.h"
 
-class UAI_REMainUI;
 class UAI_REPlayerCombatComponent;
 class UAI_REPlayerInventoryComponent;
 class UAI_REPlayerCraftingComponent;
@@ -164,13 +163,6 @@ public:
 	void DebugTakeDamage(float DamageAmount);
 	
 protected:
-	// UI
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
-	TSubclassOf<UAI_REMainUI> MainUIClass;
-	// 실제로 생성되어서 화면에 떠 있는 위젯을 조종하기 위한 리모콘
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
-	TObjectPtr<UAI_REMainUI> MainUIInstance;
-	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UAI_REInventoryUI> InventoryUIClass;
 	
@@ -227,6 +219,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crafting")
 	void CloseCraftingUI();
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsInventoryUIOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsCraftingUIOpen() const;
 
 	
 	// FOCEINLINE -> Function Call 방식이 아니라 사용 위치에서 코드를 받아 붙여넣어(inline) 실행

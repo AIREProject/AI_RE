@@ -38,6 +38,8 @@ protected:
 
 	UFUNCTION()
 	void RefreshQuickSlots();
+
+	virtual void NativeDestruct() override;
 	
 private:
 	// 타이머를 켜고 끌 때 필요한 리모콘(핸들)
@@ -46,6 +48,12 @@ private:
 	TWeakObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComp;
 
 	TWeakObjectPtr<class UAbilitySystemComponent> CachedASC;
+	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle SPChangedDelegateHandle;
+	FDelegateHandle HungerChangedDelegateHandle;
+	FDelegateHandle ThirstyChangedDelegateHandle;
+
+	void UnbindHUD();
 
 	UPROPERTY()
 	TArray<class UAI_REInventorySlotUI*> QuickSlotWidgets;

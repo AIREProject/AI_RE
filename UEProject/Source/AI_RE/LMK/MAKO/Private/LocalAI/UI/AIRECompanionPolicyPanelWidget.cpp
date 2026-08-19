@@ -394,7 +394,7 @@ void UAIRECompanionPolicyPanelWidget::SetPanelOpen(const bool bOpen)
 	{
 		CollapsedHint->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	if (bPanelOpen)
+	if (bPanelOpen && !BoundCompanion.IsValid())
 	{
 		RefreshCompanionBinding();
 	}
@@ -413,7 +413,9 @@ void UAIRECompanionPolicyPanelWidget::RefreshCompanionBinding()
 	{
 		for (TActorIterator<AAIRECompanionCharacter> It(World); It; ++It)
 		{
-			if (AAIRECompanionCharacter* Companion = *It; IsValid(Companion))
+			if (AAIRECompanionCharacter* Companion = *It;
+				IsValid(Companion)
+				&& Companion->GetCompanionId() == TEXT("MAKO"))
 			{
 				FoundCompanion = Companion;
 				break;
