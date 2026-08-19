@@ -629,11 +629,12 @@ SupportPriority:
 Disabled > Survival > Support > Combat > DirectCommand > Work > Return/Follow > Idle
 ```
 
-데모 입력은 독립 Policy HUD가 `P` 키의 Press·Release를 사용합니다. `P`를 누르고 있는
-동안 이동·시점 입력을 억제하고 마우스 커서를 중앙에 배치하며, 방향을 고른 뒤 `P`를
-놓는 시점에 선택한 축 하나만 적용합니다. 중앙 데드존에서 놓으면 취소되며, Release를
-잃어 패널이 남은 경우 다음 `P` Press가 취소·복구합니다. 기존 숫자 퀵슬롯과 Chat HUD
-입력은 변경하지 않습니다.
+데모 입력은 `AAI_REPlayerController`가 기존 `IMC_Default`의
+`IA_AIRECompanionPolicy`를 받아 `Started·Completed·Canceled`로 구분합니다. `P`를 누르고
+있는 동안 이동·시점 입력을 억제하고 마우스 커서를 중앙에 배치하며, 방향을 고른 뒤
+`P`를 놓는 시점에 선택한 축 하나만 적용합니다. 중앙 데드존 또는 `Canceled`는 변경 없이
+복구하며 Release를 잃어 패널이 남은 경우 다음 `P` Press가 취소합니다. Policy Widget은
+입력 모드·커서·이동 억제를 직접 소유하지 않습니다.
 
 원형 UI는 두 독립 축을 한 화면에 배치합니다.
 
@@ -655,6 +656,30 @@ StateTree 상태 선택 Blueprint Graph를 두지 않습니다. 외부 PNG·아�
 소유합니다. C++ `BindWidget` 계약 이름은 `PolicyPanel`, `CollapsedHint`,
 `CurrentPolicyText`, `StatusText`, `BalancedButton`, `SupportPriorityButton`,
 `HoldFireButton`, `DefendPlayerButton`, `AggressiveButton`입니다.
+
+### 8.7 PlayerController HUD 수명과 MAKO 상태 카드
+
+로컬 PlayerController는 Main HUD, MAKO 상태 HUD, Chat HUD, ChatLog와 Policy HUD를 생성하고
+각각 Z-order `0·10·100·110·120`으로 관리합니다. WBP와 Input Action은
+`BP_AIREPlayerController`의 명시적 참조로 연결해 Shipping cook graph에 포함합니다.
+Character와 WorldSubsystem은 이 HUD들을 중복 생성하지 않습니다.
+
+Chat Enter, ChatLog와 Policy 입력은 각각 `IA_AIREChatEnter`, `IA_AIREChatLog`,
+`IA_AIRECompanionPolicy`를 사용하며 기존 `IMC_Default`에 Enter, L, P로 매핑합니다.
+PlayerController가 `Gameplay·ChatInput·ChatLog·PolicySelection` 모드와 cursor·move·look
+억제를 단독 관리합니다. Inventory 또는 Crafting modal이 열려 있으면 Chat과 Policy 진입을
+차단해 기존 Character 소유 modal 입력과 충돌하지 않게 합니다.
+
+`/Game/Work/LMK/UI/HUD/WBP_AIRECompanionStatus`는
+`UAIRECompanionStatusWidget`을 부모로 사용합니다. C++은 `companion_id=MAKO`인 Character의
+ASC에서 Health/MaxHealth와 Stamina/MaxStamina를 읽고 Attribute Delegate로 Bar Percent만
+갱신합니다. HP/SP 숫자는 표시하지 않습니다. Player Pawn과 MAKO 위치의 3차원 직선거리는
+0.25초 Timer로 계산해 cm를 정수 m로 표시하며 Pawn이 없으면 `--m`를 사용합니다.
+거리 표시는 AI 추적·StateTree 판단에 사용하지 않습니다.
+
+MAKO 파괴 시 상태 카드를 숨기고 Delegate와 Timer를 해제합니다. PlayerController는
+현재 Actor 검색과 Spawn Delegate로 새 MAKO를 다시 연결하며 Possess·AcknowledgePossession,
+EndPlay에서 Player HUD와 입력 상태를 대칭적으로 초기화·정리합니다.
 
 ## 9. 검증 체크리스트
 
