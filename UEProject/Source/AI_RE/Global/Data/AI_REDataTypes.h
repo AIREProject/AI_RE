@@ -1,7 +1,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameplayTagContainer.h"
 #include "Templates/SubclassOf.h"
 #include "AI_REDataTypes.generated.h"
 
@@ -11,14 +10,14 @@ struct AI_RE_API FMixUpSkillData
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    class UAnimMontage* SkillMontage = nullptr;
+    UAnimMontage* SkillMontage = nullptr;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
     float MaxRange = 1000.0f;
 
     // 실제 스킬 이펙트나 투사체를 담당할 액터 클래스
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
-    TSubclassOf<class AActor> SkillActorClass; 
+    TSubclassOf<AActor> SkillActorClass; 
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Skill")
     float Cooldown = 5.0f;

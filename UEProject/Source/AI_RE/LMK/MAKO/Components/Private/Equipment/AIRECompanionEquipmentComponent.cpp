@@ -2,8 +2,9 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
+#include "AIRECombatEvadeComponent.h"
 #include "Animation/AnimInstance.h"
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -19,21 +20,12 @@ UAIRECompanionEquipmentComponent::UAIRECompanionEquipmentComponent()
 }
 
 bool UAIRECompanionEquipmentComponent::InitializeEquipment(
-	UAbilitySystemComponent* InAbilitySystem)
+	UAbilitySystemComponent* InAbilitySystem,
+	const bool bEquipLegacyDefault)
 {
 	ShutdownEquipment();
 	if (!IsValid(InAbilitySystem))
 	{
-		return false;
-	}
-
-	if (!IsValid(DefaultWeaponDefinition))
-	{
-		UE_LOG(
-			LogAIRECompanionEquipment,
-			Warning,
-			TEXT("Companion %s has no default Weapon Definition. No weapon abilities were granted."),
-			*GetNameSafe(GetOwner()));
 		return false;
 	}
 
@@ -45,13 +37,29 @@ bool UAIRECompanionEquipmentComponent::InitializeEquipment(
 		.AddUObject(
 			this,
 			&UAIRECompanionEquipmentComponent::HandleDeadStateChanged);
-	if (!EquipWeapon(DefaultWeaponDefinition))
+	if (bEquipLegacyDefault && IsValid(DefaultWeaponDefinition)
+		&& !EquipWeapon(DefaultWeaponDefinition))
 	{
 		ShutdownEquipment();
 		return false;
 	}
 
+	if (bEquipLegacyDefault && !IsValid(DefaultWeaponDefinition))
+	{
+		UE_LOG(
+			LogAIRECompanionEquipment,
+			Warning,
+			TEXT("Companion %s has no default Weapon Definition. Inventory equipment may still grant a weapon."),
+			*GetNameSafe(GetOwner()));
+	}
+
 	return true;
+}
+
+FAIRECompanionWeaponEquipCompleted&
+UAIRECompanionEquipmentComponent::OnWeaponEquipCompleted()
+{
+	return WeaponEquipCompleted;
 }
 
 void UAIRECompanionEquipmentComponent::ShutdownEquipment()
@@ -70,6 +78,7 @@ void UAIRECompanionEquipmentComponent::ShutdownEquipment()
 
 	UnequipCurrentWeapon();
 	AbilitySystem.Reset();
+	WeaponEquipCompleted.Clear();
 }
 
 const UAIRECompanionWeaponDefinitionDataAsset*
@@ -129,6 +138,10 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 {
 	if (!AbilitySystem.IsValid() || !IsValid(WeaponDefinition))
 	{
+		if (IsValid(WeaponDefinition))
+		{
+			WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
+		}
 		return false;
 	}
 
@@ -141,6 +154,7 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 			TEXT("Weapon Definition %s is invalid: %s"),
 			*GetNameSafe(WeaponDefinition),
 			*ValidationError.ToString());
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 		return false;
 	}
 
@@ -197,6 +211,7 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 			TEXT("Failed to start async asset loading for Weapon Definition %s."),
 			*GetNameSafe(WeaponDefinition));
 		CancelPendingEquipmentLoad();
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 		return false;
 	}
 
@@ -234,7 +249,7 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 	PendingWeaponDefinition = nullptr;
 
 	FText ValidationError;
-	UAIRECompanionAbilitySetDataAsset* AbilitySet =
+	UAI_REAbilitySetDataAsset* AbilitySet =
 		WeaponDefinition->AbilitySet.Get();
 	if (!IsValid(AbilitySet) || !AbilitySet->IsAbilitySetValid(ValidationError))
 	{
@@ -244,7 +259,8 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 			TEXT("Weapon Definition %s could not load a valid Ability Set: %s"),
 			*GetNameSafe(WeaponDefinition),
 			*ValidationError.ToString());
-		UnequipCurrentWeapon();
+		ReleaseCurrentWeaponState();
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 		return;
 	}
 
@@ -287,7 +303,8 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 				TEXT("Failed to grant ability %s for Weapon Definition %s."),
 				*GetNameSafe(Entry.AbilityClass.Get()),
 				*GetNameSafe(WeaponDefinition));
-			UnequipCurrentWeapon();
+			ReleaseCurrentWeaponState();
+			WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 			return;
 		}
 
@@ -303,7 +320,8 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 			Warning,
 			TEXT("Melee Weapon Definition %s did not grant a Basic Attack ability."),
 			*GetNameSafe(WeaponDefinition));
-		UnequipCurrentWeapon();
+		ReleaseCurrentWeaponState();
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 		return;
 	}
 
@@ -321,7 +339,8 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 				? TEXT("true")
 				: TEXT("false"),
 			bGrantedCombatSkill ? TEXT("true") : TEXT("false"));
-		UnequipCurrentWeapon();
+		ReleaseCurrentWeaponState();
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
 		return;
 	}
 
@@ -362,6 +381,7 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 		IsValid(CurrentWeaponDefinition->AttackMontage.Get())
 			? TEXT("true")
 			: TEXT("false"));
+	WeaponEquipCompleted.Broadcast(CurrentWeaponDefinition, true);
 }
 
 void UAIRECompanionEquipmentComponent::CancelPendingEquipmentLoad()
@@ -463,6 +483,15 @@ void UAIRECompanionEquipmentComponent::ReleaseCurrentWeaponState()
 
 	if (AbilitySystem.IsValid())
 	{
+		FGameplayTagContainer AutonomousEvadeAbilityTags;
+		AutonomousEvadeAbilityTags.AddTag(
+			AIRECompanionGameplayTags::AbilityCombatAutonomousEvade);
+		AbilitySystem->CancelAbilities(&AutonomousEvadeAbilityTags);
+		if (UAIRECombatEvadeComponent* Evade =
+			GetOwner()->FindComponentByClass<UAIRECombatEvadeComponent>())
+		{
+			Evade->CancelEvade();
+		}
 		for (const FGameplayAbilitySpecHandle& AbilityHandle : GrantedAbilityHandles)
 		{
 			if (AbilityHandle.IsValid())

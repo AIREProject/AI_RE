@@ -1,20 +1,15 @@
 #include "Chat/AIRECompanionChatComponent.h"
 
+#include "Chat/Context/AIREWorldContextBuilder.h"
 #include "Chat/Transport/AIREChatJsonAdapter.h"
 #include "Chat/Contracts/AIREChatSettings.h"
+#include "Command/AIRECompanionCommandGatewayComponent.h"
 #include "Core/AIRECompanionCharacter.h"
-#include "Chat/Auth/AIREGameClientCredentialStore.h"
 #include "Dom/JsonObject.h"
-#include "HAL/FileManager.h"
-#include "HAL/PlatformMisc.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpResponse.h"
 #include "IWebSocket.h"
-#include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
-#include "Misc/Paths.h"
-#include "Misc/SecureHash.h"
-#include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "TimerManager.h"
@@ -27,8 +22,10 @@ namespace
 	constexpr int32 NormalClosureCode = 1000;
 	constexpr int32 PolicyViolationCode = 1008;
 	constexpr uint64 MaxWebSocketMessageBytes = 262144;
-	constexpr TCHAR BootstrapTokenEnvironmentVariable[] = TEXT("AIRE_GAME_BOOTSTRAP_TOKEN");
-	constexpr TCHAR DeviceTokenEnvironmentVariable[] = TEXT("AIRE_GAME_DEVICE_TOKEN");
+	constexpr int32 MaxHttpResponseBytes = 262144;
+	constexpr TCHAR FixedGameClientToken[] = TEXT("AIRE_GAME");
+	constexpr TCHAR CanonicalSaveSlotId[] = TEXT("demo-slot-1");
+	constexpr TCHAR CanonicalCompanionId[] = TEXT("mako");
 
 	FString NewStableId(const TCHAR* Prefix)
 	{
@@ -70,63 +67,50 @@ namespace
 		return FJsonSerializer::Serialize(Object, Writer);
 	}
 
-	bool DeserializeObject(const FString& Json, TSharedPtr<FJsonObject>& OutObject)
-	{
-		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Json);
-		return FJsonSerializer::Deserialize(Reader, OutObject) && OutObject.IsValid();
-	}
-
-	FString GetIdentityMetadataPath()
-	{
-		return FPaths::Combine(
-			FPaths::ProjectSavedDir(),
-			TEXT("AI_RE"),
-			TEXT("GameClientIdentity.json"));
-	}
-
-	FString BuildFakeSuccessFrame(const FString& RequestId)
+	FString BuildFakeSuccessBody(
+		const FString& RequestId,
+		const FString& MessageId,
+		const FString& SessionId,
+		const FString& SaveSlotId,
+		const FString& CompanionId)
 	{
 		const TSharedRef<FJsonObject> Metadata = MakeShared<FJsonObject>();
 		Metadata->SetStringField(TEXT("provider"), TEXT("fake"));
 		Metadata->SetStringField(TEXT("model_version"), TEXT("fake-v1"));
 		Metadata->SetStringField(TEXT("prompt_version"), TEXT("fake-v1"));
 
-		const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
-		Payload->SetNumberField(TEXT("schema_version"), 1);
-		Payload->SetStringField(TEXT("request_id"), RequestId);
-		Payload->SetStringField(TEXT("response_id"), NewStableId(TEXT("response")));
-		Payload->SetStringField(TEXT("interaction_mode"), TEXT("InGame"));
-		Payload->SetStringField(TEXT("display_text"), TEXT("Fake Companion response."));
-		Payload->SetArrayField(TEXT("command_candidates"), TArray<TSharedPtr<FJsonValue>>());
-		Payload->SetArrayField(TEXT("memory_candidates"), TArray<TSharedPtr<FJsonValue>>());
-		Payload->SetObjectField(TEXT("ai_metadata"), Metadata);
-
-		const TSharedRef<FJsonObject> Frame = MakeShared<FJsonObject>();
-		Frame->SetStringField(TEXT("type"), TEXT("chat_response"));
-		Frame->SetObjectField(TEXT("payload"), Payload);
+		const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+		Body->SetStringField(TEXT("request_id"), RequestId);
+		Body->SetStringField(TEXT("message_id"), MessageId);
+		Body->SetStringField(TEXT("session_id"), SessionId);
+		Body->SetStringField(TEXT("save_slot_id"), SaveSlotId);
+		Body->SetStringField(TEXT("companion_id"), CompanionId);
+		Body->SetStringField(TEXT("response_id"), NewStableId(TEXT("response")));
+		Body->SetStringField(TEXT("display_text"), TEXT("Fake Companion response."));
+		Body->SetArrayField(TEXT("command_candidates"), TArray<TSharedPtr<FJsonValue>>());
+		Body->SetObjectField(TEXT("ai_metadata"), Metadata);
 		FString Json;
-		SerializeObject(Frame, Json);
+		SerializeObject(Body, Json);
 		return Json;
 	}
 
-	FString BuildFakeErrorFrame(const FString& RequestId)
+	FString BuildFakeErrorBody(
+		const FString& RequestId,
+		const FString& Code,
+		const FString& Message,
+		const bool bRetryable)
 	{
 		const TSharedRef<FJsonObject> Error = MakeShared<FJsonObject>();
-		Error->SetStringField(TEXT("code"), TEXT("AIServiceUnavailable"));
-		Error->SetStringField(TEXT("message"), TEXT("Fake AI service is unavailable."));
-		Error->SetBoolField(TEXT("retryable"), true);
+		Error->SetStringField(TEXT("code"), Code);
+		Error->SetStringField(TEXT("message"), Message);
+		Error->SetBoolField(TEXT("retryable"), bRetryable);
 		Error->SetObjectField(TEXT("details"), MakeShared<FJsonObject>());
 
-		const TSharedRef<FJsonObject> Payload = MakeShared<FJsonObject>();
-		Payload->SetNumberField(TEXT("schema_version"), 1);
-		Payload->SetStringField(TEXT("request_id"), RequestId);
-		Payload->SetObjectField(TEXT("error"), Error);
-
-		const TSharedRef<FJsonObject> Frame = MakeShared<FJsonObject>();
-		Frame->SetStringField(TEXT("type"), TEXT("error"));
-		Frame->SetObjectField(TEXT("payload"), Payload);
+		const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+		Body->SetStringField(TEXT("request_id"), RequestId);
+		Body->SetObjectField(TEXT("error"), Error);
 		FString Json;
-		SerializeObject(Frame, Json);
+		SerializeObject(Body, Json);
 		return Json;
 	}
 }
@@ -138,13 +122,15 @@ UAIRECompanionChatComponent::UAIRECompanionChatComponent()
 
 bool UAIRECompanionChatComponent::ConfigureInGameContext(const FAIREInGameChatContext& InContext)
 {
+	FAIREInGameChatContext NormalizedContext = InContext;
+	NormalizedContext.SaveSlotId = CanonicalSaveSlotId;
 	FString Error;
-	if (!ValidateContext(InContext, Error))
+	if (!ValidateContext(NormalizedContext, Error))
 	{
 		return false;
 	}
 
-	ChatContext = InContext;
+	ChatContext = MoveTemp(NormalizedContext);
 	bHasChatContext = true;
 	return true;
 }
@@ -152,8 +138,7 @@ bool UAIRECompanionChatComponent::ConfigureInGameContext(const FAIREInGameChatCo
 bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 {
 	if (bIsEndingPlay
-		|| RequestState == EAIREChatRequestState::Sending
-		|| RequestState == EAIREChatRequestState::RetryableFailed)
+		|| RequestState == EAIREChatRequestState::Sending)
 	{
 		return false;
 	}
@@ -164,7 +149,6 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 		HandleRequestFailure(
 			TEXT("MissingContext"),
 			TEXT("A valid InGame Chat context is required."),
-			false,
 			false);
 		return false;
 	}
@@ -172,14 +156,52 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 	++Generation;
 	ActiveRequestId = NewStableId(TEXT("request"));
 	ActiveMessageId = NewStableId(TEXT("message"));
+
+	FAIREInGameChatContext EffectiveContext = ChatContext;
+	const FDateTime Now = FDateTime::Now();
+	EffectiveContext.Day = Now.GetDay();
+	EffectiveContext.Hour = static_cast<float>(Now.GetHour()) + static_cast<float>(Now.GetMinute()) / 60.0f;
+	const int32 HourInt = Now.GetHour();
+	if (HourInt >= 5 && HourInt < 8)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Dawn;
+	}
+	else if (HourInt >= 8 && HourInt < 12)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Morning;
+	}
+	else if (HourInt >= 12 && HourInt < 18)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Afternoon;
+	}
+	else if (HourInt >= 18 && HourInt < 22)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Evening;
+	}
+	else
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Night;
+	}
+
+	const FAIREWorldContextV1 WorldContext = FAIREWorldContextBuilder::Build(
+		Cast<AAIRECompanionCharacter>(GetOwner()),
+		EffectiveContext.LocationId);
+	const AAIRECompanionCharacter* Character =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	const UAIRECompanionCommandGatewayComponent* Gateway =
+		IsValid(Character) ? Character->GetCommandGatewayComponent() : nullptr;
+	const bool bCraftItemRuntimeAvailable = IsValid(Gateway)
+		&& Gateway->CanAdvertiseCraftItem(WorldContext);
 	FString SerializationError;
 	if (!FAIREChatJsonAdapter::BuildInGameRequest(
-		ChatContext,
-		GetCompanionId(),
+		EffectiveContext,
+		WorldContext,
+		CanonicalCompanionId,
 		SessionId,
 		ActiveRequestId,
 		ActiveMessageId,
 		UserMessage,
+		bCraftItemRuntimeAvailable,
 		ActiveHttpBody,
 		ActiveWebSocketFrame,
 		SerializationError))
@@ -187,39 +209,41 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 		HandleRequestFailure(
 			TEXT("InvalidRequest"),
 			SerializationError,
-			false,
 			false);
 		return false;
 	}
 
+	const uint64 RequestGeneration = Generation;
 	SetRequestState(EAIREChatRequestState::Sending);
-	return BeginActiveRequest();
-}
-
-bool UAIRECompanionChatComponent::RetryLastRequest()
-{
 	if (bIsEndingPlay
-		|| RequestState != EAIREChatRequestState::RetryableFailed
+		|| RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending
 		|| ActiveRequestId.IsEmpty()
-		|| ActiveWebSocketFrame.IsEmpty()
 		|| ActiveHttpBody.IsEmpty())
 	{
 		return false;
 	}
+	if (!BeginActiveRequest())
+	{
+		return false;
+	}
+	return RequestGeneration == Generation
+		&& RequestState == EAIREChatRequestState::Sending;
+}
 
-	++Generation;
-	SetRequestState(EAIREChatRequestState::Sending);
-	return BeginActiveRequest();
+bool UAIRECompanionChatComponent::RetryLastRequest()
+{
+	return false;
 }
 
 void UAIRECompanionChatComponent::CancelActiveRequest()
 {
-	if (RequestState != EAIREChatRequestState::Sending
-		&& RequestState != EAIREChatRequestState::RetryableFailed)
+	if (bIsCancellingRequest || RequestState != EAIREChatRequestState::Sending)
 	{
 		return;
 	}
 
+	bIsCancellingRequest = true;
 	++Generation;
 	ClearConnectionTimeout();
 	ClearResponseTimeout();
@@ -227,28 +251,45 @@ void UAIRECompanionChatComponent::CancelActiveRequest()
 	{
 		World->GetTimerManager().ClearTimer(FakeResponseHandle);
 	}
-	if (RegistrationRequest.IsValid())
-	{
-		RegistrationRequest->CancelRequest();
-		RegistrationRequest.Reset();
-	}
 	if (HttpChatRequest.IsValid())
 	{
+		HttpChatRequest->OnProcessRequestComplete().Unbind();
 		HttpChatRequest->CancelRequest();
 		HttpChatRequest.Reset();
 	}
-	if (ConnectionState == EAIREChatConnectionState::Connecting)
-	{
-		SetRequestState(EAIREChatRequestState::Cancelled);
-		Disconnect();
-	}
 
+	const TSharedPtr<IWebSocket> SocketToClose = WebSocket;
+	WebSocket.Reset();
+	if (SocketToClose.IsValid())
+	{
+		SocketToClose->OnConnected().Clear();
+		SocketToClose->OnConnectionError().Clear();
+		SocketToClose->OnClosed().Clear();
+		SocketToClose->OnMessage().Clear();
+		if (SocketToClose->IsConnected())
+		{
+			SocketToClose->Close(NormalClosureCode, TEXT("Request cancelled"));
+		}
+	}
+	SetConnectionState(EAIREChatConnectionState::Disconnected);
 	ResetActiveRequest();
+	bIsCancellingRequest = false;
 	SetRequestState(EAIREChatRequestState::Cancelled);
 }
 
 void UAIRECompanionChatComponent::Disconnect()
 {
+	if (bIsCancellingRequest)
+	{
+		return;
+	}
+
+	if (RequestState == EAIREChatRequestState::Sending && HttpChatRequest.IsValid())
+	{
+		CancelActiveRequest();
+		return;
+	}
+
 	ClearConnectionTimeout();
 	ClearResponseTimeout();
 
@@ -272,7 +313,6 @@ void UAIRECompanionChatComponent::Disconnect()
 		HandleRequestFailure(
 			TEXT("ConnectionClosed"),
 			TEXT("Chat connection was closed before a response was confirmed."),
-			true,
 			true);
 	}
 }
@@ -288,7 +328,7 @@ void UAIRECompanionChatComponent::SetFakeScenario(const EAIREChatFakeScenario In
 
 bool UAIRECompanionChatComponent::ClearStoredGameClientCredential()
 {
-	return FAIREGameClientCredentialStore::Remove(GetCredentialTarget());
+	return false;
 }
 
 EAIREChatConnectionState UAIRECompanionChatComponent::GetConnectionState() const
@@ -324,6 +364,7 @@ bool UAIRECompanionChatComponent::ValidateContext(
 	FString& OutError) const
 {
 	if (!FAIREChatJsonAdapter::IsStableId(Context.SaveSlotId)
+		|| !FAIREChatJsonAdapter::IsStableId(Context.LocationId)
 		|| Context.Day < 0
 		|| !FMath::IsFinite(Context.Hour)
 		|| Context.Hour < 0.0f
@@ -344,182 +385,13 @@ bool UAIRECompanionChatComponent::BeginActiveRequest()
 		return true;
 	}
 
-	AcquireCredentialAndBeginRequest();
+	BeginSelectedTransport(FixedGameClientToken);
 	return true;
-}
-
-void UAIRECompanionChatComponent::AcquireCredentialAndBeginRequest()
-{
-	FString Token;
-	if (ResolveToken(Token))
-	{
-		BeginSelectedTransport(Token);
-		return;
-	}
-
-	if (TokenProvider.GetObject() != nullptr)
-	{
-		HandleRequestFailure(
-			TEXT("MissingCredential"),
-			TEXT("The configured GameClient Token Provider returned no valid credential."),
-			false,
-			true);
-		return;
-	}
-
-	RegisterGameClient();
-}
-
-void UAIRECompanionChatComponent::RegisterGameClient()
-{
-	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
-	const FString BootstrapToken = FPlatformMisc::GetEnvironmentVariable(BootstrapTokenEnvironmentVariable);
-	if (!IsValid(Settings) || BootstrapToken.IsEmpty())
-	{
-		HandleRequestFailure(
-			TEXT("MissingBootstrapCredential"),
-			TEXT("GameClient registration requires a runtime bootstrap credential."),
-			false,
-			true);
-		return;
-	}
-
-	const FString RegistrationRequestId = LoadOrCreateRegistrationRequestId();
-	if (!FAIREChatJsonAdapter::IsStableId(RegistrationRequestId))
-	{
-		HandleRequestFailure(
-			TEXT("CredentialMetadataUnavailable"),
-			TEXT("GameClient registration metadata is unavailable."),
-			false,
-			true);
-		return;
-	}
-
-	const TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
-	Body->SetNumberField(TEXT("schema_version"), 1);
-	Body->SetStringField(TEXT("request_id"), RegistrationRequestId);
-	FString SerializedBody;
-	if (!SerializeObject(Body, SerializedBody))
-	{
-		HandleRequestFailure(
-			TEXT("RegistrationSerializationFailed"),
-			TEXT("Could not serialize GameClient registration."),
-			false,
-			true);
-		return;
-	}
-
-	SetConnectionState(EAIREChatConnectionState::Connecting);
-	UE_LOG(LogAIRECompanionChat, Log, TEXT("Starting GameClient registration."));
-	const uint64 RequestGeneration = Generation;
-	RegistrationRequest = FHttpModule::Get().CreateRequest();
-	RegistrationRequest->SetURL(JoinUrl(Settings->BackendBaseUrl, Settings->RegisterGamePath));
-	RegistrationRequest->SetVerb(TEXT("POST"));
-	RegistrationRequest->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + BootstrapToken);
-	RegistrationRequest->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
-	RegistrationRequest->SetHeader(TEXT("Accept"), TEXT("application/json"));
-	RegistrationRequest->SetHeader(TEXT("X-Request-ID"), RegistrationRequestId);
-	RegistrationRequest->SetContentAsString(SerializedBody);
-	RegistrationRequest->SetTimeout(Settings->ConnectionTimeoutSeconds);
-	RegistrationRequest->OnProcessRequestComplete().BindWeakLambda(
-		this,
-		[this, RequestGeneration](
-			FHttpRequestPtr Request,
-			FHttpResponsePtr Response,
-			const bool bWasSuccessful)
-		{
-			HandleRegistrationComplete(
-				Request,
-				Response,
-				bWasSuccessful,
-				RequestGeneration);
-		});
-	if (!RegistrationRequest->ProcessRequest())
-	{
-		RegistrationRequest.Reset();
-		SetConnectionState(EAIREChatConnectionState::Disconnected);
-		HandleRequestFailure(
-			TEXT("RegistrationUnavailable"),
-			TEXT("Could not start GameClient registration."),
-			true,
-			true);
-	}
-}
-
-void UAIRECompanionChatComponent::HandleRegistrationComplete(
-	FHttpRequestPtr Request,
-	FHttpResponsePtr Response,
-	const bool bWasSuccessful,
-	const uint64 RequestGeneration)
-{
-	if (bIsEndingPlay || RequestGeneration != Generation || Request != RegistrationRequest)
-	{
-		return;
-	}
-	RegistrationRequest.Reset();
-
-	if (!bWasSuccessful || !Response.IsValid() || !EHttpResponseCodes::IsOk(Response->GetResponseCode()))
-	{
-		const int32 ResponseCode = Response.IsValid() ? Response->GetResponseCode() : 0;
-		UE_LOG(
-			LogAIRECompanionChat,
-			Warning,
-			TEXT("GameClient registration failed. HttpStatus=%d"),
-			ResponseCode);
-		SetConnectionState(EAIREChatConnectionState::Disconnected);
-		const bool bTimedOut = Request.IsValid()
-			&& Request->GetFailureReason() == EHttpFailureReason::TimedOut;
-		HandleRequestFailure(
-			bTimedOut ? TEXT("RegistrationTimeout") : TEXT("RegistrationFailed"),
-			bTimedOut
-				? TEXT("GameClient registration timed out.")
-				: TEXT("GameClient registration failed."),
-			bTimedOut,
-			true);
-		return;
-	}
-
-	TSharedPtr<FJsonObject> Body;
-	FString Token;
-	if (!DeserializeObject(Response->GetContentAsString(), Body)
-		|| !Body->TryGetStringField(TEXT("device_token"), Token)
-		|| Token.Len() < 32
-		|| Token.Len() > 512
-		|| !FAIREGameClientCredentialStore::Save(GetCredentialTarget(), Token))
-	{
-		SetConnectionState(EAIREChatConnectionState::Disconnected);
-		HandleRequestFailure(
-			TEXT("CredentialStorageFailed"),
-			TEXT("The GameClient credential could not be validated or stored."),
-			false,
-			true);
-		return;
-	}
-
-	UE_LOG(LogAIRECompanionChat, Log, TEXT("GameClient registration succeeded."));
-	BeginSelectedTransport(Token);
 }
 
 void UAIRECompanionChatComponent::BeginSelectedTransport(const FString& Token)
 {
-	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
-	if (!IsValid(Settings))
-	{
-		HandleRequestFailure(
-			TEXT("MissingSettings"),
-			TEXT("Chat settings are unavailable."),
-			false,
-			true);
-		return;
-	}
-
-	if (Settings->TransportMode == EAIREChatTransportMode::Http)
-	{
-		SendActiveHttpRequest(Token);
-		return;
-	}
-
-	ConnectWebSocket(Token);
+	SendActiveHttpRequest(Token);
 }
 
 void UAIRECompanionChatComponent::ConnectWebSocket(const FString& Token)
@@ -534,7 +406,7 @@ void UAIRECompanionChatComponent::ConnectWebSocket(const FString& Token)
 	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
 	if (!IsValid(Settings))
 	{
-		HandleRequestFailure(TEXT("MissingSettings"), TEXT("Chat settings are unavailable."), false, true);
+		HandleRequestFailure(TEXT("MissingSettings"), TEXT("Chat settings are unavailable."), false);
 		return;
 	}
 
@@ -610,7 +482,6 @@ void UAIRECompanionChatComponent::HandleWebSocketConnectionError(const FString& 
 		HandleRequestFailure(
 			TEXT("ConnectionFailed"),
 			TEXT("Could not connect to the Chat service."),
-			true,
 			true);
 	}
 }
@@ -636,10 +507,6 @@ void UAIRECompanionChatComponent::HandleWebSocketClosed(
 		Warning,
 		TEXT("GameClient Chat WebSocket closed. StatusCode=%d"),
 		StatusCode);
-	if (StatusCode == PolicyViolationCode && TokenProvider.GetObject() != nullptr)
-	{
-		IAIREGameClientTokenProvider::Execute_HandleGameClientTokenRejected(TokenProvider.GetObject());
-	}
 	if (RequestState == EAIREChatRequestState::Sending)
 	{
 		HandleRequestFailure(
@@ -647,8 +514,7 @@ void UAIRECompanionChatComponent::HandleWebSocketClosed(
 			StatusCode == PolicyViolationCode
 				? TEXT("The GameClient credential was rejected.")
 				: TEXT("Chat connection closed before a response was confirmed."),
-			StatusCode != PolicyViolationCode,
-			true);
+			StatusCode != PolicyViolationCode);
 	}
 }
 
@@ -659,8 +525,14 @@ void UAIRECompanionChatComponent::HandleWebSocketMessage(const FString& Message)
 		return;
 	}
 
+	const FAIREChatResponseCorrelation ExpectedCorrelation{
+		ActiveRequestId,
+		ActiveMessageId,
+		SessionId,
+		ChatContext.SaveSlotId,
+		CanonicalCompanionId};
 	const FAIREParsedChatFrame Frame =
-		FAIREChatJsonAdapter::ParseWebSocketFrame(Message, ActiveRequestId);
+		FAIREChatJsonAdapter::ParseWebSocketFrame(Message, ExpectedCorrelation);
 	switch (Frame.Kind)
 	{
 	case EAIREParsedChatFrameKind::Ignored:
@@ -676,7 +548,6 @@ void UAIRECompanionChatComponent::HandleWebSocketMessage(const FString& Message)
 		HandleRequestFailure(
 			Frame.Error.Code,
 			Frame.Error.Message,
-			false,
 			false);
 	}
 }
@@ -698,12 +569,20 @@ void UAIRECompanionChatComponent::SendActiveHttpRequest(const FString& Token)
 	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
 	if (!IsValid(Settings))
 	{
-		HandleRequestFailure(TEXT("MissingSettings"), TEXT("Chat settings are unavailable."), false, true);
+		HandleRequestFailure(TEXT("MissingSettings"), TEXT("Chat settings are unavailable."), false);
 		return;
 	}
 
-	SetConnectionState(EAIREChatConnectionState::Connecting);
 	const uint64 RequestGeneration = Generation;
+	SetConnectionState(EAIREChatConnectionState::Connecting);
+	if (bIsEndingPlay
+		|| RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending
+		|| ActiveRequestId.IsEmpty()
+		|| ActiveHttpBody.IsEmpty())
+	{
+		return;
+	}
 	HttpChatRequest = FHttpModule::Get().CreateRequest();
 	HttpChatRequest->SetURL(JoinUrl(Settings->BackendBaseUrl, Settings->HttpChatPath));
 	HttpChatRequest->SetVerb(TEXT("POST"));
@@ -725,10 +604,15 @@ void UAIRECompanionChatComponent::SendActiveHttpRequest(const FString& Token)
 	if (!HttpChatRequest->ProcessRequest())
 	{
 		HttpChatRequest.Reset();
+		SetConnectionState(EAIREChatConnectionState::Disconnected);
+		if (RequestGeneration != Generation
+			|| RequestState != EAIREChatRequestState::Sending)
+		{
+			return;
+		}
 		HandleRequestFailure(
 			TEXT("ConnectionFailed"),
 			TEXT("Could not start the HTTP Chat request."),
-			true,
 			true);
 	}
 }
@@ -739,7 +623,10 @@ void UAIRECompanionChatComponent::HandleHttpChatComplete(
 	const bool bWasSuccessful,
 	const uint64 RequestGeneration)
 {
-	if (bIsEndingPlay || RequestGeneration != Generation || Request != HttpChatRequest)
+	if (bIsEndingPlay
+		|| RequestGeneration != Generation
+		|| Request != HttpChatRequest
+		|| RequestState != EAIREChatRequestState::Sending)
 	{
 		return;
 	}
@@ -748,6 +635,11 @@ void UAIRECompanionChatComponent::HandleHttpChatComplete(
 	if (!bWasSuccessful || !Response.IsValid())
 	{
 		SetConnectionState(EAIREChatConnectionState::Disconnected);
+		if (RequestGeneration != Generation
+			|| RequestState != EAIREChatRequestState::Sending)
+		{
+			return;
+		}
 		const bool bTimedOut = Request.IsValid()
 			&& Request->GetFailureReason() == EHttpFailureReason::TimedOut;
 		HandleRequestFailure(
@@ -755,16 +647,36 @@ void UAIRECompanionChatComponent::HandleHttpChatComplete(
 			bTimedOut
 				? TEXT("The HTTP Chat request timed out.")
 				: TEXT("The HTTP Chat request failed."),
-			true,
 			true);
 		return;
 	}
 
 	const bool bIsErrorResponse = !EHttpResponseCodes::IsOk(Response->GetResponseCode());
 	SetConnectionState(EAIREChatConnectionState::Connected);
+	if (bIsEndingPlay
+		|| RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending
+		|| ActiveRequestId.IsEmpty())
+	{
+		return;
+	}
+	if (Response->GetContent().Num() > MaxHttpResponseBytes)
+	{
+		HandleRequestFailure(
+			TEXT("ResponseTooLarge"),
+			TEXT("HTTP Chat response exceeds the supported size limit."),
+			false);
+		return;
+	}
+	const FAIREChatResponseCorrelation ExpectedCorrelation{
+		ActiveRequestId,
+		ActiveMessageId,
+		SessionId,
+		ChatContext.SaveSlotId,
+		CanonicalCompanionId};
 	const FAIREParsedChatFrame Frame = FAIREChatJsonAdapter::ParseHttpBody(
 		Response->GetContentAsString(),
-		ActiveRequestId,
+		ExpectedCorrelation,
 		bIsErrorResponse);
 	if (Frame.Kind == EAIREParsedChatFrameKind::Response)
 	{
@@ -779,7 +691,6 @@ void UAIRECompanionChatComponent::HandleHttpChatComplete(
 		HandleRequestFailure(
 			Frame.Error.Code,
 			Frame.Error.Message,
-			false,
 			false);
 	}
 }
@@ -788,30 +699,28 @@ void UAIRECompanionChatComponent::BeginFakeRequest()
 {
 	if (FakeScenario == EAIREChatFakeScenario::ConnectionFailure)
 	{
+		const uint64 RequestGeneration = Generation;
 		SetConnectionState(EAIREChatConnectionState::Disconnected);
+		if (RequestGeneration != Generation
+			|| RequestState != EAIREChatRequestState::Sending)
+		{
+			return;
+		}
 		HandleRequestFailure(
 			TEXT("ConnectionFailed"),
 			TEXT("Fake Chat connection failed."),
-			true,
 			true);
 		return;
 	}
-	if (FakeScenario == EAIREChatFakeScenario::CredentialRejected)
-	{
-		SetConnectionState(EAIREChatConnectionState::Disconnected);
-		if (TokenProvider.GetObject() != nullptr)
-		{
-			IAIREGameClientTokenProvider::Execute_HandleGameClientTokenRejected(TokenProvider.GetObject());
-		}
-		HandleRequestFailure(
-			TEXT("CredentialRejected"),
-			TEXT("Fake GameClient credential was rejected."),
-			false,
-			true);
-		return;
-	}
-
+	const uint64 RequestGeneration = Generation;
 	SetConnectionState(EAIREChatConnectionState::Connected);
+	if (bIsEndingPlay
+		|| RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending
+		|| ActiveRequestId.IsEmpty())
+	{
+		return;
+	}
 	StartResponseTimeout();
 	if (FakeScenario == EAIREChatFakeScenario::Timeout)
 	{
@@ -822,7 +731,6 @@ void UAIRECompanionChatComponent::BeginFakeRequest()
 	const float Delay = FakeScenario == EAIREChatFakeScenario::DelayedSuccess
 		? FMath::Min(2.0f, IsValid(Settings) ? Settings->ResponseTimeoutSeconds * 0.5f : 2.0f)
 		: 0.05f;
-	const uint64 RequestGeneration = Generation;
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(
@@ -845,22 +753,72 @@ void UAIRECompanionChatComponent::CompleteFakeRequest(const uint64 RequestGenera
 		return;
 	}
 
-	FString FrameJson;
+	FString BodyJson;
+	bool bIsErrorResponse = false;
 	switch (FakeScenario)
 	{
+	case EAIREChatFakeScenario::CredentialRejected:
+		bIsErrorResponse = true;
+		BodyJson = BuildFakeErrorBody(
+			ActiveRequestId,
+			TEXT("UnauthorizedDevice"),
+			TEXT("Fake GameClient credential was rejected."),
+			false);
+		break;
+	case EAIREChatFakeScenario::Forbidden:
+		bIsErrorResponse = true;
+		BodyJson = BuildFakeErrorBody(
+			ActiveRequestId,
+			TEXT("DeviceRoleNotAllowed"),
+			TEXT("Fake GameClient role is not allowed."),
+			false);
+		break;
 	case EAIREChatFakeScenario::Error:
-		FrameJson = BuildFakeErrorFrame(ActiveRequestId);
+		bIsErrorResponse = true;
+		BodyJson = BuildFakeErrorBody(
+			ActiveRequestId,
+			TEXT("AIServiceUnavailable"),
+			TEXT("Fake AI service is unavailable."),
+			true);
 		break;
 	case EAIREChatFakeScenario::MalformedResponse:
-		FrameJson = TEXT("{\"type\":\"chat_response\",\"payload\":");
+		BodyJson = TEXT("{\"request_id\":");
 		break;
 	case EAIREChatFakeScenario::Success:
 	case EAIREChatFakeScenario::DelayedSuccess:
 	default:
-		FrameJson = BuildFakeSuccessFrame(ActiveRequestId);
+		BodyJson = BuildFakeSuccessBody(
+			ActiveRequestId,
+			ActiveMessageId,
+			SessionId,
+			ChatContext.SaveSlotId,
+			CanonicalCompanionId);
 		break;
 	}
-	HandleWebSocketMessage(FrameJson);
+
+	const FAIREChatResponseCorrelation ExpectedCorrelation{
+		ActiveRequestId,
+		ActiveMessageId,
+		SessionId,
+		ChatContext.SaveSlotId,
+		CanonicalCompanionId};
+	const FAIREParsedChatFrame Frame = FAIREChatJsonAdapter::ParseHttpBody(
+		BodyJson,
+		ExpectedCorrelation,
+		bIsErrorResponse);
+	switch (Frame.Kind)
+	{
+	case EAIREParsedChatFrameKind::Response:
+		HandleParsedResponse(Frame.Result);
+		return;
+	case EAIREParsedChatFrameKind::Error:
+		HandleParsedError(Frame.Error);
+		return;
+	case EAIREParsedChatFrameKind::Ignored:
+	case EAIREParsedChatFrameKind::Invalid:
+	default:
+		HandleRequestFailure(Frame.Error.Code, Frame.Error.Message, false);
+	}
 }
 
 void UAIRECompanionChatComponent::HandleParsedResponse(const FAIREChatResult& Result)
@@ -875,22 +833,15 @@ void UAIRECompanionChatComponent::HandleParsedResponse(const FAIREChatResult& Re
 void UAIRECompanionChatComponent::HandleParsedError(const FAIREChatError& Error)
 {
 	ClearResponseTimeout();
-	SetRequestState(
-		Error.bRetryable
-			? EAIREChatRequestState::RetryableFailed
-			: EAIREChatRequestState::Failed);
+	ResetActiveRequest();
+	SetRequestState(EAIREChatRequestState::Failed);
 	OnRequestFailed.Broadcast(Error);
-	if (!Error.bRetryable)
-	{
-		ResetActiveRequest();
-	}
 }
 
 void UAIRECompanionChatComponent::HandleRequestFailure(
 	const FString& Code,
 	const FString& Message,
-	const bool bRetryable,
-	const bool bPreserveRequest)
+	const bool bRetryable)
 {
 	UE_LOG(
 		LogAIRECompanionChat,
@@ -905,15 +856,9 @@ void UAIRECompanionChatComponent::HandleRequestFailure(
 	Error.Code = Code;
 	Error.Message = Message;
 	Error.bRetryable = bRetryable;
-	SetRequestState(
-		bRetryable
-			? EAIREChatRequestState::RetryableFailed
-			: EAIREChatRequestState::Failed);
+	ResetActiveRequest();
+	SetRequestState(EAIREChatRequestState::Failed);
 	OnRequestFailed.Broadcast(Error);
-	if (!bPreserveRequest || !bRetryable)
-	{
-		ResetActiveRequest();
-	}
 }
 
 void UAIRECompanionChatComponent::HandleConnectionTimeout()
@@ -933,11 +878,16 @@ void UAIRECompanionChatComponent::HandleConnectionTimeout()
 		TimedOutSocket->OnMessage().Clear();
 		TimedOutSocket->Close(NormalClosureCode, TEXT("Connection timeout"));
 	}
+	const uint64 RequestGeneration = Generation;
 	SetConnectionState(EAIREChatConnectionState::Disconnected);
+	if (RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending)
+	{
+		return;
+	}
 	HandleRequestFailure(
 		TEXT("ConnectionTimeout"),
 		TEXT("Chat connection timed out."),
-		true,
 		true);
 }
 
@@ -947,10 +897,23 @@ void UAIRECompanionChatComponent::HandleResponseTimeout()
 	{
 		return;
 	}
+
+	const uint64 RequestGeneration = ++Generation;
+	if (HttpChatRequest.IsValid())
+	{
+		HttpChatRequest->OnProcessRequestComplete().Unbind();
+		HttpChatRequest->CancelRequest();
+		HttpChatRequest.Reset();
+	}
+	SetConnectionState(EAIREChatConnectionState::Disconnected);
+	if (RequestGeneration != Generation
+		|| RequestState != EAIREChatRequestState::Sending)
+	{
+		return;
+	}
 	HandleRequestFailure(
 		TEXT("RequestTimeout"),
 		TEXT("Chat response timed out."),
-		true,
 		true);
 }
 
@@ -1037,12 +1000,6 @@ void UAIRECompanionChatComponent::ShutdownRequests()
 	{
 		World->GetTimerManager().ClearTimer(FakeResponseHandle);
 	}
-	if (RegistrationRequest.IsValid())
-	{
-		RegistrationRequest->OnProcessRequestComplete().Unbind();
-		RegistrationRequest->CancelRequest();
-		RegistrationRequest.Reset();
-	}
 	if (HttpChatRequest.IsValid())
 	{
 		HttpChatRequest->OnProcessRequestComplete().Unbind();
@@ -1051,101 +1008,4 @@ void UAIRECompanionChatComponent::ShutdownRequests()
 	}
 	Disconnect();
 	ResetActiveRequest();
-}
-
-bool UAIRECompanionChatComponent::ResolveToken(FString& OutToken) const
-{
-	OutToken.Reset();
-	bool bShouldPersistRuntimeToken = false;
-	if (TokenProvider.GetObject() != nullptr)
-	{
-		if (!IAIREGameClientTokenProvider::Execute_GetGameClientToken(
-			TokenProvider.GetObject(),
-			OutToken))
-		{
-			OutToken.Reset();
-			return false;
-		}
-	}
-	else
-	{
-		OutToken = FPlatformMisc::GetEnvironmentVariable(DeviceTokenEnvironmentVariable);
-		bShouldPersistRuntimeToken = !OutToken.IsEmpty();
-		if (!bShouldPersistRuntimeToken
-			&& !FAIREGameClientCredentialStore::Load(GetCredentialTarget(), OutToken))
-		{
-			return false;
-		}
-	}
-
-	if (OutToken.Len() < 32 || OutToken.Len() > 512)
-	{
-		OutToken.Reset();
-		return false;
-	}
-
-	if (bShouldPersistRuntimeToken
-		&& !FAIREGameClientCredentialStore::Save(GetCredentialTarget(), OutToken))
-	{
-		UE_LOG(
-			LogAIRECompanionChat,
-			Warning,
-			TEXT("Could not persist the runtime GameClient credential."));
-	}
-	return true;
-}
-
-FString UAIRECompanionChatComponent::GetCredentialTarget() const
-{
-	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
-	const FString Authority = IsValid(Settings) ? Settings->BackendBaseUrl : TEXT("unconfigured");
-	return TEXT("AI_RE.GameClient.") + FMD5::HashAnsiString(*Authority);
-}
-
-FString UAIRECompanionChatComponent::LoadOrCreateRegistrationRequestId()
-{
-	const UAIREChatSettings* Settings = GetDefault<UAIREChatSettings>();
-	if (!IsValid(Settings))
-	{
-		return FString();
-	}
-
-	const FString MetadataPath = GetIdentityMetadataPath();
-	FString ExistingJson;
-	TSharedPtr<FJsonObject> Existing;
-	if (FFileHelper::LoadFileToString(ExistingJson, *MetadataPath)
-		&& DeserializeObject(ExistingJson, Existing))
-	{
-		FString BackendBaseUrl;
-		FString RequestId;
-		if (Existing->TryGetStringField(TEXT("backend_base_url"), BackendBaseUrl)
-			&& BackendBaseUrl == Settings->BackendBaseUrl
-			&& Existing->TryGetStringField(TEXT("registration_request_id"), RequestId)
-			&& FAIREChatJsonAdapter::IsStableId(RequestId))
-		{
-			return RequestId;
-		}
-	}
-
-	const FString RequestId = NewStableId(TEXT("register-game"));
-	const TSharedRef<FJsonObject> Metadata = MakeShared<FJsonObject>();
-	Metadata->SetNumberField(TEXT("schema_version"), 1);
-	Metadata->SetStringField(TEXT("backend_base_url"), Settings->BackendBaseUrl);
-	Metadata->SetStringField(TEXT("registration_request_id"), RequestId);
-	FString SerializedMetadata;
-	if (!SerializeObject(Metadata, SerializedMetadata))
-	{
-		return FString();
-	}
-
-	IFileManager::Get().MakeDirectory(*FPaths::GetPath(MetadataPath), true);
-	return FFileHelper::SaveStringToFile(SerializedMetadata, *MetadataPath)
-		? RequestId
-		: FString();
-}
-
-FString UAIRECompanionChatComponent::GetCompanionId() const
-{
-	const AAIRECompanionCharacter* Companion = Cast<AAIRECompanionCharacter>(GetOwner());
-	return IsValid(Companion) ? Companion->GetCompanionId() : TEXT("MAKO");
 }

@@ -22,7 +22,7 @@ void UAIREChatLogEntryWidget::ApplyEntry(
 	if (IsValid(SenderText))
 	{
 		SenderText->SetText(
-			FText::FromString(bIsPlayer ? TEXT("나") : TEXT("AI")));
+			FText::FromString(bIsPlayer ? TEXT("나") : TEXT("MAKO")));
 		SenderText->SetColorAndOpacity(
 			bIsPlayer ? PlayerTextColor : CompanionTextColor);
 		SenderText->SetVisibility(
@@ -38,6 +38,8 @@ void UAIREChatLogEntryWidget::ApplyEntry(
 	}
 	if (IsValid(TimestampText))
 	{
+		TimestampText->SetColorAndOpacity(
+			FLinearColor(0.88f, 0.84f, 0.78f));
 		TimestampText->SetText(
 			FText::FromString(
 				Entry.Timestamp.ToString(TEXT("%H:%M:%S"))));

@@ -21,6 +21,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AI_RE|Harvest")
 	UAI_REHarvestableResourceComponent* GetHarvestableResourceComponent() const { return ResourceComponent; }
 
+	bool TryGetHarvestInteractionLocation(
+		const FVector& FromLocation,
+		FVector& OutInteractionLocation) const;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI_RE|Harvest", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
+	float HarvestInteractionRadius = 50.0f;
+
 	// 스폰할 아이템 액터 클래스 (블루프린트에서 설정)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI_RE|Harvest")
 	TSubclassOf<class AAI_REItemActor> ItemActorClass;
@@ -42,6 +49,13 @@ private:
 	void HandleDepletedStateChanged(bool bNewIsDepleted);
 
 	UFUNCTION()
-	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount);
+	void HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount, FGuid DeliveryId);
 
+	bool SpawnHarvestReward(
+		AActor* InstigatorActor,
+		class UAI_REItemDataAsset* RewardItemAsset,
+		int32 GrantedRewardAmount,
+		const FGuid& DeliveryId);
+
+	TSet<FGuid> SpawnedRewardDeliveries;
 };

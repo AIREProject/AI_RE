@@ -10,30 +10,45 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "GameFramework/Actor.h"
+#include "AbilitySystemComponent.h"
+#include "AI_REAttributeSet.h"
+#include "AbilitySystemInterface.h"
 
 void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 {
+	UnbindHUD();
 	if (InStatus == nullptr) return; 
 	
-	InStatus -> OnHPChanged.AddDynamic(this, &UAI_REMainUI::UpdateHPBar);
-	InStatus -> OnSPChanged.AddDynamic(this, &UAI_REMainUI::UpdateSPBar);
-	InStatus -> OnHungerChanged.AddDynamic(this, &UAI_REMainUI::UpdateHungerBar);
-	InStatus -> OnThirstyChanged.AddDynamic(this, &UAI_REMainUI::UpdateThirstyBar);
-	
-	// 초기화 시점에는 애니메이션 없이 즉시 값을 세팅 (InitializeHUD 방식)
-	if (HPBar && InStatus->MaxHP > 0.f) HPBar->SetPercentInstantly(InStatus->CurrentHP / InStatus->MaxHP);
-	if (SPBar && InStatus->MaxSP > 0.f) SPBar->SetPercentInstantly(InStatus->CurrentSP / InStatus->MaxSP);
-	if (HungerBar && InStatus->MaxHunger > 0.f) HungerBar->SetPercentInstantly(InStatus->CurrentHunger / InStatus->MaxHunger);
-	if (ThirstyBar && InStatus->MaxThirsty > 0.f) ThirstyBar->SetPercentInstantly(InStatus->CurrentThirsty / InStatus->MaxThirsty);
+	AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(InStatus->GetOwner());
+	if (PlayerChar)
+	{
+		if (IAbilitySystemInterface* ASI = Cast<IAbilitySystemInterface>(PlayerChar))
+		{
+			if (UAbilitySystemComponent* ASC = ASI->GetAbilitySystemComponent())
+			{
+				CachedASC = ASC;
+				
+				HealthChangedDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHPAttribute()).AddUObject(this, &UAI_REMainUI::OnHealthAttributeChanged);
+				SPChangedDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetSPAttribute()).AddUObject(this, &UAI_REMainUI::OnSPAttributeChanged);
+				HungerChangedDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHungerAttribute()).AddUObject(this, &UAI_REMainUI::OnHungerAttributeChanged);
+				ThirstyChangedDelegateHandle = ASC->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetThirstyAttribute()).AddUObject(this, &UAI_REMainUI::OnThirstyAttributeChanged);
+				
+				// 초기 UI 세팅
+				UpdateHPBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetHPAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
+				UpdateSPBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetSPAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
+				UpdateHungerBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetHungerAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
+				UpdateThirstyBar(ASC->GetNumericAttribute(UAI_REAttributeSet::GetThirstyAttribute()), ASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
+			}
+		}
+	}
 
 	if (QuickSlotGrid && SlotWidgetClass)
 	{
-		AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(InStatus->GetOwner());
 		if (PlayerChar && PlayerChar->GetInventoryComponent())
 		{
 			UAI_REPlayerInventoryComponent* InvComp = PlayerChar->GetInventoryComponent();
 			InventoryComp = InvComp;
-			InvComp->OnInventoryChanged.AddDynamic(this, &UAI_REMainUI::RefreshQuickSlots);
+			InvComp->OnInventoryChanged.AddUniqueDynamic(this, &UAI_REMainUI::RefreshQuickSlots);
 			
 			QuickSlotGrid->ClearChildren();
 			QuickSlotWidgets.Empty();
@@ -57,6 +72,58 @@ void UAI_REMainUI::InitializeHUD(UAI_REStatusComponent* InStatus)
 			RefreshQuickSlots();
 		}
 	}
+}
+
+void UAI_REMainUI::NativeDestruct()
+{
+	UnbindHUD();
+	QuickSlotWidgets.Reset();
+	Super::NativeDestruct();
+}
+
+void UAI_REMainUI::UnbindHUD()
+{
+	if (InventoryComp.IsValid())
+	{
+		InventoryComp->OnInventoryChanged.RemoveDynamic(
+			this,
+			&UAI_REMainUI::RefreshQuickSlots);
+	}
+	InventoryComp.Reset();
+
+	if (CachedASC.IsValid())
+	{
+		if (HealthChangedDelegateHandle.IsValid())
+		{
+			CachedASC->GetGameplayAttributeValueChangeDelegate(
+				UAI_REAttributeSet::GetHPAttribute())
+				.Remove(HealthChangedDelegateHandle);
+		}
+		if (SPChangedDelegateHandle.IsValid())
+		{
+			CachedASC->GetGameplayAttributeValueChangeDelegate(
+				UAI_REAttributeSet::GetSPAttribute())
+				.Remove(SPChangedDelegateHandle);
+		}
+		if (HungerChangedDelegateHandle.IsValid())
+		{
+			CachedASC->GetGameplayAttributeValueChangeDelegate(
+				UAI_REAttributeSet::GetHungerAttribute())
+				.Remove(HungerChangedDelegateHandle);
+		}
+		if (ThirstyChangedDelegateHandle.IsValid())
+		{
+			CachedASC->GetGameplayAttributeValueChangeDelegate(
+				UAI_REAttributeSet::GetThirstyAttribute())
+				.Remove(ThirstyChangedDelegateHandle);
+		}
+	}
+
+	HealthChangedDelegateHandle.Reset();
+	SPChangedDelegateHandle.Reset();
+	HungerChangedDelegateHandle.Reset();
+	ThirstyChangedDelegateHandle.Reset();
+	CachedASC.Reset();
 }
 
 void UAI_REMainUI::RefreshQuickSlots()
@@ -112,6 +179,38 @@ void UAI_REMainUI::UpdateThirstyBar(float Current, float Max)
 	if (ThirstyBar && Max > 0.f)
 	{
 		ThirstyBar->SetTargetPercent(Current/Max);
+	}
+}
+
+void UAI_REMainUI::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (CachedASC.IsValid())
+	{
+		UpdateHPBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHPAttribute()));
+	}
+}
+
+void UAI_REMainUI::OnSPAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (CachedASC.IsValid())
+	{
+		UpdateSPBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxSPAttribute()));
+	}
+}
+
+void UAI_REMainUI::OnHungerAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (CachedASC.IsValid())
+	{
+		UpdateHungerBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxHungerAttribute()));
+	}
+}
+
+void UAI_REMainUI::OnThirstyAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	if (CachedASC.IsValid())
+	{
+		UpdateThirstyBar(Data.NewValue, CachedASC->GetNumericAttribute(UAI_REAttributeSet::GetMaxThirstyAttribute()));
 	}
 }
 

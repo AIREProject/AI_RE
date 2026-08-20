@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Chat/Context/AIREWorldContextTypes.h"
+#include "Command/AIRECompanionCommandTypes.h"
 #include "AIREChatTypes.generated.h"
 
 UENUM(BlueprintType)
@@ -23,7 +25,7 @@ enum class EAIREChatRequestState : uint8
 {
 	Idle,
 	Sending,
-	RetryableFailed,
+	RetryableFailed UMETA(Hidden),
 	Failed,
 	Cancelled
 };
@@ -48,7 +50,8 @@ enum class EAIREChatFakeScenario : uint8
 	Error,
 	Timeout,
 	MalformedResponse,
-	DelayedSuccess
+	DelayedSuccess,
+	Forbidden
 };
 
 USTRUCT(BlueprintType)
@@ -58,6 +61,9 @@ struct AI_RE_API FAIREInGameChatContext
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat")
 	FString SaveSlotId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat")
+	FString LocationId = TEXT("forest_camp");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AIRE|Companion|Chat", meta = (ClampMin = "0"))
 	int32 Day = 0;
@@ -82,6 +88,9 @@ struct AI_RE_API FAIREChatResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	FString DisplayText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
+	TArray<FAIRECommandCandidate> CommandCandidates;
 };
 
 USTRUCT(BlueprintType)

@@ -7,6 +7,7 @@
 #include "Engine/Level.h"
 #include "Engine/LevelScriptBlueprint.h"
 #include "Engine/World.h"
+#include "Engine/DataTable.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_InputKey.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -21,8 +22,10 @@
 
 namespace
 {
-	const FString AllowedLevelPath = TEXT("/Game/Work/OBI/ThirdPerson/Lvl_ThirdPerson.Lvl_ThirdPerson");
-	const FString FixtureMarker = TEXT("[AIRE_TEST_FIXTURE:M03-E02-T02]");
+	const FString AllowedLevelPath = TEXT("/Game/Work/LMK/Lvl_ThirdPerson_Test.Lvl_ThirdPerson_Test");
+	const FString FixtureMarker = TEXT("[AIRE_TEST_FIXTURE:M03-E07-T02]");
+	const FString LegacyFixtureMarker = TEXT("[AIRE_TEST_FIXTURE:M03-E02-T02]");
+	const TCHAR* CraftingRecipeTablePath = TEXT("/Game/Work/OBI/Datas/DT_crafting_recipes.DT_crafting_recipes");
 
 	struct FAIREBehaviorKeyBinding
 	{
@@ -32,13 +35,16 @@ namespace
 
 	const FAIREBehaviorKeyBinding BehaviorKeyBindings[] =
 	{
-		{EKeys::One, TEXT("Work")},
 		{EKeys::Two, TEXT("DirectCommand")},
 		{EKeys::Four, TEXT("Survival")},
 		{EKeys::Five, TEXT("Disabled")}
 	};
 	constexpr int32 GasFixtureNodeCount = 8;
-	constexpr int32 ExpectedFixtureNodeCount = UE_ARRAY_COUNT(BehaviorKeyBindings) * 3 + 2 + GasFixtureNodeCount;
+	constexpr int32 WorkRequestFixtureNodeCount = 6;
+	constexpr int32 ExpectedFixtureNodeCount =
+		UE_ARRAY_COUNT(BehaviorKeyBindings) * 3
+		+ WorkRequestFixtureNodeCount
+		+ GasFixtureNodeCount;
 
 	FAIRECompanionTestFixtureResult MakeFixtureFailure(const FString& Message)
 	{
@@ -85,12 +91,14 @@ namespace
 		return true;
 	}
 
-	int32 CountFixtureNodes(const UEdGraph& EventGraph)
+	int32 CountFixtureNodes(
+		const UEdGraph& EventGraph,
+		const FString& Marker)
 	{
 		int32 NodeCount = 0;
 		for (const TObjectPtr<UEdGraphNode>& Node : EventGraph.Nodes)
 		{
-			if (IsValid(Node) && Node->NodeComment == FixtureMarker)
+			if (IsValid(Node) && Node->NodeComment == Marker)
 			{
 				++NodeCount;
 			}
@@ -103,7 +111,7 @@ namespace
 		TArray<UEdGraphNode*> NodesToRemove;
 		for (const TObjectPtr<UEdGraphNode>& Node : EventGraph.Nodes)
 		{
-			if (IsValid(Node) && Node->NodeComment == FixtureMarker)
+			if (IsValid(Node) && (Node->NodeComment == FixtureMarker || Node->NodeComment == LegacyFixtureMarker))
 			{
 				NodesToRemove.Add(Node);
 			}
@@ -160,8 +168,16 @@ namespace
 			return false;
 		}
 
+		const FString RequestedValue =
+			bIsRequested ? TEXT("true") : TEXT("false");
 		Schema.TrySetDefaultValue(*RequestPin, RequestName);
-		Schema.TrySetDefaultValue(*RequestedPin, bIsRequested ? TEXT("true") : TEXT("false"));
+		Schema.TrySetDefaultValue(*RequestedPin, RequestedValue);
+		if (RequestPin->DefaultValue != RequestName
+			|| RequestedPin->DefaultValue != RequestedValue)
+		{
+			OutError = TEXT("Failed to configure the behavior request pin defaults.");
+			return false;
+		}
 		return true;
 	}
 
@@ -178,7 +194,38 @@ namespace
 			return false;
 		}
 
-		Schema.TrySetDefaultValue(*DamageAmountPin, FString::SanitizeFloat(DamageAmount));
+		const FString DamageValue = FString::SanitizeFloat(DamageAmount);
+		Schema.TrySetDefaultValue(*DamageAmountPin, DamageValue);
+		if (DamageAmountPin->DefaultValue != DamageValue)
+		{
+			OutError = TEXT("Failed to configure the damage amount pin default.");
+			return false;
+		}
+		return true;
+	}
+
+	bool ConfigureCraftingRequestCall(
+		const UEdGraphSchema_K2& Schema,
+		UK2Node_CallFunction& CallNode,
+		UDataTable& CraftingRecipeTable,
+		FString& OutError)
+	{
+		UEdGraphPin* CraftingRecipeTablePin = CallNode.FindPin(TEXT("CraftingRecipeTable"));
+		if (CraftingRecipeTablePin == nullptr)
+		{
+			OutError = TEXT("The crafting work testing function has no CraftingRecipeTable pin.");
+			return false;
+		}
+
+		Schema.TrySetDefaultObject(
+			*CraftingRecipeTablePin,
+			&CraftingRecipeTable);
+		if (CraftingRecipeTablePin->DefaultObject
+			!= &CraftingRecipeTable)
+		{
+			OutError = TEXT("Failed to configure the crafting recipe table pin default.");
+			return false;
+		}
 		return true;
 	}
 }
@@ -194,11 +241,18 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::InspectBehaviorTes
 	}
 
 	FAIRECompanionTestFixtureResult Result;
-	Result.NodeCount = CountFixtureNodes(*EventGraph);
-	Result.bSuccess = Result.NodeCount == ExpectedFixtureNodeCount;
+	Result.NodeCount = CountFixtureNodes(*EventGraph, FixtureMarker);
+	const int32 LegacyNodeCount =
+		CountFixtureNodes(*EventGraph, LegacyFixtureMarker);
+	Result.bSuccess = Result.NodeCount == ExpectedFixtureNodeCount
+		&& LegacyNodeCount == 0;
 	Result.Message = Result.bSuccess
 		? TEXT("The complete behavior and Companion GAS input fixture is present.")
-		: FString::Printf(TEXT("Expected %d fixture nodes but found %d."), ExpectedFixtureNodeCount, Result.NodeCount);
+		: FString::Printf(
+			TEXT("Expected %d current fixture nodes and no legacy nodes; found %d current and %d legacy nodes."),
+			ExpectedFixtureNodeCount,
+			Result.NodeCount,
+			LegacyNodeCount);
 	return Result;
 }
 
@@ -220,7 +274,9 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::ConfigureBehaviorT
 	{
 		return MakeFixtureFailure(Error);
 	}
-	if (CountFixtureNodes(*EventGraph) == ExpectedFixtureNodeCount)
+	if (CountFixtureNodes(*EventGraph, FixtureMarker)
+			== ExpectedFixtureNodeCount
+		&& CountFixtureNodes(*EventGraph, LegacyFixtureMarker) == 0)
 	{
 		FAIRECompanionTestFixtureResult Result;
 		Result.bSuccess = true;
@@ -237,18 +293,27 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::ConfigureBehaviorT
 
 	UFunction* SetRequestFunction = TestingLibraryClass->FindFunctionByName(TEXT("SetFirstCompanionTestBehaviorRequest"));
 	UFunction* ClearRequestsFunction = TestingLibraryClass->FindFunctionByName(TEXT("ClearFirstCompanionTestBehaviorRequests"));
+	UFunction* RequestCraftingWorkFunction = TestingLibraryClass->FindFunctionByName(TEXT("RequestFirstCompanionNearestCraftingWork"));
+	UFunction* RequestHarvestWorkFunction = TestingLibraryClass->FindFunctionByName(TEXT("RequestFirstCompanionNearestHarvestWork"));
 	UFunction* ApplyDamageFunction = TestingLibraryClass->FindFunctionByName(TEXT("ApplyDamageToFirstCompanion"));
 	UFunction* ResetAttributesFunction = TestingLibraryClass->FindFunctionByName(TEXT("ResetFirstCompanionAttributes"));
 	UFunction* LogAbilityStateFunction = TestingLibraryClass->FindFunctionByName(TEXT("LogFirstCompanionAbilityState"));
 	const UEdGraphSchema_K2* Schema = Cast<UEdGraphSchema_K2>(EventGraph->GetSchema());
 	if (!IsValid(SetRequestFunction)
 		|| !IsValid(ClearRequestsFunction)
+		|| !IsValid(RequestCraftingWorkFunction)
+		|| !IsValid(RequestHarvestWorkFunction)
 		|| !IsValid(ApplyDamageFunction)
 		|| !IsValid(ResetAttributesFunction)
 		|| !IsValid(LogAbilityStateFunction)
 		|| !IsValid(Schema))
 	{
 		return MakeFixtureFailure(TEXT("Required testing functions or the K2 graph schema are unavailable."));
+	}
+	UDataTable* CraftingRecipeTable = LoadObject<UDataTable>(nullptr, CraftingRecipeTablePath);
+	if (!IsValid(CraftingRecipeTable))
+	{
+		return MakeFixtureFailure(FString::Printf(TEXT("Crafting recipe table %s is unavailable."), CraftingRecipeTablePath));
 	}
 
 	const FScopedTransaction Transaction(LOCTEXT("ConfigureBehaviorTestInputs", "Configure AIRE Companion Test Inputs"));
@@ -276,7 +341,28 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::ConfigureBehaviorT
 		}
 	}
 
-	const int32 ClearNodeY = UE_ARRAY_COUNT(BehaviorKeyBindings) * 260;
+	const int32 CraftingNodeY = UE_ARRAY_COUNT(BehaviorKeyBindings) * 260;
+	UK2Node_InputKey* CraftingInputNode = CreateInputKeyNode(*EventGraph, EKeys::One, CraftingNodeY);
+	UK2Node_CallFunction* CraftingCall = CreateCallNode(*EventGraph, *RequestCraftingWorkFunction, 360, CraftingNodeY);
+	if (!ConfigureCraftingRequestCall(*Schema, *CraftingCall, *CraftingRecipeTable, Error)
+		|| !Schema->TryCreateConnection(CraftingInputNode->GetPressedPin(), CraftingCall->GetExecPin()))
+	{
+		RemoveFixtureNodes(*Blueprint, *EventGraph);
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		return MakeFixtureFailure(Error.IsEmpty() ? TEXT("Failed to connect the crafting work input node.") : Error);
+	}
+
+	const int32 HarvestNodeY = CraftingNodeY + 260;
+	UK2Node_InputKey* HarvestInputNode = CreateInputKeyNode(*EventGraph, EKeys::Three, HarvestNodeY);
+	UK2Node_CallFunction* HarvestCall = CreateCallNode(*EventGraph, *RequestHarvestWorkFunction, 360, HarvestNodeY);
+	if (!Schema->TryCreateConnection(HarvestInputNode->GetPressedPin(), HarvestCall->GetExecPin()))
+	{
+		RemoveFixtureNodes(*Blueprint, *EventGraph);
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+		return MakeFixtureFailure(TEXT("Failed to connect the harvest work input node."));
+	}
+
+	const int32 ClearNodeY = HarvestNodeY + 260;
 	UK2Node_InputKey* ClearInputNode = CreateInputKeyNode(*EventGraph, EKeys::Zero, ClearNodeY);
 	UK2Node_CallFunction* ClearCall = CreateCallNode(*EventGraph, *ClearRequestsFunction, 360, ClearNodeY);
 	if (!Schema->TryCreateConnection(ClearInputNode->GetPressedPin(), ClearCall->GetExecPin()))
@@ -331,7 +417,7 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::ConfigureBehaviorT
 	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 
 	FAIRECompanionTestFixtureResult Result;
-	Result.NodeCount = CountFixtureNodes(*EventGraph);
+	Result.NodeCount = CountFixtureNodes(*EventGraph, FixtureMarker);
 	Result.bSuccess = Result.NodeCount == ExpectedFixtureNodeCount;
 	Result.Message = Result.bSuccess
 		? TEXT("Behavior and Companion GAS test inputs configured. Compile and save explicitly.")
@@ -377,7 +463,7 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::ValidateAndCompile
 	FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::SkipSave, &CompilerLog);
 
 	FAIRECompanionTestFixtureResult Result;
-	Result.NodeCount = CountFixtureNodes(*EventGraph);
+	Result.NodeCount = CountFixtureNodes(*EventGraph, FixtureMarker);
 	Result.bSuccess = CompilerLog.NumErrors == 0 && Blueprint->Status != BS_Error;
 	for (const TSharedRef<FTokenizedMessage>& Message : CompilerLog.Messages)
 	{
@@ -413,8 +499,29 @@ FAIRECompanionTestFixtureResult UAIRECompanionTestMCPToolset::SaveLevelBlueprint
 
 	FAIRECompanionTestFixtureResult Result;
 	Result.bSuccess = true;
-	Result.NodeCount = CountFixtureNodes(*EventGraph);
+	Result.NodeCount = CountFixtureNodes(*EventGraph, FixtureMarker);
 	Result.Message = TEXT("Level Blueprint saved successfully.");
+	return Result;
+}
+
+FAIRECompanionTestFixtureResult
+UAIRECompanionTestMCPToolset::RunBossCombatAutomationTests()
+{
+	FAIRECompanionTestFixtureResult Result;
+	if (!IsValid(GEditor))
+	{
+		Result.Message = TEXT("Unreal Editor is not available.");
+		return Result;
+	}
+	UWorld* EditorWorld = GEditor->GetEditorWorldContext().World();
+	const bool bStarted = GEditor->Exec(
+		EditorWorld,
+		TEXT("Automation RunTests AIRE.Combat.Damage.SharedPipeline+AIRE.Combat.Enemy.Attack.FallbackTrace"));
+	Result.bSuccess = bStarted;
+	Result.NodeCount = bStarted ? 2 : 0;
+	Result.Message = bStarted
+		? TEXT("Started the two Boss combat automation tests. Poll the Output Log for completion and failures.")
+		: TEXT("The Automation RunTests console command was not accepted.");
 	return Result;
 }
 

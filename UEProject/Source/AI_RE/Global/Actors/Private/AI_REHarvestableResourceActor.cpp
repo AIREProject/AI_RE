@@ -4,6 +4,7 @@
 #include "AI_REHarvestableResourceComponent.h" 
 #include "AI_REItemActor.h"
 #include "AI_REItemDataAsset.h"
+#include "AIREHarvestRewardReceiver.h"
 #include "Engine/World.h"
 
 AAI_REHarvestableResourceActor::AAI_REHarvestableResourceActor()
@@ -22,6 +23,28 @@ AAI_REHarvestableResourceActor::AAI_REHarvestableResourceActor()
 bool AAI_REHarvestableResourceActor::ApplyHarvestDamage_Implementation(float DamageAmount, AActor* InstigatorActor)
 {
 	return ResourceComponent != nullptr && ResourceComponent->ApplyHarvestDamage(DamageAmount, InstigatorActor);
+}
+
+bool AAI_REHarvestableResourceActor::TryGetHarvestInteractionLocation(
+	const FVector& FromLocation,
+	FVector& OutInteractionLocation) const
+{
+	if (FromLocation.ContainsNaN()
+		|| !FMath::IsFinite(HarvestInteractionRadius)
+		|| HarvestInteractionRadius < 0.0f)
+	{
+		return false;
+	}
+
+	FVector ActorToRequester = FromLocation - GetActorLocation();
+	ActorToRequester.Z = 0.0f;
+	if (!ActorToRequester.Normalize())
+	{
+		ActorToRequester = GetActorForwardVector().GetSafeNormal2D();
+	}
+	OutInteractionLocation = GetActorLocation()
+		+ ActorToRequester * HarvestInteractionRadius;
+	return !OutInteractionLocation.ContainsNaN();
 }
 
 // void AAI_REHarvestableResourceActor::ApplyDepletedVisualState_Implementation(bool bNewIsDepleted)
@@ -45,22 +68,68 @@ void AAI_REHarvestableResourceActor::HandleDepletedStateChanged(bool bNewIsDeple
 	ApplyDepletedVisualState(bNewIsDepleted);
 }
 
-void AAI_REHarvestableResourceActor::HandleHarvested(AActor* InstigatorActor, float AppliedDamage, float CurrentHealth, class UAI_REItemDataAsset* RewardItemAsset, int32 GrantedRewardAmount)
+void AAI_REHarvestableResourceActor::HandleHarvested(
+	AActor* InstigatorActor,
+	float AppliedDamage,
+	float CurrentHealth,
+	UAI_REItemDataAsset* RewardItemAsset,
+	int32 GrantedRewardAmount,
+	FGuid DeliveryId)
 {
-	if (GrantedRewardAmount > 0 && ItemActorClass && RewardItemAsset)
+	(void)AppliedDamage;
+	(void)CurrentHealth;
+	if (GrantedRewardAmount <= 0
+		|| RewardItemAsset == nullptr
+		|| !DeliveryId.IsValid()
+		|| SpawnedRewardDeliveries.Contains(DeliveryId))
 	{
-		// 플레이어 약간 앞이나 주변에 스폰
-		FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
-		
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-		if (AAI_REItemActor* SpawnedItem = GetWorld()->SpawnActor<AAI_REItemActor>(ItemActorClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams))
-		{
-			SpawnedItem->ItemAsset = RewardItemAsset;
-			SpawnedItem->ItemCount = GrantedRewardAmount;
-		}
+		return;
 	}
+
+	if (SpawnHarvestReward(
+			InstigatorActor,
+			RewardItemAsset,
+			GrantedRewardAmount,
+			DeliveryId))
+	{
+		SpawnedRewardDeliveries.Add(DeliveryId);
+	}
+}
+
+bool AAI_REHarvestableResourceActor::SpawnHarvestReward(
+	AActor* InstigatorActor,
+	UAI_REItemDataAsset* RewardItemAsset,
+	const int32 GrantedRewardAmount,
+	const FGuid& DeliveryId)
+{
+	if (ItemActorClass == nullptr || RewardItemAsset == nullptr || GrantedRewardAmount <= 0)
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+
+	const FVector SpawnLocation = GetActorLocation() + FVector(0.f, 0.f, 50.f) + FMath::VRand() * 50.f;
+	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
+	if (AAI_REItemActor* SpawnedItem = World->SpawnActorDeferred<AAI_REItemActor>(ItemActorClass, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn))
+	{
+		SpawnedItem->ItemAsset = RewardItemAsset;
+		SpawnedItem->ItemCount = GrantedRewardAmount;
+		if (IsValid(InstigatorActor)
+			&& InstigatorActor->Implements<UAIREHarvestRewardReceiver>())
+		{
+			SpawnedItem->InitializeHarvestAutoPickup(
+				DeliveryId,
+				InstigatorActor);
+		}
+		SpawnedItem->FinishSpawning(SpawnTransform);
+		return IsValid(SpawnedItem);
+	}
+	return false;
 }
 
 void AAI_REHarvestableResourceActor::ApplyDepletedVisualState_Implementation(bool bNewIsDepleted)

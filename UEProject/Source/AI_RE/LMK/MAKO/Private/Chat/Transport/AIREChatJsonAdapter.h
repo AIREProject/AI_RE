@@ -18,27 +18,38 @@ struct FAIREParsedChatFrame
 	FAIREChatError Error;
 };
 
+struct FAIREChatResponseCorrelation
+{
+	FString RequestId;
+	FString MessageId;
+	FString SessionId;
+	FString SaveSlotId;
+	FString CompanionId;
+};
+
 class FAIREChatJsonAdapter
 {
 public:
 	static bool BuildInGameRequest(
 		const FAIREInGameChatContext& Context,
+		const FAIREWorldContextV1& WorldContext,
 		const FString& CompanionId,
 		const FString& SessionId,
 		const FString& RequestId,
 		const FString& MessageId,
 		const FString& UserMessage,
+		bool bCraftItemRuntimeAvailable,
 		FString& OutHttpBody,
 		FString& OutWebSocketFrame,
 		FString& OutError);
 
 	static FAIREParsedChatFrame ParseWebSocketFrame(
 		const FString& Message,
-		const FString& ExpectedRequestId);
+		const FAIREChatResponseCorrelation& ExpectedCorrelation);
 
 	static FAIREParsedChatFrame ParseHttpBody(
 		const FString& Message,
-		const FString& ExpectedRequestId,
+		const FAIREChatResponseCorrelation& ExpectedCorrelation,
 		bool bIsErrorResponse);
 
 	static bool IsStableId(const FString& Value);

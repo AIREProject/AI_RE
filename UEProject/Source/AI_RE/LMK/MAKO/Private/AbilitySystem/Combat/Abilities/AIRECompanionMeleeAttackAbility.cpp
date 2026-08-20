@@ -1,22 +1,51 @@
 #include "AbilitySystem/Combat/Abilities/AIRECompanionMeleeAttackAbility.h"
 
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/Combat/Effects/AIRECompanionAttackCooldownGameplayEffect.h"
-#include "AbilitySystem/Combat/Effects/AIRECompanionDamageGameplayEffect.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatDamageSubsystem.h"
+#include "AIRECombatMeleeTraceResolver.h"
 #include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Core/AIRECompanionAIController.h"
+#include "Core/AIRECompanionCharacter.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "Work/AIRECompanionWorkOrderComponent.h"
+#include "AI_REHarvestDamageTarget.h"
+#include "AI_REHarvestableResourceActor.h"
+#include "AI_REHarvestableResourceComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionMeleeAttack, Log, All);
+
+namespace
+{
+	constexpr int32 MeleeWeaponTraceSubstepCount = 6;
+
+	FQuat MakeMeleeWeaponCapsuleRotation(
+		const FVector& Start,
+		const FVector& End)
+	{
+		const FVector Axis = (End - Start).GetSafeNormal();
+		return Axis.IsNearlyZero()
+			? FQuat::Identity
+			: FQuat::FindBetweenNormals(FVector::UpVector, Axis);
+	}
+
+	FVector MakeMeleeWeaponCapsuleCenter(
+		const FVector& Start,
+		const FVector& End)
+	{
+		return (Start + End) * 0.5f;
+	}
+}
 
 UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 {
@@ -48,14 +77,24 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 	bSkillCancelWindowTagApplied = false;
 	CurrentStepIndex = 0;
 	ResumeStepIndex = INDEX_NONE;
-	ResetCurrentStepState();
 	ActiveWeaponDefinition = GetWeaponDefinition(Handle, ActorInfo);
-	AttackRange = IsValid(ActiveWeaponDefinition)
-		? ActiveWeaponDefinition->AttackRange
-		: 0.0f;
 
+	const bool bHasEventTarget = InitializeEventTarget(TriggerEventData);
+	ActiveExecutionMode = bHasEventTarget
+		? ResolveExecutionMode(GetEventTarget())
+		: EExecutionMode::None;
+	AttackRange = 0.0f;
+	if (IsValid(ActiveWeaponDefinition))
+	{
+		AttackRange = ActiveExecutionMode == EExecutionMode::Harvest
+			? ActiveWeaponDefinition->HarvestAttackRange
+				+ AIRECompanionWeaponDefinition::HarvestRangeAcceptanceTolerance
+			: ActiveWeaponDefinition->AttackRange;
+	}
+	ResetCurrentStepState();
 	const bool bHasValidRange = FMath::IsFinite(AttackRange) && AttackRange >= 0.0f;
-	if (!InitializeEventTarget(TriggerEventData)
+	if (!bHasEventTarget
+		|| ActiveExecutionMode == EExecutionMode::None
 		|| !IsValid(ActiveWeaponDefinition)
 		|| !ActiveWeaponDefinition->IsMeleeWeapon()
 		|| !IsAttackStepIndexValid(CurrentStepIndex)
@@ -86,11 +125,22 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		FinishAbility(true);
 		return;
 	}
+	GetEventTarget()->OnDestroyed.AddUniqueDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleTargetDestroyed);
 
 	StartHitEventWait();
 	if (bIsEnding)
 	{
 		return;
+	}
+	if (ActiveExecutionMode == EExecutionMode::Combat)
+	{
+		StartTraceEventWait();
+		if (bIsEnding)
+		{
+			return;
+		}
 	}
 
 	if (GetAttackStepCount() > 1)
@@ -102,10 +152,13 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 		}
 	}
 
-	StartCombatSkillTransitionEventWait();
-	if (bIsEnding)
+	if (ActiveExecutionMode == EExecutionMode::Combat)
 	{
-		return;
+		StartCombatSkillTransitionEventWait();
+		if (bIsEnding)
+		{
+			return;
+		}
 	}
 
 	FaceTarget(GetEventTarget());
@@ -122,15 +175,21 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 {
 	bIsEnding = true;
 	SetSkillCancelWindowTag(false);
+	if (AActor* TargetActor = GetEventTarget())
+	{
+		TargetActor->OnDestroyed.RemoveDynamic(
+			this,
+			&UAIRECompanionMeleeAttackAbility::HandleTargetDestroyed);
+	}
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Log,
-		TEXT("Companion melee attack ended. Source=%s Target=%s Cancelled=%s Step=%d StepHitConsumed=%s"),
+		TEXT("[MAKO ATTACK] Type=Basic Phase=Ended Source=%s Target=%s Cancelled=%s StepIndex=%d TerminalSpatialResult=%s"),
 		*GetNameSafe(ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr),
 		*GetNameSafe(GetEventTarget()),
 		bWasCancelled ? TEXT("true") : TEXT("false"),
 		CurrentStepIndex,
-		bCurrentStepHitConsumed ? TEXT("true") : TEXT("false"));
+		bCurrentStepHitConsumed ? TEXT("Resolved") : TEXT("Miss"));
 	if (ActorInfo && ActorInfo->AvatarActor.IsValid())
 	{
 		if (UWorld* World = ActorInfo->AvatarActor->GetWorld())
@@ -142,13 +201,27 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
+	TraceEventTask = nullptr;
 	ComboWindowEventTask = nullptr;
 	CombatSkillTransitionEventTask = nullptr;
 	ActiveWeaponDefinition = nullptr;
 	AttackRange = 0.0f;
+	CurrentStepDamage = 0.0f;
+	CurrentStepStaggerValue = 0.0f;
+	CurrentTraceRadius = 0.0f;
+	CurrentTraceCapsuleHalfHeight = 0.0f;
+	CurrentTraceChannel = ECC_MAX;
+	CurrentTraceStartSocket = NAME_None;
+	CurrentTraceEndSocket = NAME_None;
+	CurrentStepTargetingMode = EAIRECombatTargetingMode::SingleTarget;
+	CurrentStepExecutionId.Invalidate();
+	ActiveExecutionMode = EExecutionMode::None;
 	CurrentStepIndex = INDEX_NONE;
 	ResumeStepIndex = INDEX_NONE;
 	bCurrentStepHitConsumed = false;
+	bCurrentStepPointSampleConsumed = false;
+	bTraceWindowEverOpened = false;
+	CloseCurrentStepTrace();
 	bComboWindowOpen = false;
 	bNextStepQueued = false;
 	bUsingFallback = false;
@@ -219,9 +292,99 @@ FName UAIRECompanionMeleeAttackAbility::GetAttackStepMontageSection(const int32 
 	return ActiveWeaponDefinition->ComboSteps[StepIndex].MontageSection;
 }
 
+float UAIRECompanionMeleeAttackAbility::GetAttackStepStaggerValue(
+	const int32 StepIndex) const
+{
+	if (!IsAttackStepIndexValid(StepIndex))
+	{
+		return 0.0f;
+	}
+
+	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
+		? ActiveWeaponDefinition->StaggerValue
+		: ActiveWeaponDefinition->ComboSteps[StepIndex].StaggerValue;
+}
+
+EAIRECombatTargetingMode
+UAIRECompanionMeleeAttackAbility::GetAttackStepTargetingMode(
+	const int32 StepIndex) const
+{
+	if (!IsAttackStepIndexValid(StepIndex))
+	{
+		return EAIRECombatTargetingMode::Area;
+	}
+	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
+		? ActiveWeaponDefinition->TargetingMode
+		: ActiveWeaponDefinition->ComboSteps[StepIndex].TargetingMode;
+}
+
+UAIRECompanionMeleeAttackAbility::EExecutionMode
+UAIRECompanionMeleeAttackAbility::ResolveExecutionMode(
+	const AActor* TargetActor) const
+{
+	const APawn* AvatarPawn = Cast<APawn>(GetAvatarActorFromActorInfo());
+	const AAIRECompanionAIController* CompanionController =
+		IsValid(AvatarPawn)
+			? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
+			: nullptr;
+	const UAIRECompanionThreatComponent* ThreatComponent =
+		IsValid(CompanionController)
+			? CompanionController->GetThreatComponent()
+			: nullptr;
+	if (IsValid(ThreatComponent)
+		&& ThreatComponent->IsCombatRequested()
+		&& IsValid(ThreatComponent->GetSelectedThreatTarget()))
+	{
+		return ThreatComponent->GetSelectedThreatTarget() == TargetActor
+			? EExecutionMode::Combat
+			: EExecutionMode::None;
+	}
+
+	if (IsValid(TargetActor)
+		&& TargetActor->GetClass()->ImplementsInterface(
+			UAI_REHarvestDamageTarget::StaticClass()))
+	{
+		const AAIRECompanionCharacter* CompanionCharacter =
+			Cast<AAIRECompanionCharacter>(AvatarPawn);
+		const UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+			IsValid(CompanionCharacter)
+				? CompanionCharacter->GetWorkOrderComponent()
+				: nullptr;
+		if (IsValid(WorkOrderComponent))
+		{
+			const FAIRECompanionWorkOrderSnapshot Snapshot =
+				WorkOrderComponent->GetWorkOrderSnapshot();
+			if (Snapshot.WorkType
+					== EAIRECompanionWorkOrderType::Harvesting
+				&& Snapshot.State
+					== EAIRECompanionWorkOrderState::Working
+				&& Snapshot.TargetActor.Get() == TargetActor)
+			{
+				return EExecutionMode::Harvest;
+			}
+		}
+	}
+
+	return IsTargetValidForAttack(TargetActor)
+		? EExecutionMode::Combat
+		: EExecutionMode::None;
+}
+
 bool UAIRECompanionMeleeAttackAbility::IsTargetValidForAttack(
 	const AActor* TargetActor) const
 {
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		const AAI_REHarvestableResourceActor* ResourceActor =
+			Cast<AAI_REHarvestableResourceActor>(TargetActor);
+		const UAI_REHarvestableResourceComponent* ResourceComponent =
+			IsValid(ResourceActor)
+				? ResourceActor->GetHarvestableResourceComponent()
+				: nullptr;
+		return IsValid(ResourceComponent)
+			&& !ResourceComponent->IsDepleted();
+	}
+
 	const AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	if (!IsValid(AvatarActor)
 		|| !IsValid(TargetActor)
@@ -245,6 +408,26 @@ bool UAIRECompanionMeleeAttackAbility::IsTargetInRange(
 	if (!IsValid(AvatarActor) || !IsValid(TargetActor))
 	{
 		return false;
+	}
+
+	if (const AAI_REHarvestableResourceActor* ResourceActor =
+			Cast<AAI_REHarvestableResourceActor>(TargetActor))
+	{
+		FVector InteractionLocation;
+		if (!ResourceActor->TryGetHarvestInteractionLocation(
+				AvatarActor->GetActorLocation(),
+				InteractionLocation))
+		{
+			return false;
+		}
+
+		const float HorizontalDistance = FVector::Dist2D(
+			AvatarActor->GetActorLocation(),
+			InteractionLocation);
+		const float EffectiveDistance = FMath::Max(
+			0.0f,
+			HorizontalDistance - AvatarActor->GetSimpleCollisionRadius());
+		return EffectiveDistance <= AttackRange;
 	}
 
 	const float HorizontalDistance = FVector::Dist2D(
@@ -303,19 +486,32 @@ bool UAIRECompanionMeleeAttackAbility::IsActiveExecutionValid() const
 	}
 
 	const APawn* AvatarPawn = Cast<APawn>(ActorInfo->AvatarActor.Get());
-	const AAIRECompanionAIController* CompanionController = IsValid(AvatarPawn)
-		? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
-		: nullptr;
-	if (!IsValid(CompanionController))
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
 	{
-		return true;
+		const AAIRECompanionCharacter* CompanionCharacter =
+			Cast<AAIRECompanionCharacter>(AvatarPawn);
+		const UAIRECompanionWorkOrderComponent* WorkOrderComponent =
+			IsValid(CompanionCharacter)
+				? CompanionCharacter->GetWorkOrderComponent()
+				: nullptr;
+		if (!IsValid(WorkOrderComponent))
+		{
+			return false;
+		}
+
+		const FAIRECompanionWorkOrderSnapshot Snapshot =
+			WorkOrderComponent->GetWorkOrderSnapshot();
+		return Snapshot.WorkType
+				== EAIRECompanionWorkOrderType::Harvesting
+			&& Snapshot.State
+				== EAIRECompanionWorkOrderState::Working
+			&& Snapshot.TargetActor.Get() == GetEventTarget()
+			&& IsTargetValidForAttack(GetEventTarget());
 	}
 
-	const UAIRECompanionThreatComponent* ThreatComponent =
-		CompanionController->GetThreatComponent();
-	return IsValid(ThreatComponent)
-		&& ThreatComponent->IsCombatRequested()
-		&& ThreatComponent->GetSelectedThreatTarget() == GetEventTarget();
+	// The activation target is the strike snapshot. Threat reselection or a
+	// range change must not replace or cancel an in-flight attack sample.
+	return IsTargetValidForAttack(GetEventTarget());
 }
 
 bool UAIRECompanionMeleeAttackAbility::AreComboMontageSectionsValid(
@@ -490,60 +686,408 @@ bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
 {
 	AActor* TargetActor = GetEventTarget();
 	if (!IsActiveExecutionValid()
+		|| !IsTargetValidForAttack(TargetActor))
+	{
+		return false;
+	}
+
+	if (!FMath::IsFinite(CurrentStepDamage) || CurrentStepDamage < 0.0f)
+	{
+		return false;
+	}
+
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		if (CurrentStepDamage <= 0.0f
+			|| !IsTargetInRange(TargetActor))
+		{
+			return false;
+		}
+		const bool bAppliedHarvestDamage =
+			IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(
+				TargetActor,
+				CurrentStepDamage,
+				GetAvatarActorFromActorInfo());
+		if (bAppliedHarvestDamage)
+		{
+			UE_LOG(
+				LogAIRECompanionMeleeAttack,
+				Log,
+				TEXT("Companion harvest hit applied. Source=%s Target=%s Step=%d Damage=%.2f"),
+				*GetNameSafe(GetAvatarActorFromActorInfo()),
+				*GetNameSafe(TargetActor),
+				CurrentStepIndex,
+				CurrentStepDamage);
+		}
+		return bAppliedHarvestDamage;
+	}
+
+	const ACharacter* AvatarCharacter =
+		Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	USkeletalMeshComponent* MeshComponent = IsValid(AvatarCharacter)
+		? AvatarCharacter->GetMesh()
+		: nullptr;
+	FHitResult TargetHit;
+	const EAIRECombatMeleeTraceResult TraceResult =
+		SampleCurrentStepCombatTrace(MeshComponent, TargetHit);
+	ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+	return TraceResult == EAIRECombatMeleeTraceResult::TargetHit;
+}
+
+EAIRECombatMeleeTraceResult
+UAIRECompanionMeleeAttackAbility::SampleCurrentStepCombatTrace(
+	USkeletalMeshComponent* MeshComponent,
+	FHitResult& OutTargetHit)
+{
+	AActor* SourceActor = GetAvatarActorFromActorInfo();
+	AActor* TargetActor = GetEventTarget();
+	const bool bCommonTraceInputsValid =
+		IsActiveExecutionValid()
+		&& ActiveExecutionMode == EExecutionMode::Combat
+		&& IsValid(SourceActor)
+		&& IsValid(TargetActor)
+		&& CurrentStepTargetingMode
+			== EAIRECombatTargetingMode::SingleTarget
+		&& FMath::IsFinite(CurrentTraceRadius)
+		&& CurrentTraceRadius > 0.0f
+		&& FMath::IsFinite(CurrentTraceCapsuleHalfHeight)
+		&& CurrentTraceCapsuleHalfHeight >= CurrentTraceRadius
+		&& CurrentTraceChannel.GetValue() < ECC_MAX;
+	if (!bCommonTraceInputsValid)
+	{
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+
+	if (bUsingFallback)
+	{
+		FVector Forward = SourceActor->GetActorForwardVector().GetSafeNormal2D();
+		if (Forward.IsNearlyZero()
+			|| !FMath::IsFinite(AttackRange)
+			|| AttackRange < 0.0f)
+		{
+			return EAIRECombatMeleeTraceResult::Invalid;
+		}
+
+		const FVector TraceStart = SourceActor->GetActorLocation()
+			+ Forward * SourceActor->GetSimpleCollisionRadius();
+		const float CenterTravelDistance = FMath::Max(
+			0.0f,
+			AttackRange - CurrentTraceRadius);
+		const FVector TraceEnd =
+			TraceStart + Forward * CenterTravelDistance;
+		const FVector CapsuleCenter = TraceStart
+			+ Forward * FMath::Max(
+				0.0f,
+				CurrentTraceCapsuleHalfHeight - CurrentTraceRadius);
+		FAIRECombatMeleeTraceRequest TraceRequest;
+		TraceRequest.World = GetWorld();
+		TraceRequest.Source = SourceActor;
+		TraceRequest.Target = TargetActor;
+		TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
+		TraceRequest.Radius = CurrentTraceRadius;
+		TraceRequest.CapsuleHalfHeight = CurrentTraceCapsuleHalfHeight;
+		TraceRequest.TraceChannel = CurrentTraceChannel.GetValue();
+		TraceRequest.Segments.Emplace(
+			CapsuleCenter,
+			CapsuleCenter,
+			MakeMeleeWeaponCapsuleRotation(TraceStart, TraceEnd));
+		const FAIRECombatMeleeTraceResolution Resolution =
+			FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
+		OutTargetHit = Resolution.HitResult;
+		return Resolution.Result;
+	}
+
+	const bool bSocketTraceInputsValid =
+		IsValid(MeshComponent)
+		&& MeshComponent->GetOwner() == SourceActor
+		&& !CurrentTraceStartSocket.IsNone()
+		&& !CurrentTraceEndSocket.IsNone()
+		&& MeshComponent->DoesSocketExist(CurrentTraceStartSocket)
+		&& MeshComponent->DoesSocketExist(CurrentTraceEndSocket);
+	if (!bSocketTraceInputsValid)
+	{
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Warning,
+			TEXT("Companion melee trace rejected invalid source or sockets. Source=%s Mesh=%s Start=%s End=%s Step=%d"),
+			*GetNameSafe(SourceActor),
+			*GetNameSafe(MeshComponent),
+			*CurrentTraceStartSocket.ToString(),
+			*CurrentTraceEndSocket.ToString(),
+			CurrentStepIndex);
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+
+	const FVector CurrentTraceStart =
+		MeshComponent->GetSocketLocation(CurrentTraceStartSocket);
+	const FVector CurrentTraceEnd =
+		MeshComponent->GetSocketLocation(CurrentTraceEndSocket);
+	const bool bHasPreviousSample =
+		bTraceWindowOpen && ActiveTraceMesh.Get() == MeshComponent;
+	const FVector TracePreviousStart = bHasPreviousSample
+		? PreviousTraceStart
+		: CurrentTraceStart;
+	const FVector TracePreviousEnd = bHasPreviousSample
+		? PreviousTraceEnd
+		: CurrentTraceEnd;
+	const FVector PreviousCapsuleCenter = MakeMeleeWeaponCapsuleCenter(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FVector CurrentCapsuleCenter = MakeMeleeWeaponCapsuleCenter(
+		CurrentTraceStart,
+		CurrentTraceEnd);
+	const FQuat PreviousCapsuleRotation = MakeMeleeWeaponCapsuleRotation(
+		TracePreviousStart,
+		TracePreviousEnd);
+	const FQuat CurrentCapsuleRotation = MakeMeleeWeaponCapsuleRotation(
+		CurrentTraceStart,
+		CurrentTraceEnd);
+
+	FAIRECombatMeleeTraceRequest TraceRequest;
+	TraceRequest.World = GetWorld();
+	TraceRequest.Source = SourceActor;
+	TraceRequest.Target = TargetActor;
+	TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
+	TraceRequest.Radius = CurrentTraceRadius;
+	TraceRequest.CapsuleHalfHeight = CurrentTraceCapsuleHalfHeight;
+	TraceRequest.TraceChannel = CurrentTraceChannel.GetValue();
+	TraceRequest.Segments.Reserve(MeleeWeaponTraceSubstepCount);
+	FVector SubstepStart = PreviousCapsuleCenter;
+	for (int32 SubstepIndex = 1;
+		SubstepIndex <= MeleeWeaponTraceSubstepCount;
+		++SubstepIndex)
+	{
+		const float Alpha = static_cast<float>(SubstepIndex)
+			/ static_cast<float>(MeleeWeaponTraceSubstepCount);
+		const FVector SubstepEnd = FMath::Lerp(
+			PreviousCapsuleCenter,
+			CurrentCapsuleCenter,
+			Alpha);
+		const FQuat SubstepRotation = FQuat::Slerp(
+			PreviousCapsuleRotation,
+			CurrentCapsuleRotation,
+			Alpha).GetNormalized();
+		TraceRequest.Segments.Emplace(
+			SubstepStart,
+			SubstepEnd,
+			SubstepRotation);
+		SubstepStart = SubstepEnd;
+	}
+
+	const FAIRECombatMeleeTraceResolution Resolution =
+		FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
+	if (bHasPreviousSample)
+	{
+		PreviousTraceStart = CurrentTraceStart;
+		PreviousTraceEnd = CurrentTraceEnd;
+	}
+	OutTargetHit = Resolution.HitResult;
+	return Resolution.Result;
+}
+
+bool UAIRECompanionMeleeAttackAbility::CommitCurrentStepCombatHit(
+	const FHitResult& TargetHit)
+{
+	AActor* TargetActor = GetEventTarget();
+	if (!IsActiveExecutionValid()
 		|| !IsTargetValidForAttack(TargetActor)
-		|| !IsTargetInRange(TargetActor))
+		|| !FMath::IsFinite(CurrentStepDamage)
+		|| CurrentStepDamage < 0.0f
+		|| !FMath::IsFinite(CurrentStepStaggerValue)
+		|| CurrentStepStaggerValue < 0.0f
+		|| CurrentStepTargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
 	{
 		return false;
 	}
 
-	UAbilitySystemComponent* SourceAbilitySystem = GetAbilitySystemComponentFromActorInfo();
-	UAbilitySystemComponent* TargetAbilitySystem =
-		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(TargetActor, true);
-	if (!IsValid(SourceAbilitySystem) || !IsValid(TargetAbilitySystem))
+	UWorld* World = GetWorld();
+	UAIRECombatDamageSubsystem* DamageSubsystem = IsValid(World)
+		? World->GetSubsystem<UAIRECombatDamageSubsystem>()
+		: nullptr;
+	if (!IsValid(DamageSubsystem))
 	{
 		return false;
 	}
 
-	FGameplayEffectContextHandle EffectContext = SourceAbilitySystem->MakeEffectContext();
-	EffectContext.AddSourceObject(GetAvatarActorFromActorInfo());
-	FGameplayEffectSpecHandle DamageSpec = SourceAbilitySystem->MakeOutgoingSpec(
-		UAIRECompanionDamageGameplayEffect::StaticClass(),
-		1.0f,
-		EffectContext);
-	if (!DamageSpec.IsValid())
-	{
-		return false;
-	}
-
-	const float StepDamage = GetAttackStepDamage(CurrentStepIndex);
-	DamageSpec.Data->SetSetByCallerMagnitude(
-		AIRECompanionGameplayTags::DataDamage,
-		-StepDamage);
-	const FActiveGameplayEffectHandle AppliedDamage =
-		SourceAbilitySystem->ApplyGameplayEffectSpecToTarget(
-			*DamageSpec.Data.Get(),
-			TargetAbilitySystem);
-	if (!AppliedDamage.WasSuccessfullyApplied())
-	{
-		return false;
-	}
+	FAIRECombatDamageRequest DamageRequest;
+	DamageRequest.Source = GetAvatarActorFromActorInfo();
+	DamageRequest.Target = TargetActor;
+	DamageRequest.Damage = CurrentStepDamage;
+	DamageRequest.StaggerValue = CurrentStepStaggerValue;
+	DamageRequest.ExecutionId = CurrentStepExecutionId;
+	DamageRequest.bHasHitResult = true;
+	DamageRequest.HitResult = TargetHit;
+	const EAIRECombatDamageResult DamageResult =
+		DamageSubsystem->ApplyDamageRequest(DamageRequest);
 
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Log,
-		TEXT("Companion melee hit applied. Source=%s Target=%s Step=%d Damage=%.2f"),
+		TEXT("[MAKO ATTACK] Type=Basic Phase=DamageCommit Source=%s Target=%s StepIndex=%d ExecutionId=%s Damage=%.2f Stagger=%.2f Result=%s"),
 		*GetNameSafe(GetAvatarActorFromActorInfo()),
 		*GetNameSafe(TargetActor),
 		CurrentStepIndex,
-		StepDamage);
-	return true;
+		*CurrentStepExecutionId.ToString(),
+		CurrentStepDamage,
+		CurrentStepStaggerValue,
+		*StaticEnum<EAIRECombatDamageResult>()->GetNameStringByValue(
+			static_cast<int64>(DamageResult)));
+	return DamageResult == EAIRECombatDamageResult::Applied;
+}
+
+void UAIRECompanionMeleeAttackAbility::ResolveCurrentStepTraceSample(
+	const EAIRECombatMeleeTraceResult TraceResult,
+	const FHitResult& TargetHit)
+{
+	if (bCurrentStepHitConsumed)
+	{
+		return;
+	}
+	if (TraceResult == EAIRECombatMeleeTraceResult::NoHit
+		|| TraceResult == EAIRECombatMeleeTraceResult::Blocked)
+	{
+		const TCHAR* SampleResultName =
+			TraceResult == EAIRECombatMeleeTraceResult::Blocked
+				? TEXT("Blocked")
+				: TEXT("NoHit");
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Verbose,
+			TEXT("[MAKO ATTACK] Type=Basic Phase=SpatialSample Source=%s Target=%s StepIndex=%d ExecutionId=%s Result=%s"),
+			*GetNameSafe(GetAvatarActorFromActorInfo()),
+			*GetNameSafe(GetEventTarget()),
+			CurrentStepIndex,
+			*CurrentStepExecutionId.ToString(),
+			SampleResultName);
+		return;
+	}
+
+	const TCHAR* TraceResultName =
+		TraceResult == EAIRECombatMeleeTraceResult::TargetHit
+			? TEXT("TargetHit")
+			: TEXT("Invalid");
+	UE_LOG(
+		LogAIRECompanionMeleeAttack,
+		Log,
+		TEXT("[MAKO ATTACK] Type=Basic Phase=SpatialTerminal Source=%s Target=%s StepIndex=%d ExecutionId=%s Result=%s HitActor=%s"),
+		*GetNameSafe(GetAvatarActorFromActorInfo()),
+		*GetNameSafe(GetEventTarget()),
+		CurrentStepIndex,
+		*CurrentStepExecutionId.ToString(),
+		TraceResultName,
+		*GetNameSafe(TargetHit.GetActor()));
+
+	bCurrentStepHitConsumed = true;
+	CloseCurrentStepTrace();
+	if (TraceResult == EAIRECombatMeleeTraceResult::TargetHit)
+	{
+		CommitCurrentStepCombatHit(TargetHit);
+	}
+}
+
+bool UAIRECompanionMeleeAttackAbility::TryBeginCurrentStepTrace(
+	USkeletalMeshComponent* MeshComponent)
+{
+	if (bCurrentStepHitConsumed
+		|| bTraceWindowOpen
+		|| bTraceWindowEverOpened
+		|| !IsValid(MeshComponent)
+		|| MeshComponent->GetOwner() != GetAvatarActorFromActorInfo())
+	{
+		return false;
+	}
+
+	ActiveTraceMesh = MeshComponent;
+	bTraceWindowOpen = true;
+	bTraceWindowEverOpened = true;
+	if (MeshComponent->DoesSocketExist(CurrentTraceStartSocket)
+		&& MeshComponent->DoesSocketExist(CurrentTraceEndSocket))
+	{
+		PreviousTraceStart =
+			MeshComponent->GetSocketLocation(CurrentTraceStartSocket);
+		PreviousTraceEnd =
+			MeshComponent->GetSocketLocation(CurrentTraceEndSocket);
+	}
+
+	FHitResult TargetHit;
+	const EAIRECombatMeleeTraceResult TraceResult =
+		SampleCurrentStepCombatTrace(MeshComponent, TargetHit);
+	ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+	return TraceResult != EAIRECombatMeleeTraceResult::Invalid;
+}
+
+void UAIRECompanionMeleeAttackAbility::CloseCurrentStepTrace()
+{
+	bTraceWindowOpen = false;
+	ActiveTraceMesh.Reset();
+	PreviousTraceStart = FVector::ZeroVector;
+	PreviousTraceEnd = FVector::ZeroVector;
 }
 
 void UAIRECompanionMeleeAttackAbility::ResetCurrentStepState()
 {
+	CloseCurrentStepTrace();
+	CurrentStepExecutionId = FGuid::NewGuid();
 	bCurrentStepHitConsumed = false;
+	bCurrentStepPointSampleConsumed = false;
+	bTraceWindowEverOpened = false;
 	bComboWindowOpen = false;
 	bNextStepQueued = false;
+	CurrentStepDamage = GetAttackStepDamage(CurrentStepIndex);
+	CurrentStepStaggerValue =
+		GetAttackStepStaggerValue(CurrentStepIndex);
+	CurrentStepTargetingMode =
+		GetAttackStepTargetingMode(CurrentStepIndex);
+	CurrentTraceRadius = IsValid(ActiveWeaponDefinition)
+		? ActiveWeaponDefinition->TraceCapsuleRadius
+		: 0.0f;
+	CurrentTraceCapsuleHalfHeight = IsValid(ActiveWeaponDefinition)
+		? ActiveWeaponDefinition->TraceCapsuleHalfHeight
+		: 0.0f;
+	CurrentTraceChannel = ECC_MAX;
+	if (IsValid(ActiveWeaponDefinition))
+	{
+		CurrentTraceChannel = ActiveWeaponDefinition->TraceChannel;
+	}
+	CurrentTraceStartSocket = NAME_None;
+	CurrentTraceEndSocket = NAME_None;
+	if (IsAttackStepIndexValid(CurrentStepIndex))
+	{
+		const FAIREWeaponComboStepDefinition* ComboStep =
+			ActiveWeaponDefinition->ComboSteps.IsEmpty()
+				? nullptr
+				: &ActiveWeaponDefinition->ComboSteps[CurrentStepIndex];
+		const EAIRECompanionWeaponTraceSide TraceSide = ComboStep
+			? ComboStep->TraceSide
+			: EAIRECompanionWeaponTraceSide::Right;
+		const FAIREWeaponTraceSocketPair EmptyOverride;
+		const FAIREWeaponTraceSocketPair TraceSockets =
+			ActiveWeaponDefinition->ResolveTraceSockets(
+				TraceSide,
+				ComboStep
+					? ComboStep->TraceSocketOverride
+					: EmptyOverride);
+		CurrentTraceStartSocket = TraceSockets.TraceStartSocket;
+		CurrentTraceEndSocket = TraceSockets.TraceEndSocket;
+	}
+	if (ActiveExecutionMode == EExecutionMode::Combat)
+	{
+		UE_LOG(
+			LogAIRECompanionMeleeAttack,
+			Log,
+			TEXT("[MAKO ATTACK] Type=Basic Phase=StrikeSnapshot Source=%s Target=%s StepIndex=%d ExecutionId=%s Damage=%.2f Stagger=%.2f CapsuleRadius=%.1f CapsuleHalfHeight=%.1f Sockets=%s->%s"),
+			*GetNameSafe(GetAvatarActorFromActorInfo()),
+			*GetNameSafe(GetEventTarget()),
+			CurrentStepIndex,
+			*CurrentStepExecutionId.ToString(),
+			CurrentStepDamage,
+			CurrentStepStaggerValue,
+			CurrentTraceRadius,
+			CurrentTraceCapsuleHalfHeight,
+			*CurrentTraceStartSocket.ToString(),
+			*CurrentTraceEndSocket.ToString());
+	}
 }
 
 void UAIRECompanionMeleeAttackAbility::StartHitEventWait()
@@ -564,6 +1108,26 @@ void UAIRECompanionMeleeAttackAbility::StartHitEventWait()
 		this,
 		&UAIRECompanionMeleeAttackAbility::HandleHitEvent);
 	HitEventTask->ReadyForActivation();
+}
+
+void UAIRECompanionMeleeAttackAbility::StartTraceEventWait()
+{
+	TraceEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this,
+		AIRECompanionGameplayTags::EventAttackTrace,
+		nullptr,
+		false,
+		false);
+	if (!IsValid(TraceEventTask))
+	{
+		FinishAbility(true);
+		return;
+	}
+
+	TraceEventTask->EventReceived.AddDynamic(
+		this,
+		&UAIRECompanionMeleeAttackAbility::HandleTraceEvent);
+	TraceEventTask->ReadyForActivation();
 }
 
 void UAIRECompanionMeleeAttackAbility::StartComboWindowEventWait()
@@ -749,6 +1313,7 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 	if (bIsEnding
 		|| bSuspendedForCombatSkill
 		|| bCurrentStepHitConsumed
+		|| bCurrentStepPointSampleConsumed
 		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
@@ -761,8 +1326,91 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 		return;
 	}
 
-	bCurrentStepHitConsumed = true;
+	bCurrentStepPointSampleConsumed = true;
+	if (ActiveExecutionMode == EExecutionMode::Harvest)
+	{
+		bCurrentStepHitConsumed = true;
+		ResolveCurrentStepHit();
+		return;
+	}
+
 	ResolveCurrentStepHit();
+}
+
+void UAIRECompanionMeleeAttackAbility::HandleTraceEvent(
+	const FGameplayEventData Payload)
+{
+	int32 PayloadStepIndex = INDEX_NONE;
+	if (bIsEnding
+		|| bSuspendedForCombatSkill
+		|| ActiveExecutionMode != EExecutionMode::Combat
+		|| bCurrentStepHitConsumed
+		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
+		|| PayloadStepIndex != CurrentStepIndex)
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* MeshComponent =
+		Cast<USkeletalMeshComponent>(
+			const_cast<UObject*>(Payload.OptionalObject.Get()));
+	if (!IsValid(MeshComponent)
+		|| MeshComponent->GetOwner() != GetAvatarActorFromActorInfo())
+	{
+		return;
+	}
+
+	if (Payload.EventTag.MatchesTagExact(
+		AIRECompanionGameplayTags::EventAttackTraceBegin))
+	{
+		TryBeginCurrentStepTrace(MeshComponent);
+		return;
+	}
+
+	if (!bTraceWindowOpen || ActiveTraceMesh.Get() != MeshComponent)
+	{
+		return;
+	}
+
+	if (Payload.EventTag.MatchesTagExact(
+		AIRECompanionGameplayTags::EventAttackTraceSample))
+	{
+		FHitResult TargetHit;
+		const EAIRECombatMeleeTraceResult TraceResult =
+			SampleCurrentStepCombatTrace(MeshComponent, TargetHit);
+		ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+		return;
+	}
+
+	if (Payload.EventTag.MatchesTagExact(
+		AIRECompanionGameplayTags::EventAttackTraceEnd))
+	{
+		FHitResult TargetHit;
+		const EAIRECombatMeleeTraceResult TraceResult =
+			SampleCurrentStepCombatTrace(MeshComponent, TargetHit);
+		ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+		if (TraceResult == EAIRECombatMeleeTraceResult::NoHit)
+		{
+			UE_LOG(
+				LogAIRECompanionMeleeAttack,
+				Log,
+				TEXT("[MAKO ATTACK] Type=Basic Phase=SpatialTerminal Source=%s Target=%s StepIndex=%d ExecutionId=%s Result=Miss"),
+				*GetNameSafe(GetAvatarActorFromActorInfo()),
+				*GetNameSafe(GetEventTarget()),
+				CurrentStepIndex,
+				*CurrentStepExecutionId.ToString());
+		}
+		CloseCurrentStepTrace();
+	}
+}
+
+void UAIRECompanionMeleeAttackAbility::HandleTargetDestroyed(
+	AActor* DestroyedActor)
+{
+	if (DestroyedActor)
+	{
+		FinishAbility(true);
+	}
 }
 
 void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
@@ -863,6 +1511,7 @@ void UAIRECompanionMeleeAttackAbility::HandleCombatSkillTransitionEvent(
 		bComboWindowOpen = false;
 		bNextStepQueued = false;
 		SetSkillCancelWindowTag(false);
+		CloseCurrentStepTrace();
 		MontageStop(0.05f);
 		MontageTask = nullptr;
 

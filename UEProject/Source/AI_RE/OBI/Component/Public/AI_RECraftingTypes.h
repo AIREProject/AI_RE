@@ -14,8 +14,10 @@ enum class EWorkbenchType : uint8
 {
 	None		UMETA(DisplayName = "None (Handcraft)"),
 	Basic		UMETA(DisplayName = "Basic Workbench"),
-	Blacksmith	UMETA(DisplayName = "Blacksmith Anvil/Furnace"),
-	Alchemy		UMETA(DisplayName = "Alchemy Table")
+	Blacksmith	UMETA(DisplayName = "Blacksmith Anvil"),
+	Smelter     UMETA(DisplayName = "Smelter"),
+	Alchemy		UMETA(DisplayName = "Alchemy Table"),
+	Cook		UMETA(DisplayName = "Cooking Station")
 };
 
 /**

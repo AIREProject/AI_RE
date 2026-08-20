@@ -1,28 +1,65 @@
-export interface OfflineChatRequest {
-  schema_version: 1;
+import { chatTimeoutMs, webBearer } from "../config";
+
+const stableIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const commandTypes = new Set<string>([
+  "Command.Follow",
+  "Command.HoldPosition",
+  "Command.ReturnToPlayer",
+  "Command.EngageTarget",
+  "Command.DistractTarget",
+  "Command.MoveToLocation",
+  "Command.CancelCurrent",
+  "Command.GatherResource",
+  "Command.CraftItem",
+  "Command.Attack",
+  "Command.Switch",
+]);
+const commandPriorities = new Set<string>([
+  "Low",
+  "Normal",
+  "High",
+  "Critical",
+]);
+
+export interface MobileChatRequest {
   request_id: string;
+  schema_version: 1;
+  session_id: string;
   save_slot_id: string;
   companion_id: string;
-  session_id: string;
-  interaction_mode: "Offline";
   message_id: string;
   user_message: string;
+  surface: "mobile";
   time_context: {
     source: "RealWorld";
-    observed_at: string;
-    timezone: string;
+    day: number;
+    hour: number;
+    period: string;
   };
-  recent_event_ids: string[];
+  allowed_commands: ["Command.GatherResource", "Command.CraftItem"];
+}
+
+export interface CommandCandidate {
+  command_id: string;
+  request_id: string;
+  type: string;
+  target_id: string | null;
+  priority: "Low" | "Normal" | "High" | "Critical";
+  issued_at: string;
+  expires_at: string;
+  parameters: Record<string, unknown>;
 }
 
 export interface ChatResponse {
-  schema_version: 1;
   request_id: string;
+  message_id: string | null;
+  session_id: string;
+  save_slot_id: string;
+  companion_id: string;
   response_id: string;
   display_text: string;
-  interaction_mode: "InGame" | "Offline";
-  command_candidates: unknown[];
-  memory_candidates: unknown[];
+  command_candidates: CommandCandidate[];
+  offline_task_id: string | null;
   ai_metadata: {
     provider: string;
     model_version: string;
@@ -30,136 +67,167 @@ export interface ChatResponse {
   };
 }
 
-export interface DeviceTokenResponse {
-  schema_version: 1;
-  request_id: string;
-  profile_id: string;
-  device: {
-    device_id: string;
-    role: "WebClient";
-    created_at: string;
-    last_used_at?: string | null;
-    revoked_at?: string | null;
-  };
-  device_token: string;
-}
-
-export interface DeviceSelfResponse {
-  schema_version: 1;
-  request_id: string;
-  profile_id: string;
-  device_id: string;
-  role: "WebClient";
-  status: "Active";
-}
-
-export interface DeviceRevocationResponse {
-  schema_version: 1;
-  request_id: string;
-  device_id: string;
-  status: "Revoked";
-}
-
-interface ErrorEnvelope {
-  schema_version: 1;
+export interface ErrorEnvelope {
   request_id: string;
   error: {
     code: string;
     message: string;
     retryable: boolean;
+    details: Record<string, unknown>;
   };
 }
 
+export type ChatFailureKind =
+  | "cancelled"
+  | "timeout"
+  | "network"
+  | "invalid-json"
+  | "invalid-success-response"
+  | "invalid-error-response"
+  | "unauthorized"
+  | "forbidden"
+  | "server-error";
+
 export class ApiClientError extends Error {
+  public readonly name = "ApiClientError";
+
   constructor(
+    public readonly kind: ChatFailureKind,
     public readonly code: string,
     public readonly retryable: boolean,
+    public readonly status: number | null = null,
+    public readonly publicMessage: string | null = null,
   ) {
     super(code);
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
-}
-
-function isOptionalNullableString(value: unknown): boolean {
-  return value === undefined || typeof value === "string" || value === null;
-}
-
-function isChatResponse(value: unknown): value is ChatResponse {
-  if (!isRecord(value) || !isRecord(value.ai_metadata)) {
-    return false;
-  }
-  return (
-    value.schema_version === 1 &&
-    typeof value.request_id === "string" &&
-    typeof value.response_id === "string" &&
-    typeof value.display_text === "string" &&
-    (value.interaction_mode === "InGame" || value.interaction_mode === "Offline") &&
-    Array.isArray(value.command_candidates) &&
-    Array.isArray(value.memory_candidates) &&
-    typeof value.ai_metadata.provider === "string" &&
-    typeof value.ai_metadata.model_version === "string" &&
-    typeof value.ai_metadata.prompt_version === "string"
-  );
-}
-
-function isDeviceTokenResponse(value: unknown): value is DeviceTokenResponse {
-  if (!isRecord(value) || !isRecord(value.device)) {
-    return false;
-  }
-  return (
-    value.schema_version === 1 &&
-    isNonEmptyString(value.request_id) &&
-    isNonEmptyString(value.profile_id) &&
-    isNonEmptyString(value.device.device_id) &&
-    value.device.role === "WebClient" &&
-    typeof value.device.created_at === "string" &&
-    isOptionalNullableString(value.device.last_used_at) &&
-    isOptionalNullableString(value.device.revoked_at) &&
-    typeof value.device_token === "string" &&
-    value.device_token.length >= 32
-  );
-}
-
-function isDeviceSelfResponse(value: unknown): value is DeviceSelfResponse {
-  return (
-    isRecord(value) &&
-    value.schema_version === 1 &&
-    isNonEmptyString(value.request_id) &&
-    isNonEmptyString(value.profile_id) &&
-    isNonEmptyString(value.device_id) &&
-    value.role === "WebClient" &&
-    value.status === "Active"
-  );
-}
-
-function isDeviceRevocationResponse(
+function isNonEmptyString(
   value: unknown,
-): value is DeviceRevocationResponse {
+  maximumLength: number,
+): value is string {
   return (
-    isRecord(value) &&
-    value.schema_version === 1 &&
-    isNonEmptyString(value.request_id) &&
-    isNonEmptyString(value.device_id) &&
-    value.status === "Revoked"
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= maximumLength
+  );
+}
+
+function isStableId(value: unknown): value is string {
+  return (
+    isNonEmptyString(value, 128) &&
+    stableIdPattern.test(value)
+  );
+}
+
+function isNullableStableId(value: unknown): value is string | null {
+  return value === null || isStableId(value);
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+  if (isRecord(value)) {
+    return Object.values(value).every(isJsonValue);
+  }
+  return false;
+}
+
+function isIsoDateString(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isCommandCandidate(
+  value: unknown,
+  requestId: string,
+): value is CommandCandidate {
+  if (!isRecord(value) || !isRecord(value.parameters)) {
+    return false;
+  }
+  if (Object.keys(value.parameters).length > 16 || !isJsonValue(value.parameters)) {
+    return false;
+  }
+  if (
+    !isNonEmptyString(value.command_id, 128) ||
+    value.request_id !== requestId ||
+    typeof value.type !== "string" ||
+    !commandTypes.has(value.type) ||
+    !isNullableStableId(value.target_id) ||
+    typeof value.priority !== "string" ||
+    !commandPriorities.has(value.priority) ||
+    !isIsoDateString(value.issued_at) ||
+    !isIsoDateString(value.expires_at)
+  ) {
+    return false;
+  }
+
+  return Date.parse(value.expires_at) > Date.parse(value.issued_at);
+}
+
+function isChatResponse(
+  value: unknown,
+  request: MobileChatRequest,
+): value is ChatResponse {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.ai_metadata) ||
+    !Array.isArray(value.command_candidates)
+  ) {
+    return false;
+  }
+  if (
+    value.command_candidates.length > 4 ||
+    !value.command_candidates.every((candidate) =>
+      isCommandCandidate(candidate, request.request_id),
+    )
+  ) {
+    return false;
+  }
+  // Mobile may request a server-owned Offline Task, but it never executes UE
+  // gameplay Commands. Any returned candidate is therefore a contract violation.
+  if (value.command_candidates.length !== 0) {
+    return false;
+  }
+
+  return (
+    value.request_id === request.request_id &&
+    value.message_id === request.message_id &&
+    value.session_id === request.session_id &&
+    value.save_slot_id === request.save_slot_id &&
+    value.companion_id === request.companion_id &&
+    isStableId(value.response_id) &&
+    isNonEmptyString(value.display_text, 4000) &&
+    isNullableStableId(value.offline_task_id) &&
+    isNonEmptyString(value.ai_metadata.provider, 64) &&
+    isNonEmptyString(value.ai_metadata.model_version, 128) &&
+    isNonEmptyString(value.ai_metadata.prompt_version, 128)
   );
 }
 
 function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
   return (
     isRecord(value) &&
-    value.schema_version === 1 &&
-    typeof value.request_id === "string" &&
+    isStableId(value.request_id) &&
     isRecord(value.error) &&
-    typeof value.error.code === "string" &&
-    typeof value.error.message === "string" &&
-    typeof value.error.retryable === "boolean"
+    isNonEmptyString(value.error.code, 128) &&
+    isNonEmptyString(value.error.message, 512) &&
+    typeof value.error.retryable === "boolean" &&
+    isRecord(value.error.details)
   );
 }
 
@@ -167,117 +235,129 @@ async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch {
-    throw new ApiClientError("InvalidJsonResponse", false);
+    throw new ApiClientError(
+      "invalid-json",
+      "InvalidJsonResponse",
+      false,
+      response.status,
+    );
   }
 }
 
-function requireSuccessfulRequest(
+function requireResponseRequestId(response: Response, requestId: string): void {
+  if (response.headers.get("X-Request-ID") !== requestId) {
+    throw new ApiClientError(
+      response.status === 200
+        ? "invalid-success-response"
+        : "invalid-error-response",
+      response.status === 200
+        ? "InvalidChatResponse"
+        : "InvalidErrorResponse",
+      false,
+      response.status,
+    );
+  }
+}
+
+function throwResponseError(
   response: Response,
   body: unknown,
   requestId: string,
-): void {
-  if (!response.ok) {
-    if (
-      isErrorEnvelope(body) &&
-      body.request_id === requestId &&
-      response.headers.get("X-Request-ID") === requestId
-    ) {
-      throw new ApiClientError(body.error.code, body.error.retryable);
-    }
-    throw new ApiClientError("InvalidErrorResponse", false);
+): never {
+  if (!isErrorEnvelope(body) || body.request_id !== requestId) {
+    throw new ApiClientError(
+      "invalid-error-response",
+      "InvalidErrorResponse",
+      false,
+      response.status,
+    );
   }
 
-  if (response.headers.get("X-Request-ID") !== requestId) {
-    throw new ApiClientError("InvalidRequestIdResponse", false);
-  }
+  const kind: ChatFailureKind =
+    response.status === 401
+      ? "unauthorized"
+      : response.status === 403
+        ? "forbidden"
+        : "server-error";
+  throw new ApiClientError(
+    kind,
+    body.error.code,
+    body.error.retryable,
+    response.status,
+    body.error.message,
+  );
 }
 
-export async function pairWebDevice(
+export async function createMobileChat(
   apiBaseUrl: string,
-  pairingCode: string,
-  requestId: string,
-): Promise<DeviceTokenResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/v1/devices/pair`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "X-Request-ID": requestId,
-    },
-    body: JSON.stringify({
-      schema_version: 1,
-      request_id: requestId,
-      pairing_code: pairingCode,
-    }),
-  });
-  const body = await readJson(response);
-  requireSuccessfulRequest(response, body, requestId);
-  if (!isDeviceTokenResponse(body) || body.request_id !== requestId) {
-    throw new ApiClientError("InvalidPairingResponse", false);
-  }
-  return body;
-}
-
-export async function getCurrentDevice(
-  apiBaseUrl: string,
-  deviceToken: string,
-  requestId: string,
-): Promise<DeviceSelfResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/v1/devices/me`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${deviceToken}`,
-      "X-Request-ID": requestId,
-    },
-  });
-  const body = await readJson(response);
-  requireSuccessfulRequest(response, body, requestId);
-  if (!isDeviceSelfResponse(body) || body.request_id !== requestId) {
-    throw new ApiClientError("InvalidDeviceResponse", false);
-  }
-  return body;
-}
-
-export async function revokeCurrentDevice(
-  apiBaseUrl: string,
-  deviceToken: string,
-  requestId: string,
-): Promise<DeviceRevocationResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/v1/devices/me`, {
-    method: "DELETE",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${deviceToken}`,
-      "X-Request-ID": requestId,
-    },
-  });
-  const body = await readJson(response);
-  requireSuccessfulRequest(response, body, requestId);
-  if (!isDeviceRevocationResponse(body) || body.request_id !== requestId) {
-    throw new ApiClientError("InvalidRevocationResponse", false);
-  }
-  return body;
-}
-
-export async function createOfflineChat(
-  apiBaseUrl: string,
-  deviceToken: string,
-  request: OfflineChatRequest,
+  request: MobileChatRequest,
+  externalSignal?: AbortSignal,
 ): Promise<ChatResponse> {
-  const response = await fetch(`${apiBaseUrl}/api/v1/chat`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${deviceToken}`,
-      "Content-Type": "application/json",
-      "X-Request-ID": request.request_id,
-    },
-    body: JSON.stringify(request),
-  });
-  const body = await readJson(response);
-  requireSuccessfulRequest(response, body, request.request_id);
-  if (!isChatResponse(body) || body.request_id !== request.request_id) {
-    throw new ApiClientError("InvalidChatResponse", false);
+  const controller = new AbortController();
+  let abortKind: "cancelled" | "timeout" | null = null;
+  const abortRequest = (kind: "cancelled" | "timeout"): void => {
+    if (abortKind !== null) {
+      return;
+    }
+    abortKind = kind;
+    controller.abort();
+  };
+  const handleExternalAbort = (): void => abortRequest("cancelled");
+  const timeoutHandle = setTimeout(
+    () => abortRequest("timeout"),
+    chatTimeoutMs,
+  );
+  let hasExternalAbortListener = false;
+
+  if (externalSignal?.aborted === true) {
+    handleExternalAbort();
+  } else if (externalSignal !== undefined) {
+    externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
+    hasExternalAbortListener = true;
   }
-  return body;
+
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/v1/chat`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${webBearer}`,
+        "Content-Type": "application/json",
+        "X-Request-ID": request.request_id,
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+    const body = await readJson(response);
+    requireResponseRequestId(response, request.request_id);
+
+    if (response.status !== 200) {
+      throwResponseError(response, body, request.request_id);
+    }
+    if (!isChatResponse(body, request)) {
+      throw new ApiClientError(
+        "invalid-success-response",
+        "InvalidChatResponse",
+        false,
+        response.status,
+      );
+    }
+    return body;
+  } catch (error: unknown) {
+    if (abortKind === "cancelled") {
+      throw new ApiClientError("cancelled", "RequestCancelled", false);
+    }
+    if (abortKind === "timeout") {
+      throw new ApiClientError("timeout", "RequestTimeout", false);
+    }
+    if (error instanceof ApiClientError) {
+      throw error;
+    }
+    throw new ApiClientError("network", "NetworkFailure", false);
+  } finally {
+    clearTimeout(timeoutHandle);
+    if (hasExternalAbortListener) {
+      externalSignal?.removeEventListener("abort", handleExternalAbort);
+    }
+  }
 }

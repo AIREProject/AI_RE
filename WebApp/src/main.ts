@@ -2,34 +2,91 @@ import "./style.css";
 
 import {
   ApiClientError,
-  createOfflineChat,
-  getCurrentDevice,
-  pairWebDevice,
-  revokeCurrentDevice,
-  type OfflineChatRequest,
+  createMobileChat,
+  type MobileChatRequest,
 } from "./api/client";
 import {
-  clearDeviceCredentials,
-  loadDeviceCredentials,
-  saveDeviceCredentials,
-  type DeviceCredentials,
-} from "./auth/credentials";
-import { apiBaseUrl, companionId, saveSlotId } from "./config";
+  createOfflineTask,
+  deleteOfflineTask,
+  listOfflineTasks,
+  OfflineTaskApiError,
+  type CreateOfflineTaskRequest,
+  type OfflineTaskStatus,
+  type OfflineTaskType,
+  type OfflineTaskView,
+} from "./api/offlineTasks";
+import {
+  deleteMemory,
+  getMemory,
+  listMemories,
+  MemoryApiError,
+  resetMemories,
+  searchMemories,
+  updateMemory,
+  type MemorySourceView,
+  type MemoryView,
+} from "./api/memories";
+import { apiBaseUrl, companionId, memoryEnabled, saveSlotId } from "./config";
 
-type ConnectionState = "checking" | "connected" | "disconnected";
-type PairingState =
-  | "idle"
-  | "pairing"
-  | "success"
-  | "expired"
-  | "used"
-  | "invalid"
-  | "backend-unavailable"
-  | "storage-failed";
+type ChatUiState = "idle" | "sending" | "success" | "cancelled" | "error";
+type TaskUiState = "idle" | "loading" | "success" | "warning" | "error";
+type CreatableOfflineTaskType = Extract<
+  OfflineTaskType,
+  "Gathering" | "Crafting"
+>;
 
-interface PairingFragment {
-  recognized: boolean;
-  code: string | null;
+interface TaskItemOption {
+  id: string;
+  label: string;
+}
+
+interface ActiveChatRequest {
+  controller: AbortController;
+}
+
+const taskItemOptions: Record<
+  CreatableOfflineTaskType,
+  readonly TaskItemOption[]
+> = {
+  Gathering: [
+    { id: "PlantStem", label: "나무" },
+  ],
+  Crafting: [{ id: "ShoddyBandage", label: "엉성한 붕대" }],
+};
+
+const taskItemLabels = new Map<string, string>(
+  Object.values(taskItemOptions)
+    .flat()
+    .map((item): [string, string] => [item.id, item.label]),
+);
+
+const taskTypeLabels: Record<OfflineTaskType, string> = {
+  Gathering: "채집",
+  Crafting: "제작",
+  Scouting: "탐색 (생성 미지원)",
+};
+
+const taskStatusLabels: Record<OfflineTaskStatus, string> = {
+  Pending: "Pending · UE 동기화 대기",
+  InProgress: "InProgress · 서버 시간 계산 중",
+  Completed: "Completed · UE 적용 대기",
+  Claimed: "Claimed · 서버 처리 종료",
+};
+
+function taskStatusLabel(task: OfflineTaskView): string {
+  if (task.status !== "InProgress" || task.progress_quantity === null) {
+    return taskStatusLabels[task.status];
+  }
+  if (task.progress_quantity === 0) {
+    return "작업 중 · 아직 완성 0개";
+  }
+  if (
+    task.quantity !== null &&
+    task.progress_quantity >= task.quantity
+  ) {
+    return `수령 가능 · ${task.progress_quantity}개 준비`;
+  }
+  return `수령 가능 · 지금 ${task.progress_quantity}개`;
 }
 
 function createStableId(prefix: string): string {
@@ -59,73 +116,37 @@ function requireElement<T extends Element>(selector: string): T {
   return element;
 }
 
-function consumePairingFragment(): PairingFragment {
-  const prefix = "#/pair/";
-  if (!window.location.hash.startsWith(prefix)) {
-    return { recognized: false, code: null };
-  }
+function formatCurrentTime(): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+}
 
-  const candidate = window.location.hash.slice(prefix.length);
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${window.location.pathname}${window.location.search}`,
-  );
+function createRealWorldTimeContext(now: Date): MobileChatRequest["time_context"] {
+  const hour = now.getHours();
   return {
-    recognized: true,
-    code: /^[0-9]{8}$/.test(candidate) ? candidate : null,
+    source: "RealWorld",
+    day: now.getDate(),
+    hour,
+    period: hour < 12 ? "AM" : "PM",
   };
 }
 
 const app = requireElement<HTMLElement>("#app");
 
 app.innerHTML = `
-  <section id="pairing-shell" class="pairing-shell" aria-labelledby="pairing-title">
-    <div class="pairing-card">
-      <div class="pairing-avatar" aria-hidden="true">AI</div>
-      <p class="section-kicker">AIRE WEB CONNECTION</p>
-      <h1 id="pairing-title">동료와 연결하기</h1>
-      <p id="pairing-status" class="pairing-status" data-state="idle" aria-live="polite">
-        게임에 표시된 QR을 열거나 8자리 Pairing Code를 입력해 주세요.
-      </p>
-      <form id="pairing-form" class="pairing-form">
-        <label for="pairing-code">Pairing Code</label>
-        <input
-          id="pairing-code"
-          name="pairing-code"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="8"
-          pattern="[0-9]{8}"
-          placeholder="8자리 숫자"
-        />
-        <button id="pairing-submit" type="submit">연결하기</button>
-      </form>
-      <button id="retry-authentication" class="secondary-button" type="button" hidden>
-        다시 확인하기
-      </button>
-      <p class="pairing-help">Pairing Code는 5분 동안 한 번만 사용할 수 있어요.</p>
-    </div>
-  </section>
-
-  <div id="companion-app" class="companion-app" hidden>
+  <div id="companion-app" class="companion-app" data-chat-state="idle">
     <header class="app-header">
       <div class="companion-avatar" aria-hidden="true">
-        <span>AI</span>
-        <span id="status-dot" class="status-dot" data-state="checking"></span>
+        <span>MA</span>
+        <span class="status-dot" data-state="connected"></span>
       </div>
       <div class="header-copy">
         <p class="companion-label">나의 동료</p>
-        <h1>AIRE</h1>
-        <p id="connection-status" class="connection-status" aria-live="polite">연결 확인 중</p>
+        <h1>MAKO</h1>
+        <p class="connection-status" data-state="connected">마코랑 이야기할 준비 됐어</p>
       </div>
-      <button id="refresh-connection" class="icon-button" type="button" aria-label="연결 상태 다시 확인">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v6h-6"/></svg>
-      </button>
-      <button id="disconnect-device" class="icon-button disconnect-button" type="button" aria-label="기기 연결 해제">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/></svg>
-      </button>
     </header>
 
     <nav class="app-tabs" aria-label="동료 메뉴">
@@ -133,19 +154,22 @@ app.innerHTML = `
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
         대화
       </button>
-      <button class="tab-button" type="button" data-view="memory" aria-selected="false">
+      <button class="tab-button" type="button" data-view="tasks" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h10v14H5V9Z"/><path d="M9 5v4H5M9 13h6M9 16h4"/></svg>
+        작업
+      </button>
+      <button id="memory-tab" class="tab-button" type="button" data-view="memory" aria-selected="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0-9-9v7l2.5-2.5M8 12h8M12 8v8"/></svg>
         기억
       </button>
     </nav>
 
     <main id="chat-view" class="app-view active" data-view-panel="chat">
-      <p id="auth-notice" class="auth-notice" data-state="success" aria-live="polite" hidden></p>
       <section id="chat-messages" class="chat-messages" aria-label="대화 내용" aria-live="polite">
         <div class="date-divider"><span>오늘</span></div>
         <article class="message companion-message">
           <div class="message-bubble">
-            <p>여기서 나눈 이야기는 다음 모험에서도 이어져. 오늘은 어떤 하루였어?</p>
+            <p>오, 왔네. 오늘은 뭐부터 얘기해볼까?</p>
           </div>
           <time>방금</time>
         </article>
@@ -154,111 +178,249 @@ app.innerHTML = `
       <section class="composer-area">
         <p class="time-context"><span aria-hidden="true">◷</span>현실 시간 기준으로 대화해요</p>
         <div class="suggestion-list" aria-label="추천 대화">
-          <button type="button" class="suggestion-chip">오늘 있었던 일 이야기하기</button>
-          <button type="button" class="suggestion-chip">다음 모험 얘기하기</button>
+          <button type="button" class="suggestion-chip">오늘 좀 어땠어?</button>
+          <button type="button" class="suggestion-chip">돌 도끼 제작 방법을 알려줘</button>
+          <button type="button" class="suggestion-chip">나무 30개만 캐놔줘</button>
         </div>
-        <form id="chat-form" class="chat-composer">
-          <label class="sr-only" for="chat-input">AIRE에게 메시지 보내기</label>
-          <textarea id="chat-input" rows="1" maxlength="1000" placeholder="AIRE에게 이야기하기"></textarea>
+        <form id="chat-form" class="chat-composer" data-state="idle" aria-busy="false">
+          <label class="sr-only" for="chat-input">MAKO에게 메시지 보내기</label>
+          <textarea id="chat-input" rows="1" maxlength="2000" placeholder="MAKO에게 이야기하기"></textarea>
           <button id="send-button" class="send-button" type="submit" aria-label="메시지 보내기">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
           </button>
+          <button
+            id="cancel-chat-button"
+            class="cancel-chat-button"
+            type="button"
+            aria-label="대화 요청 취소"
+            hidden
+            disabled
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
         </form>
-        <p id="composer-notice" class="composer-notice" hidden></p>
+        <p id="composer-notice" class="composer-notice" data-state="idle" aria-live="polite" hidden></p>
       </section>
     </main>
 
+    <main id="tasks-view" class="app-view task-view" data-view-panel="tasks" hidden>
+      <div class="task-scroll">
+        <section class="task-intro">
+          <p class="section-kicker">오프라인 작업</p>
+          <h2>MAKO에게 할 일을 맡겨요</h2>
+          <p>제작 재료는 서버 Inventory에서 먼저 예약하고, 완성품은 게임 접속 시 안전하게 받아요.</p>
+        </section>
+
+        <section class="task-create-card" aria-labelledby="task-create-title">
+          <div class="task-section-heading">
+            <div>
+              <p class="task-section-label">새 요청</p>
+              <h3 id="task-create-title">작업 만들기</h3>
+            </div>
+          </div>
+          <form id="task-form" class="task-form" data-state="idle" aria-busy="false" novalidate>
+            <label for="task-type">종류</label>
+            <select id="task-type">
+              <option value="Gathering">Gathering · 채집</option>
+              <option value="Crafting">Crafting · 제작</option>
+              <option value="Scouting" disabled>Scouting · 준비 중</option>
+            </select>
+
+            <label for="task-item">아이템</label>
+            <select id="task-item"></select>
+
+            <label for="task-quantity">수량</label>
+            <input
+              id="task-quantity"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="50"
+              step="1"
+              value="1"
+              aria-describedby="task-quantity-hint"
+            />
+            <p id="task-quantity-hint" class="field-hint">서버 시간 정책 기준 · 수량 1~50</p>
+
+            <button id="task-create-button" class="primary-task-button" type="submit">
+              작업 요청하기
+            </button>
+          </form>
+          <p id="task-create-notice" class="task-notice" data-state="idle" aria-live="polite" hidden></p>
+        </section>
+
+        <section class="task-list-section" aria-labelledby="task-list-title">
+          <div class="task-section-heading task-list-heading">
+            <div>
+              <p class="task-section-label">서버 기록</p>
+              <h3 id="task-list-title">현재 작업</h3>
+            </div>
+            <button id="task-refresh-button" class="task-refresh-button" type="button">
+              새로고침
+            </button>
+          </div>
+
+          <label class="status-filter-label" for="task-status-filter">상태 필터</label>
+          <select id="task-status-filter" class="status-filter">
+            <option value="Active" selected>진행 중 · Claimed 숨김</option>
+            <option value="">전체 기록</option>
+            <option value="Pending">Pending</option>
+            <option value="InProgress">InProgress</option>
+            <option value="Completed">Completed</option>
+            <option value="Claimed">Claimed</option>
+          </select>
+
+          <p class="task-boundary-notice">
+            새로고침 시 서버 시간 기준 완성 수량을 확인해요. UE를 켜면 표시된 정수 수량을
+            확정하고 남은 예약량은 종료해요.
+          </p>
+          <div id="task-list" class="task-list" data-state="idle" aria-live="polite" aria-busy="false">
+            <p class="task-list-message">작업 탭을 열면 목록을 불러와요.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+
     <main id="memory-view" class="app-view" data-view-panel="memory" hidden>
-      <section class="memory-intro">
-        <span class="memory-mark" aria-hidden="true">✦</span>
-        <p class="section-kicker">함께 쌓은 기억</p>
-        <h2>AIRE가 기억하고 있는 이야기</h2>
-        <p>직접 들려준 이야기만 저장 후보가 되며, 언제든 확인하고 지울 수 있어요.</p>
-      </section>
-      <section class="empty-card">
-        <div class="empty-icon" aria-hidden="true">✧</div>
-        <h3>아직 저장된 기억이 없어요</h3>
-        <p>대화를 이어가면 소중한 이야기가 이곳에 나타나요.</p>
-        <span class="development-badge">Memory API 연결 예정</span>
-      </section>
+      <div class="memory-scroll">
+        <section class="memory-intro">
+          <span class="memory-mark" aria-hidden="true">✦</span>
+          <p class="section-kicker">함께 쌓은 기억</p>
+          <h2>MAKO가 기억하고 있는 이야기</h2>
+          <p>직접 들려준 이야기만 저장 후보가 되며, 언제든 확인하고 지울 수 있어요.</p>
+        </section>
+
+        <section class="memory-toolbar" aria-label="기억 검색 및 관리">
+          <form id="memory-search-form" class="memory-search-form" novalidate>
+            <label class="sr-only" for="memory-search-input">기억 검색</label>
+            <input
+              id="memory-search-input"
+              type="search"
+              maxlength="2000"
+              placeholder="기억에서 찾아보기"
+              autocomplete="off"
+            />
+            <button id="memory-search-button" class="memory-search-button" type="submit">검색</button>
+          </form>
+          <div class="memory-toolbar-actions">
+            <button id="memory-refresh-button" class="memory-secondary-button" type="button">새로고침</button>
+            <button id="memory-reset-button" class="memory-danger-button" type="button">모든 기억 잊기</button>
+          </div>
+        </section>
+
+        <p id="memory-notice" class="memory-notice" data-state="idle" aria-live="polite" hidden></p>
+        <div id="memory-list" class="memory-list" data-state="idle" aria-live="polite" aria-busy="false">
+          <section class="memory-state-card">
+            <div class="empty-icon" aria-hidden="true">✧</div>
+            <h3>기억 탭을 열면 목록을 불러와요</h3>
+            <p>서버에 저장된 기억만 이곳에 표시돼요.</p>
+          </section>
+        </div>
+
+        <section id="memory-detail" class="memory-detail" aria-labelledby="memory-detail-title" hidden>
+          <div class="memory-detail-heading">
+            <div>
+              <p class="memory-section-label">선택한 기억</p>
+              <h3 id="memory-detail-title">기억 상세</h3>
+            </div>
+            <button id="memory-detail-close" class="memory-close-button" type="button">닫기</button>
+          </div>
+          <div id="memory-detail-content"></div>
+        </section>
+      </div>
     </main>
   </div>
 `;
 
-const pairingShell = requireElement<HTMLElement>("#pairing-shell");
-const pairingStatus = requireElement<HTMLElement>("#pairing-status");
-const pairingForm = requireElement<HTMLFormElement>("#pairing-form");
-const pairingInput = requireElement<HTMLInputElement>("#pairing-code");
-const pairingSubmit = requireElement<HTMLButtonElement>("#pairing-submit");
-const retryAuthentication = requireElement<HTMLButtonElement>(
-  "#retry-authentication",
-);
 const companionApp = requireElement<HTMLElement>("#companion-app");
-const connectionStatus = requireElement<HTMLElement>("#connection-status");
-const statusDot = requireElement<HTMLElement>("#status-dot");
-const refreshButton = requireElement<HTMLButtonElement>("#refresh-connection");
-const disconnectButton = requireElement<HTMLButtonElement>("#disconnect-device");
-const authNotice = requireElement<HTMLElement>("#auth-notice");
 const chatMessages = requireElement<HTMLElement>("#chat-messages");
 const chatForm = requireElement<HTMLFormElement>("#chat-form");
 const chatInput = requireElement<HTMLTextAreaElement>("#chat-input");
 const sendButton = requireElement<HTMLButtonElement>("#send-button");
+const cancelChatButton = requireElement<HTMLButtonElement>("#cancel-chat-button");
 const composerNotice = requireElement<HTMLElement>("#composer-notice");
+const suggestionList = requireElement<HTMLElement>(".suggestion-list");
+const taskForm = requireElement<HTMLFormElement>("#task-form");
+const taskTypeSelect = requireElement<HTMLSelectElement>("#task-type");
+const taskItemSelect = requireElement<HTMLSelectElement>("#task-item");
+const taskQuantityInput = requireElement<HTMLInputElement>("#task-quantity");
+const taskQuantityHint = requireElement<HTMLElement>("#task-quantity-hint");
+const taskCreateButton = requireElement<HTMLButtonElement>("#task-create-button");
+const taskCreateNotice = requireElement<HTMLElement>("#task-create-notice");
+const taskStatusFilter = requireElement<HTMLSelectElement>("#task-status-filter");
+const taskRefreshButton = requireElement<HTMLButtonElement>("#task-refresh-button");
+const taskList = requireElement<HTMLElement>("#task-list");
+const memoryTab = requireElement<HTMLButtonElement>("#memory-tab");
+const memorySearchForm = requireElement<HTMLFormElement>("#memory-search-form");
+const memorySearchInput = requireElement<HTMLInputElement>("#memory-search-input");
+const memorySearchButton = requireElement<HTMLButtonElement>("#memory-search-button");
+const memoryRefreshButton = requireElement<HTMLButtonElement>("#memory-refresh-button");
+const memoryResetButton = requireElement<HTMLButtonElement>("#memory-reset-button");
+const memoryNotice = requireElement<HTMLElement>("#memory-notice");
+const memoryList = requireElement<HTMLElement>("#memory-list");
+const memoryDetail = requireElement<HTMLElement>("#memory-detail");
+const memoryDetailTitle = requireElement<HTMLElement>("#memory-detail-title");
+const memoryDetailClose = requireElement<HTMLButtonElement>("#memory-detail-close");
+const memoryDetailContent = requireElement<HTMLElement>("#memory-detail-content");
+
+memoryTab.hidden = !memoryEnabled;
+memoryTab.disabled = !memoryEnabled;
 
 const sessionId = createStableId("session");
-const initialFragment = consumePairingFragment();
-let currentCredentials: DeviceCredentials | null = null;
-let pendingFragmentCode = initialFragment.code;
-let isPairing = false;
-let isSending = false;
+let activeChatRequest: ActiveChatRequest | null = null;
+let isCreatingTask = false;
+let isListingTasks = false;
+let deletingTaskId: string | null = null;
+let isDraggingSuggestions = false;
+let didDragSuggestions = false;
+let suppressSuggestionClick = false;
+let suggestionDragStartX = 0;
+let suggestionDragStartScrollLeft = 0;
+let memoryItems: MemoryView[] = [];
+let selectedMemory: MemoryView | null = null;
+let isMemoryLoaded = false;
+let isListingMemories = false;
+let memoryMutation: "update" | "delete" | "reset" | null = null;
+let memoryLastAction: "list" | "search" = "list";
 
-function setConnectionState(state: ConnectionState, label: string): void {
-  statusDot.dataset.state = state;
-  connectionStatus.dataset.state = state;
-  connectionStatus.textContent = label;
-}
+function setChatState(state: ChatUiState, message?: string): void {
+  companionApp.dataset.chatState = state;
+  chatForm.dataset.state = state;
+  chatForm.setAttribute("aria-busy", String(state === "sending"));
+  composerNotice.dataset.state = state;
 
-function setPairingState(state: PairingState, message: string): void {
-  pairingShell.hidden = false;
-  companionApp.hidden = true;
-  pairingStatus.dataset.state = state;
-  pairingStatus.textContent = message;
-  const busy = state === "pairing";
-  pairingInput.disabled = busy;
-  pairingSubmit.disabled = busy;
-  retryAuthentication.hidden = state !== "backend-unavailable";
-}
-
-function showChat(credentials: DeviceCredentials, pairedNow: boolean): void {
-  currentCredentials = credentials;
-  pairingShell.hidden = true;
-  companionApp.hidden = false;
-  setConnectionState("connected", "C PC 인증됨");
-  authNotice.hidden = !pairedNow;
-  if (pairedNow) {
-    authNotice.textContent = "Pairing이 완료됐어요. 다음 접속부터 자동으로 연결할게요.";
+  if (message === undefined) {
+    composerNotice.textContent = "";
+    composerNotice.hidden = true;
+    return;
   }
+  composerNotice.textContent = message;
+  composerNotice.hidden = false;
 }
 
-function showPairingIdle(message?: string): void {
-  currentCredentials = null;
-  setPairingState(
-    "idle",
-    message ?? "게임에 표시된 QR을 열거나 8자리 Pairing Code를 입력해 주세요.",
-  );
-  pairingInput.focus();
+function setChatControls(isSending: boolean): void {
+  sendButton.disabled = isSending;
+  chatInput.disabled = isSending;
+  cancelChatButton.hidden = !isSending;
+  cancelChatButton.disabled = !isSending;
 }
 
-function handleUnauthorized(message: string): void {
-  clearDeviceCredentials();
-  showPairingIdle(message);
-}
+function finishChatRequest(
+  request: ActiveChatRequest,
+  state?: ChatUiState,
+  message?: string,
+): boolean {
+  if (activeChatRequest !== request) {
+    return false;
+  }
 
-function formatCurrentTime(): string {
-  return new Intl.DateTimeFormat("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date());
+  activeChatRequest = null;
+  setChatControls(false);
+  if (state !== undefined) {
+    setChatState(state, message);
+  }
+  chatInput.focus();
+  return true;
 }
 
 function appendMessage(text: string, kind: "user" | "companion"): void {
@@ -276,172 +438,1081 @@ function appendMessage(text: string, kind: "user" | "companion"): void {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function showComposerNotice(message: string): void {
-  composerNotice.textContent = message;
-  composerNotice.hidden = false;
+function chatFailureMessage(error: ApiClientError): string {
+  switch (error.kind) {
+    case "cancelled":
+      return "요청 대기를 취소했어요. Backend에서는 이미 처리됐을 수 있으며 자동으로 다시 보내지지 않아요.";
+    case "timeout":
+      return "MAKO의 응답 시간이 초과됐어요. 자동으로 다시 보내지는 않았어요.";
+    case "network":
+      return "Backend에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.";
+    case "invalid-json":
+      return "Backend 응답을 JSON으로 읽을 수 없어요.";
+    case "invalid-success-response":
+      return "Backend의 성공 응답 형식이나 요청 식별자가 올바르지 않아요.";
+    case "invalid-error-response":
+      return "Backend의 오류 응답 형식이나 요청 식별자가 올바르지 않아요.";
+    case "unauthorized":
+      return "Web 인증이 거부됐어요. Backend의 AIRE_WEB 설정을 확인해 주세요.";
+    case "forbidden":
+      return "현재 Web 신원에는 이 대화 요청 권한이 없어요.";
+    case "server-error": {
+      if (error.code === "InventorySnapshotRequired") {
+        return "저장된 게임 Inventory가 없어요. 게임에서 인벤토리를 한 번 동기화한 뒤 다시 요청해 주세요.";
+      }
+      if (error.code === "InsufficientCraftingMaterials") {
+        return "서버에 저장된 Inventory의 나무가 부족해서 제작을 시작하지 못했어요.";
+      }
+      const publicMessage = error.publicMessage === null ? "" : ` ${error.publicMessage}`;
+      return `Backend가 대화 요청을 처리하지 못했어요 (${error.code}).${publicMessage}`;
+    }
+  }
 }
 
-function pairingErrorMessage(error: ApiClientError): [PairingState, string] {
-  switch (error.code) {
-    case "ExpiredPairingCode":
-      return ["expired", "Pairing Code가 만료됐어요. 게임에서 새 Code를 발급해 주세요."];
-    case "UsedPairingCode":
-      return ["used", "이미 사용된 Pairing Code예요. 새 Code를 발급해 주세요."];
-    case "InvalidPairingCode":
-    case "InvalidRequest":
-      return ["invalid", "올바르지 않은 Pairing Code예요. 8자리 숫자를 확인해 주세요."];
+function isCreatableOfflineTaskType(
+  value: string,
+): value is CreatableOfflineTaskType {
+  return value === "Gathering" || value === "Crafting";
+}
+
+function selectedTaskStatus(): OfflineTaskStatus | undefined {
+  const value = taskStatusFilter.value;
+  switch (value) {
+    case "Pending":
+    case "InProgress":
+    case "Completed":
+    case "Claimed":
+      return value;
     default:
-      return [
-        "backend-unavailable",
-        error.retryable
-          ? "Backend가 응답하지 않아요. 잠시 후 다시 시도해 주세요."
-          : "Backend 응답을 확인할 수 없어요. 연결 상태를 확인해 주세요.",
-      ];
+      return undefined;
   }
 }
 
-async function pairWithCode(pairingCode: string): Promise<void> {
-  if (isPairing) {
+function syncTaskControls(): void {
+  const isTaskMutationPending = isCreatingTask || deletingTaskId !== null;
+  taskTypeSelect.disabled = isTaskMutationPending;
+  taskItemSelect.disabled = isTaskMutationPending;
+  taskQuantityInput.disabled = isTaskMutationPending;
+  taskCreateButton.disabled = isTaskMutationPending || isListingTasks;
+  taskStatusFilter.disabled = isTaskMutationPending || isListingTasks;
+  taskRefreshButton.disabled = isTaskMutationPending || isListingTasks;
+}
+
+function setTaskCreateState(state: TaskUiState, message?: string): void {
+  taskForm.dataset.state = state;
+  taskForm.setAttribute("aria-busy", String(state === "loading"));
+  taskCreateNotice.dataset.state = state;
+
+  if (message === undefined) {
+    taskCreateNotice.textContent = "";
+    taskCreateNotice.hidden = true;
     return;
   }
-  isPairing = true;
-  pairingInput.value = "";
-  setPairingState("pairing", "동료와 안전하게 연결하고 있어요…");
+  taskCreateNotice.textContent = message;
+  taskCreateNotice.hidden = false;
+}
 
-  try {
-    const response = await pairWebDevice(
-      apiBaseUrl,
-      pairingCode,
-      createStableId("request-pair"),
-    );
-    const credentials: DeviceCredentials = {
-      schema_version: 1,
-      profile_id: response.profile_id,
-      device_id: response.device.device_id,
-      device_token: response.device_token,
-    };
-    try {
-      saveDeviceCredentials(credentials);
-    } catch {
-      setPairingState(
-        "storage-failed",
-        "브라우저 저장소를 사용할 수 없어 연결 정보를 보관하지 못했어요.",
-      );
-      return;
-    }
-    pendingFragmentCode = null;
-    pairingStatus.dataset.state = "success";
-    showChat(credentials, true);
-  } catch (error: unknown) {
-    if (error instanceof ApiClientError) {
-      const [state, message] = pairingErrorMessage(error);
-      setPairingState(state, message);
-    } else {
-      setPairingState(
-        "backend-unavailable",
-        "C PC Backend에 연결할 수 없어요. 네트워크를 확인해 주세요.",
-      );
-    }
-  } finally {
-    isPairing = false;
+function setTaskListMessage(state: TaskUiState, message: string): void {
+  taskList.dataset.state = state;
+  taskList.setAttribute("aria-busy", String(state === "loading"));
+  const content = document.createElement("p");
+  content.className = "task-list-message";
+  content.textContent = message;
+  taskList.replaceChildren(content);
+}
+
+function populateTaskItems(taskType: CreatableOfflineTaskType): void {
+  const options = taskItemOptions[taskType].map((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = `${item.label} · ${item.id}`;
+    return option;
+  });
+  taskItemSelect.replaceChildren(...options);
+}
+
+function updateTaskQuantityPolicy(taskType: CreatableOfflineTaskType): void {
+  taskQuantityInput.max = "50";
+  updateTaskDurationHint(taskType);
+}
+
+function updateTaskDurationHint(taskType: CreatableOfflineTaskType): void {
+  const taskLabel = taskType === "Gathering" ? "채집" : "제작";
+  taskQuantityHint.textContent =
+    `${taskLabel} 시간은 현재 Backend 정책으로 계산 · 수량 1~50`;
+}
+
+function validateTaskQuantity(
+  taskType: CreatableOfflineTaskType,
+): number | null {
+  const rawQuantity = taskQuantityInput.value.trim();
+  if (rawQuantity.length === 0) {
+    setTaskCreateState("error", "수량을 입력해 주세요.");
+    return null;
+  }
+
+  if (!/^[0-9]+$/.test(rawQuantity)) {
+    setTaskCreateState("error", "수량은 숫자로 된 정수만 입력해 주세요.");
+    return null;
+  }
+
+  const quantity = Number(rawQuantity);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    setTaskCreateState("error", "수량은 1 이상의 정수여야 해요.");
+    return null;
+  }
+  if (quantity > 50) {
+    setTaskCreateState("error", "작업 수량은 1~50개만 요청할 수 있어요.");
+    return null;
+  }
+  return quantity;
+}
+
+function taskFailureMessage(
+  error: OfflineTaskApiError,
+  operation: "create" | "list" | "delete",
+): string {
+  const subject =
+    operation === "create"
+      ? "작업 요청"
+      : operation === "list"
+        ? "작업 목록 조회"
+        : "예약 삭제";
+  switch (error.kind) {
+    case "timeout":
+      if (operation === "create") {
+        return "작업 요청 응답 시간이 초과됐어요. 자동 재전송하지 않았으니 목록을 먼저 확인해 주세요.";
+      }
+      if (operation === "delete") {
+        return "예약 삭제 응답 시간이 초과됐어요. 목록을 새로고침해 삭제 여부를 확인해 주세요.";
+      }
+      return "작업 목록 응답 시간이 초과됐어요. 자동으로 다시 조회하지 않았어요.";
+    case "network":
+      return `${subject} 중 Backend에 연결할 수 없어요. 네트워크 상태를 확인해 주세요.`;
+    case "invalid-json":
+      return `${subject} 응답을 JSON으로 읽을 수 없어요.`;
+    case "invalid-success-response":
+      return `${subject} 성공 응답 형식이나 요청 식별자가 올바르지 않아요.`;
+    case "invalid-error-response":
+      return `${subject} 오류 응답 형식이나 요청 식별자가 올바르지 않아요.`;
+    case "unauthorized":
+      return `${subject}에 필요한 Web 인증이 거부됐어요.`;
+    case "forbidden":
+      return `현재 Web 신원에는 ${subject} 권한이 없어요.`;
+    case "server-error":
+      if (operation === "create" && error.code === "InventorySnapshotRequired") {
+        return "저장된 게임 Inventory가 없어요. 게임에서 인벤토리를 한 번 동기화한 뒤 다시 요청해 주세요.";
+      }
+      if (
+        operation === "create" &&
+        error.code === "InsufficientCraftingMaterials"
+      ) {
+        return "서버에 저장된 Inventory의 나무가 부족해요. 엉성한 붕대 1개당 나무 2개가 필요해요.";
+      }
+      if (operation === "delete" && error.code === "OfflineTaskNotFound") {
+        return "이미 삭제됐거나 현재 프로필의 예약이 아니에요. 목록을 새로고침해 주세요.";
+      }
+      if (
+        operation === "delete" &&
+        error.code === "OfflineTaskTransitionNotAllowed"
+      ) {
+        return "이미 완료 처리 중인 작업은 삭제할 수 없어요. 목록을 새로고침해 주세요.";
+      }
+      return `Backend가 ${subject}을 처리하지 못했어요 (${error.code}).`;
   }
 }
 
-async function restoreAuthentication(
-  credentials: DeviceCredentials,
+function formatTaskStartedAt(value: string): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatTaskQuantity(value: number | null): string {
+  return value === null ? "—" : `${value}개`;
+}
+
+function appendTaskMetric(
+  container: HTMLDListElement,
+  label: string,
+  value: string,
+): void {
+  const group = document.createElement("div");
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value;
+  group.append(term, description);
+  container.append(group);
+}
+
+function renderTaskList(tasks: OfflineTaskView[]): void {
+  if (tasks.length === 0) {
+    setTaskListMessage("success", "조건에 맞는 서버 Task가 없어요.");
+    return;
+  }
+
+  const cards = tasks.map((task) => {
+    const card = document.createElement("article");
+    card.className = "task-card";
+
+    const header = document.createElement("div");
+    header.className = "task-card-header";
+    const titleGroup = document.createElement("div");
+    const type = document.createElement("p");
+    type.className = "task-card-type";
+    type.textContent = taskTypeLabels[task.task_type];
+    const title = document.createElement("h4");
+    const itemLabel =
+      task.item_id === null
+        ? "아이템 미지정"
+        : (taskItemLabels.get(task.item_id) ?? task.item_id);
+    title.textContent = itemLabel;
+    titleGroup.append(type, title);
+
+    const status = document.createElement("span");
+    status.className = "task-status-badge";
+    status.dataset.status = task.status;
+    status.textContent =
+      task.status === "Claimed" && task.result_quantity === 0
+        ? "Claimed · 결과 0개로 종료"
+        : taskStatusLabel(task);
+    const actions = document.createElement("div");
+    actions.className = "task-card-actions";
+    actions.append(status);
+    if (task.status === "Pending" || task.status === "InProgress") {
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "task-delete-button";
+      deleteButton.type = "button";
+      deleteButton.textContent = "예약 삭제";
+      deleteButton.disabled = deletingTaskId !== null;
+      deleteButton.setAttribute("aria-label", `${itemLabel} 예약 삭제`);
+      deleteButton.addEventListener("click", () => {
+        void removeOfflineTask(task, deleteButton);
+      });
+      actions.append(deleteButton);
+    }
+    header.append(titleGroup, actions);
+
+    const taskId = document.createElement("code");
+    taskId.className = "task-id";
+    taskId.textContent = `Task ID ${task.task_id}`;
+
+    const metrics = document.createElement("dl");
+    metrics.className = "task-metrics";
+    appendTaskMetric(metrics, "목표", formatTaskQuantity(task.quantity));
+    appendTaskMetric(metrics, "진행", formatTaskQuantity(task.progress_quantity));
+    appendTaskMetric(metrics, "결과", formatTaskQuantity(task.result_quantity));
+    const startedAt = document.createElement("time");
+    startedAt.className = "task-started-at";
+    startedAt.dateTime = task.started_at;
+    startedAt.textContent = `시작 기록 ${formatTaskStartedAt(task.started_at)}`;
+
+    card.append(header, taskId, metrics, startedAt);
+    return card;
+  });
+
+  taskList.dataset.state = "success";
+  taskList.setAttribute("aria-busy", "false");
+  taskList.replaceChildren(...cards);
+}
+
+async function removeOfflineTask(
+  task: OfflineTaskView,
+  deleteButton: HTMLButtonElement,
 ): Promise<void> {
-  setPairingState("pairing", "저장된 연결을 확인하고 있어요…");
+  if (deletingTaskId !== null) {
+    return;
+  }
+  if (task.status !== "Pending" && task.status !== "InProgress") {
+    setTaskListMessage("error", "완료 처리된 작업은 삭제할 수 없어요.");
+    return;
+  }
+  const confirmation = task.task_type === "Crafting"
+    ? "이 제작 예약을 삭제할까요? 서버에 예약한 재료는 Inventory로 돌려놔요."
+    : "이 예약 작업을 삭제할까요? 진행된 시간은 복구되지 않아요.";
+  if (!window.confirm(confirmation)) {
+    return;
+  }
+
+  deletingTaskId = task.task_id;
+  deleteButton.disabled = true;
+  deleteButton.textContent = "삭제 중…";
+  syncTaskControls();
+
   try {
-    const response = await getCurrentDevice(
+    await deleteOfflineTask(
       apiBaseUrl,
-      credentials.device_token,
-      createStableId("request-device-me"),
+      task.task_id,
+      createStableId("task-delete"),
     );
-    const normalized: DeviceCredentials = {
-      schema_version: 1,
-      profile_id: response.profile_id,
-      device_id: response.device_id,
-      device_token: credentials.device_token,
-    };
-    saveDeviceCredentials(normalized);
-    pendingFragmentCode = null;
-    showChat(normalized, false);
+    deletingTaskId = null;
+    syncTaskControls();
+    await loadOfflineTaskList();
   } catch (error: unknown) {
-    if (error instanceof ApiClientError && error.code === "UnauthorizedDevice") {
-      clearDeviceCredentials();
-      if (pendingFragmentCode !== null) {
-        await pairWithCode(pendingFragmentCode);
-        return;
-      }
-      if (initialFragment.recognized) {
-        setPairingState(
-          "invalid",
-          "Pairing 링크가 올바르지 않아요. 새 QR을 열거나 Code를 직접 입력해 주세요.",
-        );
-        return;
-      }
-      showPairingIdle("저장된 연결이 만료되거나 폐기됐어요. 다시 Pairing해 주세요.");
-      return;
+    if (error instanceof OfflineTaskApiError) {
+      setTaskListMessage("error", taskFailureMessage(error, "delete"));
+    } else {
+      setTaskListMessage("error", "예약 삭제 중 알 수 없는 오류가 발생했어요.");
     }
-
-    setPairingState(
-      "backend-unavailable",
-      "저장된 연결 정보는 유지했어요. C PC Backend 연결을 확인해 주세요.",
-    );
-  }
-}
-
-async function startAuthentication(): Promise<void> {
-  const stored = loadDeviceCredentials();
-  if (stored !== null) {
-    await restoreAuthentication(stored);
-    return;
-  }
-  if (pendingFragmentCode !== null) {
-    await pairWithCode(pendingFragmentCode);
-    return;
-  }
-  if (initialFragment.recognized) {
-    setPairingState(
-      "invalid",
-      "Pairing 링크가 올바르지 않아요. 새 QR을 열거나 Code를 직접 입력해 주세요.",
-    );
-    return;
-  }
-  showPairingIdle();
-}
-
-async function checkConnection(): Promise<void> {
-  const credentials = currentCredentials;
-  if (credentials === null) {
-    await startAuthentication();
-    return;
-  }
-  refreshButton.disabled = true;
-  setConnectionState("checking", "인증 확인 중");
-  try {
-    const response = await getCurrentDevice(
-      apiBaseUrl,
-      credentials.device_token,
-      createStableId("request-device-me"),
-    );
-    const normalized: DeviceCredentials = {
-      schema_version: 1,
-      profile_id: response.profile_id,
-      device_id: response.device_id,
-      device_token: credentials.device_token,
-    };
-    saveDeviceCredentials(normalized);
-    currentCredentials = normalized;
-    setConnectionState("connected", "C PC 인증됨");
-  } catch (error: unknown) {
-    if (error instanceof ApiClientError && error.code === "UnauthorizedDevice") {
-      handleUnauthorized("기기 연결이 폐기됐어요. 다시 Pairing해 주세요.");
-      return;
-    }
-    setConnectionState("disconnected", "C PC에 연결할 수 없음");
   } finally {
-    refreshButton.disabled = false;
+    deletingTaskId = null;
+    syncTaskControls();
+  }
+}
+
+async function loadOfflineTaskList(
+  expectedTaskId?: string,
+): Promise<"found" | "missing" | "failed"> {
+  if (isListingTasks) {
+    return "failed";
+  }
+
+  isListingTasks = true;
+  syncTaskControls();
+  setTaskListMessage("loading", "서버 Task 목록을 불러오고 있어요…");
+
+  try {
+    const response = await listOfflineTasks(
+      apiBaseUrl,
+      saveSlotId,
+      createStableId("task-list"),
+      selectedTaskStatus(),
+    );
+    const visibleTasks =
+      taskStatusFilter.value === "Active"
+        ? response.tasks.filter((task) => task.status !== "Claimed")
+        : response.tasks;
+    renderTaskList(visibleTasks);
+    if (expectedTaskId === undefined) {
+      return "found";
+    }
+    return visibleTasks.some((task) => task.task_id === expectedTaskId)
+      ? "found"
+      : "missing";
+  } catch (error: unknown) {
+    if (error instanceof OfflineTaskApiError) {
+      setTaskListMessage("error", taskFailureMessage(error, "list"));
+    } else {
+      setTaskListMessage("error", "작업 목록 조회 중 알 수 없는 오류가 발생했어요.");
+    }
+    return "failed";
+  } finally {
+    isListingTasks = false;
+    syncTaskControls();
+  }
+}
+
+async function submitOfflineTask(): Promise<void> {
+  if (isCreatingTask || isListingTasks) {
+    return;
+  }
+
+  const selectedType = taskTypeSelect.value;
+  if (!isCreatableOfflineTaskType(selectedType)) {
+    setTaskCreateState("error", "현재는 Gathering과 Crafting만 요청할 수 있어요.");
+    return;
+  }
+
+  const allowedItems = taskItemOptions[selectedType];
+  const selectedItem = taskItemSelect.value;
+  if (!allowedItems.some((item) => item.id === selectedItem)) {
+    setTaskCreateState("error", "지원되는 아이템을 선택해 주세요.");
+    return;
+  }
+
+  const quantity = validateTaskQuantity(selectedType);
+  if (quantity === null) {
+    return;
+  }
+
+  isCreatingTask = true;
+  syncTaskControls();
+  setTaskCreateState("loading", "서버에 작업을 요청하고 있어요…");
+
+  const request: CreateOfflineTaskRequest = {
+    request_id: createStableId("task-create"),
+    save_slot_id: saveSlotId,
+    task_type: selectedType,
+    item_id: selectedItem,
+    quantity,
+  };
+
+  try {
+    const response = await createOfflineTask(apiBaseUrl, request);
+    setTaskCreateState("success", "작업이 등록됐어요. 전체 목록에서 확인하고 있어요…");
+    taskStatusFilter.value = "";
+    const reconciliation = await loadOfflineTaskList(response.task.task_id);
+    if (reconciliation === "found") {
+      setTaskCreateState("success", "작업을 등록했고 전체 목록에서 확인했어요.");
+    } else if (reconciliation === "missing") {
+      setTaskCreateState(
+        "warning",
+        "작업 등록은 완료됐지만 전체 목록에서 같은 Task를 확인하지 못했어요.",
+      );
+    } else {
+      setTaskCreateState(
+        "warning",
+        "작업 등록은 완료됐지만 목록 갱신에 실패했어요. 새로고침으로 확인해 주세요.",
+      );
+    }
+  } catch (error: unknown) {
+    if (error instanceof OfflineTaskApiError) {
+      setTaskCreateState("error", taskFailureMessage(error, "create"));
+    } else {
+      setTaskCreateState("error", "작업 요청 중 알 수 없는 오류가 발생했어요.");
+    }
+  } finally {
+    isCreatingTask = false;
+    syncTaskControls();
+  }
+}
+
+async function reconcileChatCreatedTask(taskId: string): Promise<void> {
+  taskStatusFilter.value = "";
+  setTaskCreateState("loading", "채팅에서 등록한 작업을 목록에서 확인하고 있어요…");
+  const reconciliation = await loadOfflineTaskList(taskId);
+  if (reconciliation === "found") {
+    setTaskCreateState("success", "채팅에서 요청한 작업을 현재 작업 목록에 등록했어요.");
+  } else if (reconciliation === "missing") {
+    setTaskCreateState(
+      "warning",
+      "채팅 작업은 등록됐지만 현재 목록에서 같은 Task를 확인하지 못했어요.",
+    );
+  } else {
+    setTaskCreateState(
+      "warning",
+      "채팅 작업은 등록됐지만 목록 갱신에 실패했어요. 작업 탭에서 새로고침해 주세요.",
+    );
+  }
+}
+
+type MemoryListState = "idle" | "loading" | "success" | "empty" | "no-results" | "error";
+
+function memoryTypeLabel(memoryType: string): string {
+  const labels: Record<string, string> = {
+    ProfileFact: "프로필 기억",
+    Preference: "취향 기억",
+    Promise: "약속 기억",
+    Episode: "함께 겪은 일",
+  };
+  return labels[memoryType] ?? "저장된 기억";
+}
+
+function formatMemoryDate(value: string): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function memorySourceLabel(source: MemorySourceView): string {
+  if (source.source_type === "Message" && source.source_mode === "RealWorld") {
+    return "모바일에서 직접 공유한 기억";
+  }
+  if (source.source_type === "Message" && source.source_mode === "GameWorld") {
+    return "게임에서 직접 공유한 기억";
+  }
+  if (source.source_type === "Event" && source.source_mode === "GameWorld") {
+    return "게임에서 함께 겪은 기억";
+  }
+  if (source.source_type === "Legacy" && source.source_mode === "LegacyUnknown") {
+    return "이전 대화에서 가져온 기억";
+  }
+  return "함께 쌓은 기억";
+}
+
+function memoryFailureMessage(
+  error: MemoryApiError,
+  operation: "list" | "search" | "detail" | "update" | "delete" | "reset",
+): string {
+  const subject: Record<typeof operation, string> = {
+    list: "기억 목록 조회",
+    search: "기억 검색",
+    detail: "기억 상세 조회",
+    update: "기억 수정",
+    delete: "기억 삭제",
+    reset: "기억 초기화",
+  };
+  switch (error.kind) {
+    case "timeout":
+      return `${subject[operation]} 응답 시간이 초과됐어요. 자동으로 다시 시도하지 않았어요.`;
+    case "network":
+      return `${subject[operation]} 중 Backend에 연결할 수 없어요.`;
+    case "invalid-json":
+      return `${subject[operation]} 응답을 JSON으로 읽을 수 없어요.`;
+    case "invalid-success-response":
+      return `${subject[operation]} 성공 응답 형식이나 요청 식별자가 올바르지 않아요.`;
+    case "invalid-error-response":
+      return `${subject[operation]} 오류 응답 형식이나 요청 식별자가 올바르지 않아요.`;
+    case "unauthorized":
+      return `${subject[operation]}에 필요한 Web 인증이 거부됐어요.`;
+    case "forbidden":
+      return `현재 Web 신원에는 ${subject[operation]} 권한이 없어요.`;
+    case "server-error":
+      if (error.code === "MemoryNotFound") {
+        return "이미 삭제됐거나 현재 프로필의 기억이 아니에요. 목록을 새로고침해 주세요.";
+      }
+      return `Backend가 ${subject[operation]}을 처리하지 못했어요.`;
+  }
+}
+
+function setMemoryNotice(
+  state: "idle" | "error",
+  message?: string,
+  retry?: () => void,
+): void {
+  memoryNotice.dataset.state = state;
+  memoryNotice.replaceChildren();
+  if (message === undefined) {
+    memoryNotice.hidden = true;
+    return;
+  }
+
+  const text = document.createElement("span");
+  text.textContent = message;
+  memoryNotice.append(text);
+  if (retry !== undefined) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "memory-inline-retry";
+    button.textContent = "다시 시도";
+    button.addEventListener("click", retry);
+    memoryNotice.append(button);
+  }
+  memoryNotice.hidden = false;
+}
+
+function createMemoryStateCard(
+  title: string,
+  description: string,
+  retry?: () => void,
+): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "memory-state-card";
+  const icon = document.createElement("div");
+  icon.className = "empty-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "✧";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const body = document.createElement("p");
+  body.textContent = description;
+  card.append(icon, heading, body);
+  if (retry !== undefined) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "memory-retry-button";
+    button.textContent = "다시 시도";
+    button.addEventListener("click", retry);
+    card.append(button);
+  }
+  return card;
+}
+
+function setMemoryListMessage(
+  state: MemoryListState,
+  title: string,
+  description: string,
+  retry?: () => void,
+): void {
+  memoryList.dataset.state = state;
+  memoryList.setAttribute("aria-busy", String(state === "loading"));
+  memoryList.replaceChildren(createMemoryStateCard(title, description, retry));
+}
+
+function appendMemorySourceSummary(container: HTMLElement, sources: MemorySourceView[]): void {
+  const sourceList = document.createElement("ul");
+  sourceList.className = "memory-source-list";
+  if (sources.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "출처 정보가 없는 기억";
+    sourceList.append(item);
+  } else {
+    sources.slice(0, 3).forEach((source) => {
+      const item = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = memorySourceLabel(source);
+      const date = document.createElement("time");
+      date.dateTime = source.occurred_at;
+      date.textContent = formatMemoryDate(source.occurred_at);
+      item.append(label, date);
+      sourceList.append(item);
+    });
+    if (sources.length > 3) {
+      const more = document.createElement("li");
+      more.className = "memory-source-more";
+      more.textContent = `출처 ${sources.length - 3}개 더 있음`;
+      sourceList.append(more);
+    }
+  }
+  container.append(sourceList);
+}
+
+function appendMemoryMeta(container: HTMLElement, memory: MemoryView): void {
+  const meta = document.createElement("div");
+  meta.className = "memory-card-meta";
+  const created = document.createElement("time");
+  created.dateTime = memory.created_at;
+  created.textContent = `저장 ${formatMemoryDate(memory.created_at)}`;
+  meta.append(created);
+  if (memory.corrected) {
+    const corrected = document.createElement("span");
+    corrected.className = "memory-corrected-badge";
+    corrected.textContent = "내용을 바로잡음";
+    meta.append(corrected);
+  }
+  container.append(meta);
+}
+
+function syncMemoryControls(): void {
+  const disabled = isListingMemories || memoryMutation !== null;
+  memorySearchInput.disabled = disabled;
+  memorySearchButton.disabled = disabled;
+  memoryRefreshButton.disabled = disabled;
+  memoryResetButton.disabled = disabled;
+  memoryDetailClose.disabled = isLoadingMemoryDetail || memoryMutation !== null;
+}
+
+function updateMemoryItem(updated: MemoryView): void {
+  memoryItems = memoryItems.map((memory) =>
+    memory.memory_id === updated.memory_id ? updated : memory,
+  );
+  selectedMemory = updated;
+}
+
+function renderMemoryList(items: MemoryView[], action: "list" | "search"): void {
+  if (items.length === 0) {
+    if (action === "search") {
+      setMemoryListMessage(
+        "no-results",
+        "검색 결과가 없어요",
+        "다른 단어로 검색하거나 검색어를 지워 전체 기억을 볼 수 있어요.",
+        () => {
+          memorySearchInput.value = "";
+          void loadMemories("list");
+        },
+      );
+      return;
+    }
+    setMemoryListMessage(
+      "empty",
+      "아직 저장된 기억이 없어요",
+      "대화를 이어가면 소중한 이야기가 이곳에 나타나요.",
+    );
+    return;
+  }
+
+  memoryList.dataset.state = "success";
+  memoryList.setAttribute("aria-busy", "false");
+  const cards = items.map((memory) => {
+    const card = document.createElement("article");
+    card.className = "memory-card";
+
+    const header = document.createElement("div");
+    header.className = "memory-card-header";
+    const titleGroup = document.createElement("div");
+    const type = document.createElement("p");
+    type.className = "memory-card-type";
+    type.textContent = memoryTypeLabel(memory.memory_type);
+    const title = document.createElement("h3");
+    title.textContent = memory.pinned ? "오래 기억하는 이야기" : "저장된 이야기";
+    titleGroup.append(type, title);
+    const pinned = document.createElement("span");
+    pinned.className = "memory-pin-badge";
+    pinned.textContent = memory.pinned ? "고정됨" : "";
+    pinned.hidden = !memory.pinned;
+    header.append(titleGroup, pinned);
+
+    const text = document.createElement("p");
+    text.className = "memory-card-text";
+    text.textContent = memory.text;
+    appendMemoryMeta(card, memory);
+    appendMemorySourceSummary(card, memory.sources);
+
+    const actions = document.createElement("div");
+    actions.className = "memory-card-actions";
+    const detailButton = document.createElement("button");
+    detailButton.className = "memory-secondary-button";
+    detailButton.type = "button";
+    detailButton.textContent = "자세히";
+    detailButton.addEventListener("click", () => {
+      void openMemoryDetail(memory.memory_id);
+    });
+    const pinButton = document.createElement("button");
+    pinButton.className = "memory-secondary-button";
+    pinButton.type = "button";
+    pinButton.textContent = memory.pinned ? "고정 해제" : "오래 기억하기";
+    pinButton.addEventListener("click", () => {
+      void toggleMemoryPinned(memory, pinButton);
+    });
+    const forgetButton = document.createElement("button");
+    forgetButton.className = "memory-delete-button";
+    forgetButton.type = "button";
+    forgetButton.textContent = "이 기억 잊기";
+    forgetButton.addEventListener("click", () => {
+      void forgetMemory(memory, forgetButton);
+    });
+    actions.append(detailButton, pinButton, forgetButton);
+    card.append(header, text, actions);
+    return card;
+  });
+  memoryList.replaceChildren(...cards);
+}
+
+function setMemoryDetailMessage(
+  title: string,
+  description: string,
+  retry?: () => void,
+): void {
+  memoryDetailContent.replaceChildren(
+    createMemoryStateCard(title, description, retry),
+  );
+}
+
+function renderMemoryDetail(memory: MemoryView): void {
+  memoryDetailTitle.textContent = memoryTypeLabel(memory.memory_type);
+  const content = document.createDocumentFragment();
+  const text = document.createElement("p");
+  text.className = "memory-detail-text";
+  text.textContent = memory.text;
+  content.append(text);
+
+  const meta = document.createElement("div");
+  meta.className = "memory-detail-meta";
+  appendMemoryMeta(meta, memory);
+  content.append(meta);
+
+  const sourceHeading = document.createElement("h4");
+  sourceHeading.className = "memory-detail-subtitle";
+  sourceHeading.textContent = "어디에서 온 기억인가요?";
+  content.append(sourceHeading);
+  const sourceContainer = document.createElement("div");
+  appendMemorySourceSummary(sourceContainer, memory.sources);
+  content.append(sourceContainer);
+
+  const form = document.createElement("form");
+  form.className = "memory-correction-form";
+  form.noValidate = true;
+  const correctionHeading = document.createElement("h4");
+  correctionHeading.className = "memory-detail-subtitle";
+  correctionHeading.textContent = "내용 바로잡기";
+  const correctionLabel = document.createElement("label");
+  correctionLabel.textContent = "기억할 내용";
+  const correctionInput = document.createElement("textarea");
+  correctionInput.rows = 3;
+  correctionInput.maxLength = 4000;
+  correctionInput.required = true;
+  correctionInput.value = memory.text;
+  correctionLabel.append(correctionInput);
+  const reasonLabel = document.createElement("label");
+  reasonLabel.textContent = "정정 이유 (필수)";
+  const reasonInput = document.createElement("input");
+  reasonInput.type = "text";
+  reasonInput.maxLength = 512;
+  reasonInput.required = true;
+  reasonInput.placeholder = "예: 지금은 이렇게 기억해 줘";
+  reasonLabel.append(reasonInput);
+  const correctionActions = document.createElement("div");
+  correctionActions.className = "memory-form-actions";
+  const correctionButton = document.createElement("button");
+  correctionButton.className = "memory-primary-button";
+  correctionButton.type = "submit";
+  correctionButton.textContent = "내용 저장";
+  const formNotice = document.createElement("p");
+  formNotice.className = "memory-form-notice";
+  formNotice.hidden = true;
+  correctionActions.append(correctionButton);
+  form.append(correctionHeading, correctionLabel, reasonLabel, correctionActions, formNotice);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (correctionInput.value.trim().length === 0) {
+      formNotice.textContent = "기억할 내용을 입력해 주세요.";
+      formNotice.hidden = false;
+      return;
+    }
+    if (reasonInput.value.trim().length === 0) {
+      formNotice.textContent = "정정 이유를 입력해 주세요.";
+      formNotice.hidden = false;
+      return;
+    }
+    void submitMemoryCorrection(
+      memory,
+      correctionInput.value.trim(),
+      reasonInput.value.trim(),
+      correctionButton,
+      formNotice,
+    );
+  });
+  content.append(form);
+
+  const actions = document.createElement("div");
+  actions.className = "memory-detail-actions";
+  const pinButton = document.createElement("button");
+  pinButton.className = "memory-secondary-button";
+  pinButton.type = "button";
+  pinButton.textContent = memory.pinned ? "고정 해제" : "오래 기억하기";
+  pinButton.addEventListener("click", () => {
+    void toggleMemoryPinned(memory, pinButton);
+  });
+  const forgetButton = document.createElement("button");
+  forgetButton.className = "memory-delete-button";
+  forgetButton.type = "button";
+  forgetButton.textContent = "이 기억 잊기";
+  forgetButton.addEventListener("click", () => {
+    void forgetMemory(memory, forgetButton);
+  });
+  actions.append(pinButton, forgetButton);
+  content.append(actions);
+  memoryDetailContent.replaceChildren(content);
+}
+
+let isLoadingMemoryDetail = false;
+
+async function openMemoryDetail(memoryId: string): Promise<void> {
+  if (isLoadingMemoryDetail || memoryMutation !== null) {
+    return;
+  }
+  isLoadingMemoryDetail = true;
+  syncMemoryControls();
+  memoryDetail.hidden = false;
+  setMemoryDetailMessage("기억을 불러오는 중…", "서버에서 최신 내용을 확인하고 있어요.");
+  try {
+    const memory = await getMemory(apiBaseUrl, memoryId, createStableId("memory-detail"));
+    if (memory.save_slot_id !== saveSlotId || memory.companion_id !== companionId) {
+      setMemoryDetailMessage("기억을 표시할 수 없어요", "현재 Web 범위에 속한 기억이 아니에요.");
+      return;
+    }
+    updateMemoryItem(memory);
+    renderMemoryDetail(memory);
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "detail")
+        : "기억 상세 조회 중 알 수 없는 오류가 발생했어요.";
+    setMemoryDetailMessage(
+      "기억 상세를 불러오지 못했어요",
+      message,
+      () => void openMemoryDetail(memoryId),
+    );
+  } finally {
+    isLoadingMemoryDetail = false;
+    syncMemoryControls();
+  }
+}
+
+async function loadMemories(action: "list" | "search" = memoryLastAction): Promise<void> {
+  if (isListingMemories || memoryMutation !== null) {
+    return;
+  }
+  const query = memorySearchInput.value.trim();
+  if (action === "search" && query.length === 0) {
+    action = "list";
+  }
+  isListingMemories = true;
+  memoryLastAction = action;
+  isMemoryLoaded = true;
+  syncMemoryControls();
+  setMemoryNotice("idle");
+  setMemoryListMessage("loading", "기억을 불러오는 중…", "서버에 저장된 기억을 확인하고 있어요.");
+  try {
+    const response =
+      action === "search"
+        ? await searchMemories(
+            apiBaseUrl,
+            { save_slot_id: saveSlotId, companion_id: companionId, query, limit: 20 },
+            createStableId("memory-search"),
+          )
+        : await listMemories(
+            apiBaseUrl,
+            saveSlotId,
+            companionId,
+            createStableId("memory-list"),
+          );
+    memoryItems = response.memories;
+    renderMemoryList(memoryItems, action);
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, action)
+        : "기억 목록을 불러오는 중 알 수 없는 오류가 발생했어요.";
+    setMemoryNotice("error", message, () => void loadMemories(memoryLastAction));
+    setMemoryListMessage(
+      "error",
+      "기억을 불러오지 못했어요",
+      message,
+      () => void loadMemories(memoryLastAction),
+    );
+  } finally {
+    isListingMemories = false;
+    syncMemoryControls();
+  }
+}
+
+function setMemoryInlineError(notice: HTMLElement, message: string): void {
+  notice.textContent = message;
+  notice.dataset.state = "error";
+  notice.hidden = false;
+}
+
+async function submitMemoryCorrection(
+  memory: MemoryView,
+  correctedText: string,
+  correctionReason: string,
+  button: HTMLButtonElement,
+  notice: HTMLElement,
+): Promise<void> {
+  if (memoryMutation !== null) {
+    return;
+  }
+  memoryMutation = "update";
+  button.disabled = true;
+  button.textContent = "저장 중…";
+  syncMemoryControls();
+  notice.hidden = true;
+  try {
+    const updated = await updateMemory(
+      apiBaseUrl,
+      memory.memory_id,
+      { corrected_text: correctedText, correction_reason: correctionReason },
+      createStableId("memory-correction"),
+    );
+    updateMemoryItem(updated);
+    setMemoryNotice("idle");
+    renderMemoryList(memoryItems, memoryLastAction);
+    renderMemoryDetail(updated);
+  } catch (error: unknown) {
+    setMemoryInlineError(
+      notice,
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "update")
+        : "기억 수정 중 알 수 없는 오류가 발생했어요.",
+    );
+    button.disabled = false;
+    button.textContent = "내용 저장";
+  } finally {
+    memoryMutation = null;
+    syncMemoryControls();
+  }
+}
+
+async function toggleMemoryPinned(memory: MemoryView, button: HTMLButtonElement): Promise<void> {
+  if (memoryMutation !== null) {
+    return;
+  }
+  memoryMutation = "update";
+  button.disabled = true;
+  button.textContent = "저장 중…";
+  syncMemoryControls();
+  try {
+    const updated = await updateMemory(
+      apiBaseUrl,
+      memory.memory_id,
+      { pinned: !memory.pinned },
+      createStableId("memory-pin"),
+    );
+    updateMemoryItem(updated);
+    setMemoryNotice("idle");
+    renderMemoryList(memoryItems, memoryLastAction);
+    if (!memoryDetail.hidden && selectedMemory?.memory_id === updated.memory_id) {
+      renderMemoryDetail(updated);
+    }
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "update")
+        : "기억 고정 상태를 바꾸는 중 알 수 없는 오류가 발생했어요.";
+    setMemoryNotice("error", message);
+    button.disabled = false;
+    button.textContent = memory.pinned ? "고정 해제" : "오래 기억하기";
+  } finally {
+    memoryMutation = null;
+    syncMemoryControls();
+  }
+}
+
+async function forgetMemory(memory: MemoryView, button: HTMLButtonElement): Promise<void> {
+  if (memoryMutation !== null) {
+    return;
+  }
+  if (!window.confirm("이 기억을 잊을까요? 이후 대화에서 다시 회상하지 않아요.")) {
+    return;
+  }
+  memoryMutation = "delete";
+  button.disabled = true;
+  button.textContent = "삭제 중…";
+  syncMemoryControls();
+  try {
+    await deleteMemory(
+      apiBaseUrl,
+      memory.memory_id,
+      "user-request",
+      createStableId("memory-delete"),
+    );
+    memoryItems = memoryItems.filter((item) => item.memory_id !== memory.memory_id);
+    setMemoryNotice("idle");
+    if (selectedMemory?.memory_id === memory.memory_id) {
+      selectedMemory = null;
+      memoryDetail.hidden = true;
+    }
+    renderMemoryList(memoryItems, memoryLastAction);
+  } catch (error: unknown) {
+    setMemoryNotice(
+      "error",
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "delete")
+        : "기억 삭제 중 알 수 없는 오류가 발생했어요.",
+    );
+    button.disabled = false;
+    button.textContent = "이 기억 잊기";
+  } finally {
+    memoryMutation = null;
+    syncMemoryControls();
+  }
+}
+
+async function resetMemoryDataAfterConfirmation(): Promise<void> {
+  if (memoryMutation !== null) {
+    return;
+  }
+  if (!window.confirm("모든 기억을 잊을까요? 이 작업은 되돌릴 수 없어요.")) {
+    return;
+  }
+  if (!window.confirm("정말 모든 기억을 초기화할까요? 확인을 누르면 즉시 처리돼요.")) {
+    return;
+  }
+  memoryMutation = "reset";
+  syncMemoryControls();
+  setMemoryListMessage("loading", "모든 기억을 초기화하는 중…", "서버에서 삭제를 처리하고 있어요.");
+  try {
+    await resetMemories(
+      apiBaseUrl,
+      { save_slot_id: saveSlotId, companion_id: companionId, reason: "user-request-reset" },
+      createStableId("memory-reset"),
+    );
+    memoryItems = [];
+    selectedMemory = null;
+    memoryDetail.hidden = true;
+    memoryLastAction = "list";
+    memorySearchInput.value = "";
+    setMemoryNotice("idle");
+    renderMemoryList([], "list");
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "reset")
+        : "모든 기억을 초기화하는 중 알 수 없는 오류가 발생했어요.";
+    setMemoryNotice("error", message, () => void resetMemoryDataAfterConfirmation());
+    setMemoryListMessage(
+      "error",
+      "기억을 초기화하지 못했어요",
+      message,
+      () => void resetMemoryDataAfterConfirmation(),
+    );
+  } finally {
+    memoryMutation = null;
+    syncMemoryControls();
   }
 }
 
@@ -449,6 +1520,9 @@ document.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((button) => 
   button.addEventListener("click", () => {
     const target = button.dataset.view;
     if (target === undefined) {
+      return;
+    }
+    if (target === "memory" && !memoryEnabled) {
       return;
     }
     document.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((tab) => {
@@ -461,138 +1535,238 @@ document.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((button) => 
       panel.classList.toggle("active", active);
       panel.hidden = !active;
     });
+    if (target === "tasks") {
+      void loadOfflineTaskList();
+    }
+    if (target === "memory" && !isMemoryLoaded) {
+      void loadMemories("list");
+    }
   });
 });
 
 document.querySelectorAll<HTMLButtonElement>(".suggestion-chip").forEach((button) => {
   button.addEventListener("click", () => {
     chatInput.value = button.textContent?.trim() ?? "";
+    chatInput.dispatchEvent(new Event("input"));
     chatInput.focus();
   });
 });
 
-pairingInput.addEventListener("input", () => {
-  pairingInput.value = pairingInput.value.replace(/[^0-9]/g, "").slice(0, 8);
-});
-
-pairingForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const pairingCode = pairingInput.value;
-  if (!/^[0-9]{8}$/.test(pairingCode)) {
-    setPairingState("invalid", "Pairing Code는 8자리 숫자여야 해요.");
+suggestionList.addEventListener("pointerdown", (event) => {
+  if (event.pointerType !== "mouse" || event.button !== 0) {
     return;
   }
-  void pairWithCode(pairingCode);
+
+  isDraggingSuggestions = true;
+  didDragSuggestions = false;
+  suggestionDragStartX = event.clientX;
+  suggestionDragStartScrollLeft = suggestionList.scrollLeft;
 });
 
-retryAuthentication.addEventListener("click", () => {
-  void startAuthentication();
+suggestionList.addEventListener("pointermove", (event) => {
+  if (!isDraggingSuggestions) {
+    return;
+  }
+
+  const dragDistance = event.clientX - suggestionDragStartX;
+  if (Math.abs(dragDistance) > 4) {
+    if (!didDragSuggestions) {
+      suggestionList.setPointerCapture(event.pointerId);
+      suggestionList.classList.add("is-dragging");
+    }
+    didDragSuggestions = true;
+    suggestionList.scrollLeft = suggestionDragStartScrollLeft - dragDistance;
+    event.preventDefault();
+  }
+});
+
+suggestionList.addEventListener("pointerup", (event) => {
+  if (!isDraggingSuggestions) {
+    return;
+  }
+
+  suppressSuggestionClick = didDragSuggestions;
+  isDraggingSuggestions = false;
+  suggestionList.classList.remove("is-dragging");
+  if (suggestionList.hasPointerCapture(event.pointerId)) {
+    suggestionList.releasePointerCapture(event.pointerId);
+  }
+  window.setTimeout(() => {
+    suppressSuggestionClick = false;
+  }, 0);
+});
+
+suggestionList.addEventListener("pointercancel", () => {
+  isDraggingSuggestions = false;
+  didDragSuggestions = false;
+  suggestionList.classList.remove("is-dragging");
+});
+
+suggestionList.addEventListener(
+  "click",
+  (event) => {
+    if (!suppressSuggestionClick) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressSuggestionClick = false;
+  },
+  true,
+);
+
+taskTypeSelect.addEventListener("change", () => {
+  const selectedType = taskTypeSelect.value;
+  if (!isCreatableOfflineTaskType(selectedType)) {
+    return;
+  }
+  populateTaskItems(selectedType);
+  updateTaskQuantityPolicy(selectedType);
+  if (!isCreatingTask) {
+    setTaskCreateState("idle");
+  }
+});
+
+taskQuantityInput.addEventListener("input", () => {
+  const selectedType = taskTypeSelect.value;
+  if (isCreatableOfflineTaskType(selectedType)) {
+    updateTaskDurationHint(selectedType);
+  }
+  if (!isCreatingTask) {
+    setTaskCreateState("idle");
+  }
+});
+
+taskForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void submitOfflineTask();
+});
+
+taskStatusFilter.addEventListener("change", () => {
+  void loadOfflineTaskList();
+});
+
+taskRefreshButton.addEventListener("click", () => {
+  void loadOfflineTaskList();
+});
+
+memorySearchForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void loadMemories("search");
+});
+
+memoryRefreshButton.addEventListener("click", () => {
+  void loadMemories(memorySearchInput.value.trim().length > 0 ? "search" : "list");
+});
+
+memoryResetButton.addEventListener("click", () => {
+  void resetMemoryDataAfterConfirmation();
+});
+
+memoryDetailClose.addEventListener("click", () => {
+  if (!isLoadingMemoryDetail && memoryMutation === null) {
+    memoryDetail.hidden = true;
+    selectedMemory = null;
+  }
 });
 
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 120)}px`;
-  composerNotice.hidden = true;
+  if (activeChatRequest === null) {
+    setChatState("idle");
+  }
+});
+
+chatInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    chatForm.requestSubmit();
+  }
+});
+
+cancelChatButton.addEventListener("click", () => {
+  const request = activeChatRequest;
+  if (request === null) {
+    return;
+  }
+
+  const didFinish = finishChatRequest(
+    request,
+    "cancelled",
+    "요청 대기를 취소했어요. Backend에서는 이미 처리됐을 수 있으며 자동으로 다시 보내지지 않아요.",
+  );
+  if (didFinish) {
+    request.controller.abort();
+  }
 });
 
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  const credentials = currentCredentials;
-  if (isSending || credentials === null) {
+  if (activeChatRequest !== null) {
     return;
   }
+
   const message = chatInput.value.trim();
   if (message.length === 0) {
     return;
   }
 
-  isSending = true;
-  sendButton.disabled = true;
-  chatInput.disabled = true;
-  composerNotice.hidden = true;
+  const activeRequest: ActiveChatRequest = {
+    controller: new AbortController(),
+  };
+  activeChatRequest = activeRequest;
+  setChatControls(true);
+  setChatState("sending", "MAKO가 답을 준비하고 있어요…");
   appendMessage(message, "user");
   chatInput.value = "";
   chatInput.style.height = "auto";
-  const request: OfflineChatRequest = {
-    schema_version: 1,
+
+  const request: MobileChatRequest = {
     request_id: createStableId("request"),
+    schema_version: 1,
+    session_id: sessionId,
     save_slot_id: saveSlotId,
     companion_id: companionId,
-    session_id: sessionId,
-    interaction_mode: "Offline",
     message_id: createStableId("message"),
     user_message: message,
-    time_context: {
-      source: "RealWorld",
-      observed_at: new Date().toISOString(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    },
-    recent_event_ids: [],
+    surface: "mobile",
+    time_context: createRealWorldTimeContext(new Date()),
+    allowed_commands: ["Command.GatherResource", "Command.CraftItem"],
   };
 
-  void createOfflineChat(apiBaseUrl, credentials.device_token, request)
+  void createMobileChat(apiBaseUrl, request, activeRequest.controller.signal)
     .then((response) => {
+      if (activeChatRequest !== activeRequest) {
+        return;
+      }
       appendMessage(response.display_text, "companion");
+      if (response.offline_task_id !== null) {
+        setChatState("success", "작업 요청을 등록했어요. 작업 목록에서 확인하고 있어요.");
+        void reconcileChatCreatedTask(response.offline_task_id);
+      } else {
+        setChatState("success");
+      }
     })
     .catch((error: unknown) => {
+      if (activeChatRequest !== activeRequest) {
+        return;
+      }
       if (error instanceof ApiClientError) {
-        if (error.code === "UnauthorizedDevice") {
-          handleUnauthorized("기기 연결이 폐기됐어요. 다시 Pairing해 주세요.");
-          return;
-        }
-        const retryHint = error.retryable ? " 잠시 후 다시 시도해 주세요." : "";
-        showComposerNotice(`대화 요청에 실패했어요 (${error.code}).${retryHint}`);
+        setChatState("error", chatFailureMessage(error));
         return;
       }
-      showComposerNotice("C PC와 대화 요청을 주고받지 못했어요.");
+      setChatState("error", "대화 요청 중 알 수 없는 오류가 발생했어요.");
     })
     .finally(() => {
-      isSending = false;
-      sendButton.disabled = false;
-      chatInput.disabled = false;
-      if (currentCredentials !== null) {
-        chatInput.focus();
-      }
+      finishChatRequest(activeRequest);
     });
 });
 
-refreshButton.addEventListener("click", () => {
-  void checkConnection();
-});
-
-disconnectButton.addEventListener("click", () => {
-  const credentials = currentCredentials;
-  if (credentials === null) {
-    return;
-  }
-  disconnectButton.disabled = true;
-  authNotice.hidden = false;
-  authNotice.dataset.state = "checking";
-  authNotice.textContent = "기기 연결을 해제하고 있어요…";
-  void revokeCurrentDevice(
-    apiBaseUrl,
-    credentials.device_token,
-    createStableId("request-revoke-me"),
-  )
-    .then((response) => {
-      if (response.device_id !== credentials.device_id) {
-        throw new ApiClientError("InvalidRevocationResponse", false);
-      }
-      clearDeviceCredentials();
-      showPairingIdle("기기 연결을 해제했어요. 다시 연결하려면 Pairing해 주세요.");
-    })
-    .catch((error: unknown) => {
-      if (error instanceof ApiClientError && error.code === "UnauthorizedDevice") {
-        handleUnauthorized("이미 폐기된 연결이에요. 다시 Pairing해 주세요.");
-        return;
-      }
-      authNotice.hidden = false;
-      authNotice.dataset.state = "error";
-      authNotice.textContent = "연결 해제에 실패했어요. 저장된 연결 정보는 유지했어요.";
-    })
-    .finally(() => {
-      disconnectButton.disabled = false;
-    });
-});
-
-void startAuthentication();
+populateTaskItems("Gathering");
+updateTaskQuantityPolicy("Gathering");
+syncTaskControls();
+setTaskCreateState("idle");
+setChatControls(false);
+setChatState("idle");

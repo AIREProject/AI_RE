@@ -6,6 +6,9 @@
 #include "Components/ActorComponent.h"
 #include "AI_REPlayerInventoryComponent.generated.h"
 
+class UAIREGameplayInventorySubsystem;
+class UAIRECompanionTestingBlueprintLibrary;
+
 USTRUCT(BlueprintType)
 struct FInventoryItemStack
 {
@@ -22,6 +25,12 @@ struct FInventoryItemStack
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FInventoryChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FPlayerWeaponEquipResultSignature,
+	FName,
+	WeaponItemId,
+	bool,
+	bSucceeded);
 
 UCLASS(ClassGroup = (Player), meta = (BlueprintSpawnableComponent))
 class AI_RE_API UAI_REPlayerInventoryComponent : public UActorComponent
@@ -34,6 +43,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
 	FInventoryChangedSignature OnInventoryChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FPlayerWeaponEquipResultSignature OnWeaponEquipResult;
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool HasItem(FName ItemId, int32 Amount = 1) const;
 	
@@ -45,6 +57,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool ConsumeItem(FName ItemId, int32 Count);
+
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	bool UseItem(int32 SlotIndex);
 
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex);
@@ -61,6 +76,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	bool IsSlotIndexValid(int32 SlotIndex) const;
 
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	int64 GetInventoryRevision() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+	FName GetEquippedWeaponItemId() const;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory")
 	int32 MaxSlots = 30;
 
@@ -69,8 +90,36 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	FInventoryItemStack* FindStackBySlot(int32 SlotIndex);
+	int32 FindStackIndexBySlot(int32 SlotIndex) const;
 	int32 FindFirstEmptySlotIndex() const;
 	int32 GetMaxStackForItem(FName ItemId) const;
+
+private:
+	friend class UAIREGameplayInventorySubsystem;
+	friend class UAIRECompanionTestingBlueprintLibrary;
+	friend class FAIREGameplayInventoryPersistenceTestAccess;
+
+	bool BuildExactAddState(
+		FName ItemId,
+		int32 Count,
+		TArray<FInventoryItemStack>& OutItems) const;
+	bool BuildExactRemoveFromSlotState(
+		int32 SlotIndex,
+		int32 Count,
+		TArray<FInventoryItemStack>& OutItems,
+		FName& OutItemId) const;
+	void CommitExactInventoryState(TArray<FInventoryItemStack>&& NewItems);
+	void CommitExactInventoryAndEquipmentState(
+		TArray<FInventoryItemStack>&& NewItems,
+		FName NewEquippedWeaponItemId);
+	void NotifyExactInventoryMutation();
+	void NotifyWeaponEquipResult(FName WeaponItemId, bool bSucceeded);
+	void RegisterWithGameplayInventory();
+	void NotifyPersistenceMutation();
+
+	int64 Revision = 0;
+	FName EquippedWeaponItemId;
+	bool bPersistenceReadyForGameplay = true;
 };

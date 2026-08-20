@@ -21,12 +21,20 @@ public class AIREStateTreeMCPToolset : ModuleRules
 		PrivateDependencyModuleNames.AddRange(
 			new string[]
 			{
+				"AssetTools",
 				"BlueprintGraph",
 				"AnimationBlueprintLibrary",
+				"ControlRig",
+				"ControlRigDeveloper",
 				"InputCore",
+				"IKRig",
+				"IKRigEditor",
 				"MovieScene",
 				"MovieSceneTracks",
 				"PropertyBindingUtils",
+				"RigVMDeveloper",
+				"Slate",
+				"SlateCore",
 				"StateTreeEditorModule",
 				"UMG",
 				"UMGEditor",

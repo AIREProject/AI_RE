@@ -32,6 +32,9 @@ class AIRESTATETREEMCPTOOLSET_API UAIRECompanionTestMCPToolset : public UToolset
 
 public:
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Companion|Testing")
+	static FAIRECompanionTestFixtureResult RunBossCombatAutomationTests();
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Companion|Testing")
 	static FAIRECompanionTestFixtureResult InspectBehaviorTestInputs(UWorld* LevelWorld);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Companion|Testing")

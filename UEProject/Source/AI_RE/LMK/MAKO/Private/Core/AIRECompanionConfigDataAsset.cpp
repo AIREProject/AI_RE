@@ -1,6 +1,36 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 
+#include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AI_REAbilitySetDataAsset.h"
+#include "AIREGameplayInventoryTypes.h"
+#include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 #include "Misc/DataValidation.h"
+
+bool FAIRECompanionAutonomousEvadeSettings::IsValid() const
+{
+	return FMath::IsFinite(SelectionChance)
+		&& SelectionChance >= 0.0f
+		&& SelectionChance <= 1.0f
+		&& FMath::IsFinite(ReactionDelayMin)
+		&& ReactionDelayMin >= 0.0f
+		&& FMath::IsFinite(ReactionDelayMax)
+		&& ReactionDelayMax >= ReactionDelayMin
+		&& FMath::IsFinite(CooldownDuration)
+		&& CooldownDuration > 0.0f
+		&& FMath::IsFinite(MinimumClearance)
+		&& MinimumClearance > 0.0f
+		&& FMath::IsFinite(StaminaCost)
+		&& StaminaCost > 0.0f
+		&& FMath::IsFinite(StaminaRegenDelay)
+		&& StaminaRegenDelay > 0.0f
+		&& FMath::IsFinite(StaminaRegenRate)
+		&& StaminaRegenRate > 0.0f
+		&& FMath::IsFinite(InvulnerabilityStartDelay)
+		&& InvulnerabilityStartDelay >= 0.0f
+		&& FMath::IsFinite(InvulnerabilityDuration)
+		&& InvulnerabilityDuration > 0.0f;
+}
 
 bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationError) const
 {
@@ -48,9 +78,50 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!FMath::IsFinite(ReturnStopDistance) || ReturnStopDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidReturnStopDistance", "Return Stop Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatLoseSightDistance) || ThreatLoseSightDistance < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatLoseSightDistance", "Threat Lose Sight Distance must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(ThreatSightMemoryDuration) || ThreatSightMemoryDuration < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidThreatSightMemoryDuration", "Threat Sight Memory Duration must be finite and non-negative.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(MaxChaseDistanceFromPlayer) || MaxChaseDistanceFromPlayer < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidMaxChaseDistance", "Max Chase Distance From Player must be finite and non-negative.");
+		return false;
+	}
+
+	FAIRECompanionLocalBehaviorPolicy DefaultPolicy;
+	DefaultPolicy.EngagementPolicy = DefaultEngagementPolicy;
+	DefaultPolicy.RolePreference = DefaultRolePreference;
+	if (!DefaultPolicy.IsValid())
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidDefaultLocalBehaviorPolicy",
+			"Default local behavior policy values must be supported.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(DefendPlayerRadius)
+		|| DefendPlayerRadius < 0.0f
+		|| DefendPlayerRadius >= MaxChaseDistanceFromPlayer)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidDefendPlayerRadius",
+			"Defend Player Radius must be finite, non-negative, and less than Max Chase Distance From Player.");
 		return false;
 	}
 
@@ -78,6 +149,16 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
+	if (!AutonomousEvade.IsValid()
+		|| AutonomousEvade.StaminaCost > MaxStamina)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidAutonomousEvade",
+			"Autonomous Evade values must be finite and ordered, and Stamina Cost must not exceed Max Stamina.");
+		return false;
+	}
+
 	if (FollowStopDistance >= WalkResumeDistance
 		|| WalkResumeDistance >= RunStartDistance)
 	{
@@ -88,10 +169,256 @@ bool UAIRECompanionConfigDataAsset::IsConfigurationValid(FText& OutValidationErr
 		return false;
 	}
 
-	if (FollowStopDistance >= ReturnStartDistance)
+	if (FollowStopDistance >= ReturnStopDistance
+		|| ReturnStopDistance >= ReturnStartDistance)
 	{
-		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Follow Stop Distance must be less than Return Start Distance.");
+		OutValidationError = NSLOCTEXT("AIRECompanionConfig", "InvalidFollowReturnThresholds", "Movement distances must satisfy Follow Stop Distance < Return Stop Distance < Return Start Distance.");
 		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderMinDistance)
+		|| IdleWanderMinDistance < 0.0f
+		|| !FMath::IsFinite(IdleWanderMaxDistance)
+		|| IdleWanderMaxDistance <= IdleWanderMinDistance
+		|| IdleWanderMaxDistance >= ReturnStopDistance)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderDistances",
+			"Idle wander distances must be finite and satisfy Minimum < Maximum < Return Stop Distance.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderWaitMin)
+		|| IdleWanderWaitMin < 0.0f
+		|| !FMath::IsFinite(IdleWanderWaitMax)
+		|| IdleWanderWaitMax < IdleWanderWaitMin)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderWait",
+			"Idle wander wait times must be finite, non-negative, and ordered Minimum <= Maximum.");
+		return false;
+	}
+
+	if (IdleWanderSampleCount < 1 || IdleWanderSampleCount > 8)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderSampleCount",
+			"Idle wander sample count must be between 1 and 8.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderAcceptanceRadius)
+		|| IdleWanderAcceptanceRadius <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderAcceptanceRadius",
+			"Idle wander acceptance radius must be finite and greater than zero.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(IdleWanderRetryDelay)
+		|| IdleWanderRetryDelay < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidIdleWanderRetryDelay",
+			"Idle wander retry delay must be finite and non-negative.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(StorageWorkDuration)
+		|| StorageWorkDuration < 0.0f
+		|| !FMath::IsFinite(StorageAcceptanceRadius)
+		|| StorageAcceptanceRadius < 0.0f
+		|| !FMath::IsFinite(StorageMovementTimeout)
+		|| StorageMovementTimeout <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidStorageWorkSettings",
+			"Storage work duration and acceptance radius must be finite and non-negative, and movement timeout must be finite and greater than zero.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(AutoSupportHealthPercent)
+		|| AutoSupportHealthPercent < 0.0f
+		|| AutoSupportHealthPercent > 1.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InvalidAutoSupportHealthPercent",
+			"Auto support health percent must be finite and between zero and one.");
+		return false;
+	}
+
+	TSet<FName> StorageRuleItemIds;
+	for (const FAIRECompanionStorageRule& Rule
+		: StorageRules)
+	{
+		if (!IsValid(Rule.ItemDefinition)
+			|| Rule.MinimumCarryCount < 0
+			|| Rule.MaximumCarryCount < Rule.MinimumCarryCount)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidStorageRule",
+				"Every storage rule must specify a valid Companion Item Definition and satisfy 0 <= Minimum Carry Count <= Maximum Carry Count.");
+			return false;
+		}
+
+		FText ItemValidationError;
+		if (!Rule.ItemDefinition->IsCompanionItemDefinitionValid(
+				ItemValidationError))
+		{
+			OutValidationError = ItemValidationError;
+			return false;
+		}
+
+		if (StorageRuleItemIds.Contains(Rule.ItemDefinition->ItemId))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"DuplicateStorageRule",
+				"Storage rules must not list the same Item ID more than once.");
+			return false;
+		}
+		StorageRuleItemIds.Add(Rule.ItemDefinition->ItemId);
+	}
+
+	int32 RequiredSlots = 0;
+	TSet<FName> InitialItemIds;
+	for (const FAIRECompanionInitialInventoryEntry& Entry : InitialInventory)
+	{
+		if (!IsValid(Entry.ItemDefinition) || Entry.Count < 1)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidInitialInventoryEntry",
+				"Every initial inventory entry must specify a valid Companion Item Definition and positive Count.");
+			return false;
+		}
+
+		FText ItemValidationError;
+		if (!Entry.ItemDefinition->IsCompanionItemDefinitionValid(
+				ItemValidationError))
+		{
+			OutValidationError = ItemValidationError;
+			return false;
+		}
+
+		if (InitialItemIds.Contains(Entry.ItemDefinition->ItemId))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"DuplicateInitialItem",
+				"Initial inventory must not list the same Item ID more than once.");
+			return false;
+		}
+
+		InitialItemIds.Add(Entry.ItemDefinition->ItemId);
+		const int32 GeneralItemCount =
+			Entry.ItemDefinition->ItemId == DefaultEquippedWeaponItemId
+			? FMath::Max(0, Entry.Count - 1)
+			: Entry.Count;
+		RequiredSlots += FMath::DivideAndRoundUp(
+			GeneralItemCount,
+			Entry.ItemDefinition->MaxStackSize);
+	}
+
+	if (RequiredSlots > AIREGameplayInventory::MakoItemSlotCapacity)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionConfig",
+			"InitialInventoryTooLarge",
+			"Initial inventory requires more than 20 general MAKO item slots after the equipped weapon is separated.");
+		return false;
+	}
+
+	if (!InitialInventory.IsEmpty())
+	{
+		if (DefaultEquippedWeaponItemId.IsNone()
+			|| !InitialItemIds.Contains(DefaultEquippedWeaponItemId)
+			|| DefaultHealingItemId.IsNone()
+			|| !InitialItemIds.Contains(DefaultHealingItemId)
+			|| !IsValid(SupportAbilitySet))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidCompanionLoadout",
+				"A configured Companion inventory must contain the default weapon and healing item and reference a Support Ability Set.");
+			return false;
+		}
+
+		const UAIRECompanionItemDefinitionDataAsset*
+			DefaultWeaponItem = nullptr;
+		const UAIRECompanionItemDefinitionDataAsset*
+			DefaultHealingItem = nullptr;
+		for (const FAIRECompanionInitialInventoryEntry& Entry
+			: InitialInventory)
+		{
+			if (Entry.ItemDefinition->ItemId
+				== DefaultEquippedWeaponItemId)
+			{
+				DefaultWeaponItem = Entry.ItemDefinition;
+			}
+			if (Entry.ItemDefinition->ItemId
+				== DefaultHealingItemId)
+			{
+				DefaultHealingItem = Entry.ItemDefinition;
+			}
+		}
+		if (!IsValid(DefaultWeaponItem)
+			|| DefaultWeaponItem->ItemType
+				!= EAI_REItemType::Weapon
+			|| !IsValid(DefaultHealingItem)
+			|| DefaultHealingItem->ItemType
+				!= EAI_REItemType::Consumable)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidDefaultItemRoles",
+				"Default Equipped Weapon must reference a Weapon item and Default Healing Item must reference a Consumable item.");
+			return false;
+		}
+
+		FText AbilitySetValidationError;
+		if (!SupportAbilitySet->IsAbilitySetValid(AbilitySetValidationError))
+		{
+			OutValidationError = AbilitySetValidationError;
+			return false;
+		}
+
+		int32 SupportHealingAbilityCount = 0;
+		for (const FAIRECompanionAbilitySetEntry& Entry
+			: SupportAbilitySet->Abilities)
+		{
+			const UGameplayAbility* AbilityDefaultObject =
+				Entry.AbilityClass
+					? Entry.AbilityClass
+						->GetDefaultObject<UGameplayAbility>()
+					: nullptr;
+			SupportHealingAbilityCount +=
+				IsValid(AbilityDefaultObject)
+				&& AbilityDefaultObject->GetAssetTags()
+					.HasTagExact(
+						AIRECompanionGameplayTags::
+							AbilitySupportHealingItem)
+					? 1
+					: 0;
+		}
+		if (SupportAbilitySet->Abilities.Num() != 1
+			|| SupportHealingAbilityCount != 1)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionConfig",
+				"InvalidSupportAbilitySetRole",
+				"Support Ability Set must contain exactly one Support Healing ability.");
+			return false;
+		}
 	}
 
 	return true;

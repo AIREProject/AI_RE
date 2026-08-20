@@ -3,17 +3,46 @@
 #include "Core/AIRECompanionAIController.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Core/AIRECompanionConfigDataAsset.h"
+#include "Command/AIRECompanionCommandGatewayComponent.h"
+#include "AbilitySystem/Core/Attributes/AIRECompanionAttributeSet.h"
 #include "Equipment/AIRECompanionEquipmentComponent.h"
+#include "Inventory/AIRECompanionInventoryComponent.h"
+#include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
+#include "Support/AIRECompanionSupportComponent.h"
+#include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
+#include "AIRECombatEvadeComponent.h"
+#include "AIREEnemyAttackComponent.h"
 #include "Threat/AIRECompanionThreatComponent.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "LocalAI/Combat/AIRECompanionAutonomousEvadePolicy.h"
 #include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "Work/AIRECompanionCraftingWorkRequest.h"
+#include "Work/AIRECompanionHarvestWorkRequest.h"
+#include "AIREGameplayInventorySubsystem.h"
+#include "AIRESharedStorageActor.h"
+#include "AI_RECraftingTypes.h"
+#include "AI_REHarvestableResourceActor.h"
+#include "AI_REHarvestableResourceComponent.h"
+#include "AI_REItemActor.h"
+#include "AI_REItemDataAsset.h"
+#include "AI_REItemSubsystem.h"
+#include "AI_REWorkBenchBase.h"
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/IConsoleManager.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
 #include "StateTreeExecutionContext.h"
+#include "Engine/DataTable.h"
+#include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionStateTree, Log, All);
 
@@ -21,9 +50,84 @@ namespace
 {
 	constexpr float CombatApproachMargin = 50.0f;
 	constexpr float CombatApproachAcceptanceRadius = 25.0f;
-	constexpr float CombatRangeExitSlack = 25.0f;
 	constexpr float CombatMovementRetryInterval = 0.5f;
 	constexpr float CombatActivationRetryInterval = 0.1f;
+	constexpr float SupportApproachMargin = 50.0f;
+	constexpr float SupportApproachAcceptanceRadius = 25.0f;
+	constexpr float SupportMovementRetryInterval = 0.5f;
+	constexpr float SupportActivationRetryInterval = 0.1f;
+	constexpr float WorkApproachAcceptanceRadius = 25.0f;
+	constexpr float WorkMovementRetryInterval = 0.5f;
+	constexpr float WorkActivationRetryInterval = 0.1f;
+	constexpr float HarvestMovementTimeout = 30.0f;
+	constexpr float HarvestNoProgressTimeout = 15.0f;
+	constexpr float HarvestApproachAngles[] =
+	{
+		0.0f,
+		45.0f,
+		-45.0f,
+		90.0f,
+		-90.0f,
+		135.0f,
+		-135.0f,
+		180.0f
+	};
+	constexpr int32 HarvestApproachCount = UE_ARRAY_COUNT(HarvestApproachAngles);
+	constexpr int32 MaxRememberedEvadeExecutions = 4096;
+
+	TAutoConsoleVariable<int32> CVarAIRECompanionDistanceDebug(
+		TEXT("aire.Companion.DistanceDebug"),
+		0,
+		TEXT("Draws MAKO player distance, local behavior selection, and direct command lease.\n")
+		TEXT("0: disabled, 1: enabled"),
+		ECVF_Default);
+
+	bool IsAutonomousEvadeOpportunity(
+		const FAIREEnemyAttackSnapshot& Snapshot,
+		const APawn& CompanionPawn)
+	{
+		return Snapshot.bActive
+			&& Snapshot.bOpportunityOpen
+			&& !Snapshot.bHitCommitted
+			&& !Snapshot.bDamageCancelled
+			&& Snapshot.TargetingMode
+				== EAIRECombatTargetingMode::SingleTarget
+			&& Snapshot.Target.Get() == &CompanionPawn
+			&& Snapshot.ExecutionId.IsValid();
+	}
+
+	void ResetPendingEvadeDecision(
+		FAIRECompanionEngageThreatTaskInstanceData& InstanceData)
+	{
+		InstanceData.PendingEvadeThreat.Reset();
+		InstanceData.PendingEvadeExecutionId.Invalidate();
+		InstanceData.EvadeReactionTimeRemaining = 0.0f;
+		InstanceData.bEvadeDecisionPending = false;
+	}
+
+	void RememberEvaluatedEvadeExecution(
+		FAIRECompanionEngageThreatTaskInstanceData& InstanceData,
+		const FGuid& ExecutionId)
+	{
+		if (InstanceData.EvaluatedEvadeExecutionIds.Contains(ExecutionId))
+		{
+			return;
+		}
+		if (InstanceData.EvaluatedEvadeExecutionIds.Num()
+			>= MaxRememberedEvadeExecutions)
+		{
+			const FGuid OldestExecutionId =
+				InstanceData.EvaluatedEvadeExecutionOrder[0];
+			InstanceData.EvaluatedEvadeExecutionOrder.RemoveAt(
+				0,
+				1,
+				EAllowShrinking::No);
+			InstanceData.EvaluatedEvadeExecutionIds.Remove(
+				OldestExecutionId);
+		}
+		InstanceData.EvaluatedEvadeExecutionIds.Add(ExecutionId);
+		InstanceData.EvaluatedEvadeExecutionOrder.Add(ExecutionId);
+	}
 
 	FVector CalculateCombatApproachLocation(
 		const APawn& CompanionPawn,
@@ -50,6 +154,376 @@ namespace
 			+ TargetToCompanion * DesiredCenterDistance;
 	}
 
+	FVector CalculateHarvestApproachLocation(
+		const APawn& CompanionPawn,
+		const AAI_REHarvestableResourceActor& ResourceActor,
+		const float AttackRange,
+		const int32 ApproachAttemptIndex)
+	{
+		FVector InteractionLocation;
+		if (!ResourceActor.TryGetHarvestInteractionLocation(
+				CompanionPawn.GetActorLocation(),
+				InteractionLocation))
+		{
+			InteractionLocation = ResourceActor.GetActorLocation();
+		}
+
+		FVector ResourceToCompanion = InteractionLocation
+			- ResourceActor.GetActorLocation();
+		ResourceToCompanion.Z = 0.0f;
+		if (!ResourceToCompanion.Normalize())
+		{
+			ResourceToCompanion = (
+				CompanionPawn.GetActorLocation()
+				- ResourceActor.GetActorLocation()).GetSafeNormal2D();
+		}
+		if (ResourceToCompanion.IsNearlyZero())
+		{
+			ResourceToCompanion =
+				-ResourceActor.GetActorForwardVector().GetSafeNormal2D();
+		}
+		const int32 WrappedAttemptIndex = FMath::Abs(ApproachAttemptIndex)
+			% HarvestApproachCount;
+		ResourceToCompanion = ResourceToCompanion.RotateAngleAxis(
+			HarvestApproachAngles[WrappedAttemptIndex],
+			FVector::UpVector);
+		InteractionLocation = ResourceActor.GetActorLocation()
+			+ ResourceToCompanion * ResourceActor.HarvestInteractionRadius;
+
+		const float DesiredCenterDistance = CompanionPawn.GetSimpleCollisionRadius()
+			+ FMath::Max(
+				0.0f,
+				AttackRange - WorkApproachAcceptanceRadius * 2.0f);
+		return InteractionLocation
+			+ ResourceToCompanion * DesiredCenterDistance;
+	}
+
+	FVector CalculateSupportApproachLocation(
+		const APawn& CompanionPawn,
+		const AActor& TargetActor,
+		const float SupportRange)
+	{
+		FVector TargetToCompanion =
+			CompanionPawn.GetActorLocation()
+			- TargetActor.GetActorLocation();
+		TargetToCompanion.Z = 0.0f;
+		if (!TargetToCompanion.Normalize())
+		{
+			TargetToCompanion =
+				-TargetActor.GetActorForwardVector().GetSafeNormal2D();
+		}
+
+		const float DesiredSurfaceDistance = FMath::Max(
+			0.0f,
+			SupportRange - SupportApproachMargin);
+		const float DesiredCenterDistance =
+			CompanionPawn.GetSimpleCollisionRadius()
+			+ TargetActor.GetSimpleCollisionRadius()
+			+ DesiredSurfaceDistance;
+		return TargetActor.GetActorLocation()
+			+ TargetToCompanion * DesiredCenterDistance;
+	}
+
+	FVector CalculateWorkbenchApproachLocation(
+		const APawn& CompanionPawn,
+		const AActor& Workbench,
+		const float InteractionGap)
+	{
+		FVector FrontDirection = Workbench.GetActorForwardVector();
+		FrontDirection.Z = 0.0f;
+		if (!FrontDirection.Normalize())
+		{
+			FrontDirection = FVector::ForwardVector;
+		}
+		FVector BoundsOrigin;
+		FVector BoundsExtent;
+		Workbench.GetActorBounds(false, BoundsOrigin, BoundsExtent);
+		const float BoundsDistanceAlongForward =
+			FMath::Abs(FrontDirection.X) * BoundsExtent.X
+			+ FMath::Abs(FrontDirection.Y) * BoundsExtent.Y;
+
+		return BoundsOrigin
+			+ FrontDirection
+				* (CompanionPawn.GetSimpleCollisionRadius()
+					+ BoundsDistanceAlongForward
+					+ FMath::Max(0.0f, InteractionGap));
+	}
+
+	bool IsWithinSurfaceRange(
+		const APawn& CompanionPawn,
+		const AActor& TargetActor,
+		const float SurfaceRange)
+	{
+		const float HorizontalDistance = FVector::Dist2D(
+			CompanionPawn.GetActorLocation(),
+			TargetActor.GetActorLocation());
+		const float EffectiveDistance = FMath::Max(
+			0.0f,
+			HorizontalDistance
+				- CompanionPawn.GetSimpleCollisionRadius()
+				- TargetActor.GetSimpleCollisionRadius());
+		return EffectiveDistance <= SurfaceRange;
+	}
+
+	bool IsWithinHarvestRange(
+		const APawn& CompanionPawn,
+		const AAI_REHarvestableResourceActor& ResourceActor,
+		const float HarvestRange)
+	{
+		FVector InteractionLocation;
+		if (!ResourceActor.TryGetHarvestInteractionLocation(
+				CompanionPawn.GetActorLocation(),
+				InteractionLocation))
+		{
+			return false;
+		}
+
+		const float HorizontalDistance = FVector::Dist2D(
+			CompanionPawn.GetActorLocation(),
+			InteractionLocation);
+		const float EffectiveDistance = FMath::Max(
+			0.0f,
+			HorizontalDistance - CompanionPawn.GetSimpleCollisionRadius());
+		return EffectiveDistance <= HarvestRange;
+	}
+
+	void FaceWorkTarget(APawn& CompanionPawn, const AActor& TargetActor)
+	{
+		FVector TargetDirection =
+			TargetActor.GetActorLocation() - CompanionPawn.GetActorLocation();
+		TargetDirection.Z = 0.0f;
+		if (!TargetDirection.IsNearlyZero())
+		{
+			CompanionPawn.SetActorRotation(
+				FRotator(0.0f, TargetDirection.Rotation().Yaw, 0.0f));
+		}
+	}
+
+	const FAI_RECraftingRecipe* ResolveCraftingRecipe(
+		const AActor* TargetActor,
+		const UDataTable* RecipeTable,
+		const FName RecipeRowId)
+	{
+		const AAI_REWorkBenchBase* Workbench =
+			Cast<AAI_REWorkBenchBase>(TargetActor);
+		if (!FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
+				Workbench,
+				RecipeTable,
+				RecipeRowId))
+		{
+			return nullptr;
+		}
+
+		return RecipeTable->FindRow<FAI_RECraftingRecipe>(
+			RecipeRowId,
+			TEXT("AIRECompanionStateTreeWork"),
+			false);
+	}
+
+	UAI_REItemDataAsset* ResolveItemAsset(
+		const UObject& WorldContext,
+		const FName ItemId)
+	{
+		const UWorld* World = WorldContext.GetWorld();
+		const UGameInstance* GameInstance =
+			IsValid(World) ? World->GetGameInstance() : nullptr;
+		UAI_REItemSubsystem* ItemSubsystem =
+			IsValid(GameInstance)
+				? GameInstance->GetSubsystem<UAI_REItemSubsystem>()
+				: nullptr;
+		return IsValid(ItemSubsystem)
+			? ItemSubsystem->GetItemDataAsset(ItemId)
+			: nullptr;
+	}
+
+	const FAIRECompanionStorageRule* FindStorageRule(
+		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		const FName ItemId)
+	{
+		return CompanionConfig.StorageRules.FindByPredicate(
+			[ItemId](const FAIRECompanionStorageRule& Rule)
+			{
+				return IsValid(Rule.ItemDefinition)
+					&& Rule.ItemDefinition->ItemId == ItemId;
+			});
+	}
+
+	int64 GetMakoCarriedItemCount(
+		const FAIREInventoryContainerSnapshot& MakoSnapshot,
+		const FName ItemId)
+	{
+		int64 TotalCount = 0;
+		for (const FAIREInventoryItemStackSnapshot& Stack
+			: MakoSnapshot.ItemStacks)
+		{
+			if (Stack.ItemId == ItemId)
+			{
+				TotalCount += Stack.Count;
+			}
+		}
+		if (MakoSnapshot.Equipment.EquippedItemId == ItemId)
+		{
+			++TotalCount;
+		}
+		return TotalCount;
+	}
+
+	const FAIREInventoryItemStackSnapshot* FindStorageTransferStack(
+		const FAIREInventoryContainerSnapshot& SourceSnapshot,
+		const FName ItemId)
+	{
+		return SourceSnapshot.ItemStacks.FindByPredicate(
+			[ItemId](const FAIREInventoryItemStackSnapshot& Stack)
+			{
+				return Stack.ItemId == ItemId && Stack.Count > 0;
+			});
+	}
+
+	bool BuildStorageTransferRequest(
+		UAIRECompanionInventoryComponent& InventoryComponent,
+		AAIRESharedStorageActor& StorageActor,
+		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		const FAIRECompanionWorkOrderSnapshot& WorkOrderSnapshot,
+		FAIREInventoryTransferRequest& OutRequest)
+	{
+		OutRequest = FAIREInventoryTransferRequest();
+		const FAIRECompanionStorageTransferPayload& Payload =
+			WorkOrderSnapshot.StorageTransfer;
+		if (!Payload.RequestSessionId.IsValid()
+			|| Payload.ItemId.IsNone()
+			|| Payload.Count <= 0)
+		{
+			return false;
+		}
+
+		const FAIRECompanionStorageRule* Rule =
+			FindStorageRule(CompanionConfig, Payload.ItemId);
+		if (Rule == nullptr
+			|| Rule->MinimumCarryCount < 0
+			|| Rule->MaximumCarryCount < Rule->MinimumCarryCount)
+		{
+			return false;
+		}
+
+		FAIREInventoryContainerSnapshot MakoSnapshot;
+		FAIREInventoryContainerSnapshot StorageSnapshot;
+		if (!InventoryComponent.GetInventorySnapshot(MakoSnapshot)
+			|| !StorageActor.GetStorageSnapshot(StorageSnapshot)
+			|| MakoSnapshot.SessionId != Payload.RequestSessionId
+			|| StorageSnapshot.SessionId != Payload.RequestSessionId)
+		{
+			return false;
+		}
+
+		const int64 CarriedCount = GetMakoCarriedItemCount(
+			MakoSnapshot,
+			Payload.ItemId);
+		const FAIREInventoryContainerSnapshot* SourceSnapshot = nullptr;
+		int64 RequiredCount = 0;
+		switch (Payload.Direction)
+		{
+		case EAIRECompanionStorageTransferDirection::
+			DepositMakoToStorage:
+			if (CarriedCount <= Rule->MaximumCarryCount
+				|| MakoSnapshot.Equipment.PendingItemId == Payload.ItemId)
+			{
+				return false;
+			}
+			SourceSnapshot = &MakoSnapshot;
+			RequiredCount =
+				CarriedCount - Rule->MaximumCarryCount;
+			OutRequest.SourceContainerId =
+				UAIREGameplayInventorySubsystem::GetMakoContainerId();
+			OutRequest.DestinationContainerId =
+				UAIREGameplayInventorySubsystem::
+					GetSharedStorageContainerId();
+			OutRequest.ExpectedSourceRevision = MakoSnapshot.Revision;
+			OutRequest.ExpectedDestinationRevision =
+				StorageSnapshot.Revision;
+			break;
+
+		case EAIRECompanionStorageTransferDirection::
+			WithdrawStorageToMako:
+			if (CarriedCount >= Rule->MinimumCarryCount
+				|| MakoSnapshot.Equipment.PendingItemId == Payload.ItemId)
+			{
+				return false;
+			}
+			SourceSnapshot = &StorageSnapshot;
+			RequiredCount =
+				Rule->MinimumCarryCount - CarriedCount;
+			OutRequest.SourceContainerId =
+				UAIREGameplayInventorySubsystem::
+					GetSharedStorageContainerId();
+			OutRequest.DestinationContainerId =
+				UAIREGameplayInventorySubsystem::GetMakoContainerId();
+			OutRequest.ExpectedSourceRevision =
+				StorageSnapshot.Revision;
+			OutRequest.ExpectedDestinationRevision = MakoSnapshot.Revision;
+			break;
+
+		default:
+			return false;
+		}
+
+		const FAIREInventoryItemStackSnapshot* SourceStack =
+			SourceSnapshot != nullptr
+				? FindStorageTransferStack(
+					*SourceSnapshot,
+					Payload.ItemId)
+				: nullptr;
+		if (SourceStack == nullptr)
+		{
+			return false;
+		}
+
+		const int64 TransferCount = FMath::Min<int64>(
+			Payload.Count,
+			FMath::Min<int64>(RequiredCount, SourceStack->Count));
+		if (TransferCount <= 0 || TransferCount > MAX_int32)
+		{
+			return false;
+		}
+
+		OutRequest.SessionId = Payload.RequestSessionId;
+		OutRequest.MutationId = WorkOrderSnapshot.WorkOrderId;
+		OutRequest.SourceSlotIndex = SourceStack->SlotIndex;
+		OutRequest.Count = static_cast<int32>(TransferCount);
+		return true;
+	}
+
+	AAI_REItemActor* SpawnDeferredWorkResult(
+		AAIRECompanionCharacter& CompanionCharacter,
+		AActor& WorkTarget,
+		const TSubclassOf<AAI_REItemActor> ItemActorClass,
+		UAI_REItemDataAsset& ItemAsset,
+		const int32 Count,
+		FTransform& OutSpawnTransform)
+	{
+		UWorld* World = CompanionCharacter.GetWorld();
+		if (!IsValid(World) || !ItemActorClass || Count <= 0)
+		{
+			return nullptr;
+		}
+
+		const FVector SpawnLocation =
+			WorkTarget.GetActorLocation() + FVector(0.0f, 0.0f, 50.0f);
+		OutSpawnTransform = FTransform(FRotator::ZeroRotator, SpawnLocation);
+		AAI_REItemActor* DeferredItem =
+			World->SpawnActorDeferred<AAI_REItemActor>(
+				ItemActorClass,
+				OutSpawnTransform,
+				&CompanionCharacter,
+				&CompanionCharacter,
+				ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+		if (IsValid(DeferredItem))
+		{
+			DeferredItem->ItemAsset = &ItemAsset;
+			DeferredItem->ItemCount = Count;
+		}
+		return DeferredItem;
+	}
+
 	enum class EAIRECompanionBehaviorInput : uint16
 	{
 		HasPlayer = 1 << 0,
@@ -59,7 +533,8 @@ namespace
 		Survival = 1 << 4,
 		Combat = 1 << 5,
 		DirectCommand = 1 << 6,
-		Work = 1 << 7
+		Work = 1 << 7,
+		Support = 1 << 8
 	};
 	ENUM_CLASS_FLAGS(EAIRECompanionBehaviorInput);
 
@@ -81,6 +556,91 @@ namespace
 			? BehaviorStateEnum->GetNameStringByValue(static_cast<int64>(BehaviorState))
 			: TEXT("Unknown");
 	}
+
+	const TCHAR* GetSelectedBehaviorDebugName(
+		const FAIRECompanionContextEvaluatorInstanceData& InstanceData)
+	{
+		if (InstanceData.bIsDisabledRequested)
+		{
+			return TEXT("Disabled");
+		}
+		if (InstanceData.bIsSurvivalRequested)
+		{
+			return TEXT("Survival");
+		}
+		if (InstanceData.bIsCombatRequested)
+		{
+			return TEXT("Combat");
+		}
+		if (InstanceData.bIsSupportRequested)
+		{
+			return TEXT("Support");
+		}
+		if (InstanceData.bIsDirectCommandRequested)
+		{
+			return TEXT("DirectCommand");
+		}
+		if (InstanceData.bIsWorkRequested)
+		{
+			return TEXT("Work");
+		}
+		if (InstanceData.bShouldReturn)
+		{
+			return TEXT("ReturnToPlayer");
+		}
+		return InstanceData.bHasPlayer
+			? TEXT("IdleNearPlayer")
+			: TEXT("Idle");
+	}
+
+	void DrawCompanionDistanceDebug(
+		const FAIRECompanionContextEvaluatorInstanceData& InstanceData)
+	{
+		if (CVarAIRECompanionDistanceDebug.GetValueOnGameThread() == 0
+			|| !IsValid(InstanceData.CompanionCharacter))
+		{
+			return;
+		}
+
+		const UWorld* World = InstanceData.CompanionCharacter->GetWorld();
+		if (!IsValid(World))
+		{
+			return;
+		}
+
+		const FAIREDirectCommandSnapshot& Snapshot =
+			InstanceData.DirectCommandSnapshot;
+		const UEnum* IntentEnum = StaticEnum<EAIREDirectCommandIntent>();
+		const FString IntentName = Snapshot.bIsActive && IsValid(IntentEnum)
+			? IntentEnum->GetNameStringByValue(static_cast<int64>(Snapshot.Intent))
+			: TEXT("None");
+		const double RemainingLeaseSeconds = Snapshot.bIsActive
+			? FMath::Max(
+				0.0,
+				(Snapshot.ExpiresAtUtc - FDateTime::UtcNow()).GetTotalSeconds())
+			: 0.0;
+		const FString DebugText = FString::Printf(
+			TEXT("Player %.0f cm | Return %.0f -> %.0f cm | Selected %s\n")
+			TEXT("Command %s | Active %s | Lease %.1f s"),
+			InstanceData.DistanceToPlayer,
+			InstanceData.ReturnStartDistance,
+			InstanceData.ReturnStopDistance,
+			GetSelectedBehaviorDebugName(InstanceData),
+			*IntentName,
+			Snapshot.bIsActive ? TEXT("Yes") : TEXT("No"),
+			RemainingLeaseSeconds);
+
+		DrawDebugString(
+			World,
+			InstanceData.CompanionCharacter->GetActorLocation()
+				+ FVector(0.0f, 0.0f, 150.0f),
+			DebugText,
+			nullptr,
+			Snapshot.bIsActive ? FColor::Yellow : FColor::Cyan,
+			0.0f,
+			false,
+			1.0f);
+	}
 }
 
 void FAIRECompanionContextEvaluator::TreeStart(FStateTreeExecutionContext& Context) const
@@ -93,21 +653,43 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.PlayerPawn = nullptr;
 	InstanceData.ThreatTarget = nullptr;
+	InstanceData.SupportTarget = nullptr;
 	InstanceData.EquipmentComponent = nullptr;
+	InstanceData.InventoryComponent = nullptr;
+	InstanceData.SupportComponent = nullptr;
+	InstanceData.DirectCommandComponent = nullptr;
+	InstanceData.DirectCommandSnapshot = FAIREDirectCommandSnapshot();
+	InstanceData.WorkOrderComponent = nullptr;
+	InstanceData.WorkTarget = nullptr;
+	InstanceData.WorkRecipeTable = nullptr;
+	InstanceData.WorkOrderId.Invalidate();
+	InstanceData.WorkRecipeRowId = NAME_None;
+	InstanceData.WorkType = EAIRECompanionWorkOrderType::None;
+	InstanceData.WorkOrderState = EAIRECompanionWorkOrderState::None;
 	InstanceData.AbilitySystemComponent = nullptr;
 	InstanceData.DistanceToPlayer = 0.0f;
 	InstanceData.MovementSpeed = 0.0f;
 	InstanceData.bIsRunning = false;
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
+	InstanceData.ReturnStopDistance = 0.0f;
+	InstanceData.IdleWanderMinDistance = 0.0f;
+	InstanceData.IdleWanderMaxDistance = 0.0f;
+	InstanceData.IdleWanderWaitMin = 0.0f;
+	InstanceData.IdleWanderWaitMax = 0.0f;
+	InstanceData.IdleWanderSampleCount = 0;
+	InstanceData.IdleWanderAcceptanceRadius = 0.0f;
+	InstanceData.IdleWanderRetryDelay = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
 	InstanceData.bShouldFollow = false;
 	InstanceData.bShouldReturn = false;
+	InstanceData.bReturnLatched = false;
 	InstanceData.bIsDisabledRequested = false;
 	InstanceData.bIsSurvivalRequested = false;
 	InstanceData.bIsCombatRequested = false;
+	InstanceData.bIsSupportRequested = false;
 	InstanceData.bIsDirectCommandRequested = false;
 	InstanceData.bIsWorkRequested = false;
 	InstanceData.bBehaviorSelectionChanged = false;
@@ -115,6 +697,11 @@ void FAIRECompanionContextEvaluator::TreeStop(FStateTreeExecutionContext& Contex
 	InstanceData.bHasPreviousBehaviorInput = false;
 	InstanceData.PreviousPlayerPawn.Reset();
 	InstanceData.PreviousThreatTarget.Reset();
+	InstanceData.PreviousSupportTarget.Reset();
+	InstanceData.PreviousWorkOrderId.Invalidate();
+	InstanceData.PreviousDirectCommandId.Reset();
+	InstanceData.PreviousDirectCommandGeneration = 0;
+	InstanceData.PreviousDirectCommandIntent = EAIREDirectCommandIntent::None;
 }
 
 void FAIRECompanionContextEvaluator::Tick(FStateTreeExecutionContext& Context, const float) const
@@ -127,12 +714,32 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 	InstanceData.PlayerPawn = nullptr;
 	InstanceData.ThreatTarget = nullptr;
+	InstanceData.SupportTarget = nullptr;
 	InstanceData.EquipmentComponent = nullptr;
+	InstanceData.InventoryComponent = nullptr;
+	InstanceData.SupportComponent = nullptr;
+	InstanceData.DirectCommandComponent = nullptr;
+	InstanceData.DirectCommandSnapshot = FAIREDirectCommandSnapshot();
+	InstanceData.WorkOrderComponent = nullptr;
+	InstanceData.WorkTarget = nullptr;
+	InstanceData.WorkRecipeTable = nullptr;
+	InstanceData.WorkOrderId.Invalidate();
+	InstanceData.WorkRecipeRowId = NAME_None;
+	InstanceData.WorkType = EAIRECompanionWorkOrderType::None;
+	InstanceData.WorkOrderState = EAIRECompanionWorkOrderState::None;
 	InstanceData.AbilitySystemComponent = nullptr;
 	InstanceData.DistanceToPlayer = 0.0f;
 	InstanceData.MovementSpeed = 0.0f;
 	InstanceData.FollowStopDistance = 0.0f;
 	InstanceData.ReturnStartDistance = 0.0f;
+	InstanceData.ReturnStopDistance = 0.0f;
+	InstanceData.IdleWanderMinDistance = 0.0f;
+	InstanceData.IdleWanderMaxDistance = 0.0f;
+	InstanceData.IdleWanderWaitMin = 0.0f;
+	InstanceData.IdleWanderWaitMax = 0.0f;
+	InstanceData.IdleWanderSampleCount = 0;
+	InstanceData.IdleWanderAcceptanceRadius = 0.0f;
+	InstanceData.IdleWanderRetryDelay = 0.0f;
 	InstanceData.CombatDistance = 0.0f;
 	InstanceData.CombatCooldown = 0.0f;
 	InstanceData.bHasPlayer = false;
@@ -141,6 +748,7 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	InstanceData.bIsDisabledRequested = false;
 	InstanceData.bIsSurvivalRequested = false;
 	InstanceData.bIsCombatRequested = false;
+	InstanceData.bIsSupportRequested = false;
 	InstanceData.bIsDirectCommandRequested = false;
 	InstanceData.bIsWorkRequested = false;
 
@@ -150,11 +758,6 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 			EAIRECompanionTestBehaviorRequest::Disabled);
 		InstanceData.bIsSurvivalRequested = InstanceData.CompanionController->IsTestBehaviorRequestActive(
 			EAIRECompanionTestBehaviorRequest::Survival);
-		InstanceData.bIsDirectCommandRequested = InstanceData.CompanionController->IsTestBehaviorRequestActive(
-			EAIRECompanionTestBehaviorRequest::DirectCommand);
-		InstanceData.bIsWorkRequested = InstanceData.CompanionController->IsTestBehaviorRequestActive(
-			EAIRECompanionTestBehaviorRequest::Work);
-
 		const UAIRECompanionThreatComponent* ThreatComponent = InstanceData.CompanionController->GetThreatComponent();
 		if (IsValid(ThreatComponent))
 		{
@@ -167,28 +770,110 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	{
 		InstanceData.EquipmentComponent =
 			InstanceData.CompanionCharacter->GetEquipmentComponent();
+		InstanceData.InventoryComponent =
+			InstanceData.CompanionCharacter->GetInventoryComponent();
+		InstanceData.SupportComponent =
+			InstanceData.CompanionCharacter->GetSupportComponent();
+		InstanceData.DirectCommandComponent =
+			InstanceData.CompanionCharacter->GetCommandGatewayComponent();
+		if (IsValid(InstanceData.DirectCommandComponent))
+		{
+			InstanceData.DirectCommandSnapshot =
+				InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+			InstanceData.bIsDirectCommandRequested =
+				InstanceData.DirectCommandSnapshot.bIsActive
+				&& InstanceData.DirectCommandSnapshot.Intent
+					!= EAIREDirectCommandIntent::None;
+		}
+		InstanceData.WorkOrderComponent =
+			InstanceData.CompanionCharacter->GetWorkOrderComponent();
 		InstanceData.AbilitySystemComponent =
 			InstanceData.CompanionCharacter->GetAbilitySystemComponent();
+		if (IsValid(InstanceData.WorkOrderComponent))
+		{
+			const FAIRECompanionWorkOrderSnapshot WorkSnapshot =
+				InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+			InstanceData.WorkTarget = WorkSnapshot.TargetActor.Get();
+			InstanceData.WorkRecipeTable = WorkSnapshot.RecipeTable.Get();
+			InstanceData.WorkOrderId = WorkSnapshot.WorkOrderId;
+			InstanceData.WorkRecipeRowId = WorkSnapshot.RecipeRowId;
+			InstanceData.WorkType = WorkSnapshot.WorkType;
+			InstanceData.WorkOrderState = WorkSnapshot.State;
+			InstanceData.bIsWorkRequested =
+				InstanceData.WorkOrderComponent->HasActiveWorkOrder();
+		}
+		if (IsValid(InstanceData.SupportComponent))
+		{
+			InstanceData.SupportTarget =
+				InstanceData.SupportComponent->GetSupportTarget();
+			InstanceData.bIsSupportRequested =
+				InstanceData.SupportComponent->IsSupportRequested();
+		}
 		InstanceData.bIsDisabledRequested = InstanceData.bIsDisabledRequested
 			|| InstanceData.CompanionCharacter->IsAbilitySystemDisabled();
+
+		if (InstanceData.bIsCombatRequested
+			&& InstanceData.bIsSupportRequested)
+		{
+			const UAIRECompanionLocalBehaviorPolicyComponent* PolicyComponent =
+				InstanceData.CompanionCharacter
+					->GetLocalBehaviorPolicyComponent();
+			if (IsValid(PolicyComponent)
+				&& PolicyComponent->GetLocalBehaviorPolicy().RolePreference
+					== EAIRECompanionRolePreference::SupportPriority)
+			{
+				InstanceData.bIsCombatRequested = false;
+			}
+		}
 
 		const UAIRECompanionConfigDataAsset* CompanionConfig = InstanceData.CompanionCharacter->GetCompanionConfig();
 		if (IsValid(CompanionConfig))
 		{
 			InstanceData.FollowStopDistance = CompanionConfig->FollowStopDistance;
 			InstanceData.ReturnStartDistance = CompanionConfig->ReturnStartDistance;
+			InstanceData.ReturnStopDistance = CompanionConfig->ReturnStopDistance;
+			InstanceData.IdleWanderMinDistance =
+				CompanionConfig->IdleWanderMinDistance;
+			InstanceData.IdleWanderMaxDistance =
+				CompanionConfig->IdleWanderMaxDistance;
+			InstanceData.IdleWanderWaitMin = CompanionConfig->IdleWanderWaitMin;
+			InstanceData.IdleWanderWaitMax = CompanionConfig->IdleWanderWaitMax;
+			InstanceData.IdleWanderSampleCount =
+				CompanionConfig->IdleWanderSampleCount;
+			InstanceData.IdleWanderAcceptanceRadius =
+				CompanionConfig->IdleWanderAcceptanceRadius;
+			InstanceData.IdleWanderRetryDelay = CompanionConfig->IdleWanderRetryDelay;
 
 			const UWorld* World = InstanceData.CompanionCharacter->GetWorld();
 			APawn* CurrentPlayerPawn = IsValid(World) ? UGameplayStatics::GetPlayerPawn(World, 0) : nullptr;
 			if (IsValid(CurrentPlayerPawn))
 			{
 				InstanceData.PlayerPawn = CurrentPlayerPawn;
-				InstanceData.DistanceToPlayer = FVector::Distance(
+				const float CenterDistance = FVector::Distance(
 					InstanceData.CompanionCharacter->GetActorLocation(),
 					CurrentPlayerPawn->GetActorLocation());
+				InstanceData.DistanceToPlayer = FMath::Max(
+					0.0f,
+					CenterDistance
+						- InstanceData.CompanionCharacter->GetSimpleCollisionRadius()
+						- CurrentPlayerPawn->GetSimpleCollisionRadius());
 				InstanceData.bHasPlayer = true;
-				InstanceData.bShouldFollow = InstanceData.DistanceToPlayer > InstanceData.FollowStopDistance;
-				InstanceData.bShouldReturn = InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				InstanceData.bShouldFollow = false;
+				if (InstanceData.bIsDirectCommandRequested)
+				{
+					InstanceData.bReturnLatched = false;
+				}
+				else
+				{
+					InstanceData.bReturnLatched = InstanceData.bReturnLatched
+						? InstanceData.DistanceToPlayer > InstanceData.ReturnStopDistance
+						: InstanceData.DistanceToPlayer > InstanceData.ReturnStartDistance;
+				}
+				InstanceData.bShouldReturn = InstanceData.bReturnLatched;
+			}
+			else
+			{
+				InstanceData.bReturnLatched = false;
 			}
 
 			if (InstanceData.bIsCombatRequested || InstanceData.bShouldReturn)
@@ -221,6 +906,8 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 		}
 	}
 
+	DrawCompanionDistanceDebug(InstanceData);
+
 	EAIRECompanionBehaviorInput BehaviorInputMask = static_cast<EAIRECompanionBehaviorInput>(0);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::HasPlayer, InstanceData.bHasPlayer);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::ShouldFollow, InstanceData.bShouldFollow);
@@ -228,20 +915,44 @@ void FAIRECompanionContextEvaluator::UpdateContext(FStateTreeExecutionContext& C
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Disabled, InstanceData.bIsDisabledRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Survival, InstanceData.bIsSurvivalRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Combat, InstanceData.bIsCombatRequested);
+	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Support, InstanceData.bIsSupportRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::DirectCommand, InstanceData.bIsDirectCommandRequested);
 	AddBehaviorInput(BehaviorInputMask, EAIRECompanionBehaviorInput::Work, InstanceData.bIsWorkRequested);
 
 	const uint16 CurrentBehaviorInputMask = static_cast<uint16>(BehaviorInputMask);
 	const bool bPlayerPawnChanged = InstanceData.PreviousPlayerPawn.Get() != InstanceData.PlayerPawn.Get();
 	const bool bThreatTargetChanged = InstanceData.PreviousThreatTarget.Get() != InstanceData.ThreatTarget.Get();
+	const bool bSupportTargetChanged =
+		InstanceData.PreviousSupportTarget.Get()
+		!= InstanceData.SupportTarget.Get();
+	const bool bWorkOrderChanged =
+		InstanceData.PreviousWorkOrderId != InstanceData.WorkOrderId;
+	const bool bDirectCommandChanged =
+		InstanceData.PreviousDirectCommandId
+			!= InstanceData.DirectCommandSnapshot.CommandId
+		|| InstanceData.PreviousDirectCommandGeneration
+			!= InstanceData.DirectCommandSnapshot.Generation
+		|| InstanceData.PreviousDirectCommandIntent
+			!= InstanceData.DirectCommandSnapshot.Intent;
 	InstanceData.bBehaviorSelectionChanged = !InstanceData.bHasPreviousBehaviorInput
 		|| InstanceData.PreviousBehaviorInputMask != CurrentBehaviorInputMask
 		|| bPlayerPawnChanged
-		|| bThreatTargetChanged;
+		|| bThreatTargetChanged
+		|| bSupportTargetChanged
+		|| bWorkOrderChanged
+		|| bDirectCommandChanged;
 	InstanceData.PreviousBehaviorInputMask = CurrentBehaviorInputMask;
 	InstanceData.bHasPreviousBehaviorInput = true;
 	InstanceData.PreviousPlayerPawn = InstanceData.PlayerPawn;
 	InstanceData.PreviousThreatTarget = InstanceData.ThreatTarget;
+	InstanceData.PreviousSupportTarget = InstanceData.SupportTarget;
+	InstanceData.PreviousWorkOrderId = InstanceData.WorkOrderId;
+	InstanceData.PreviousDirectCommandId =
+		InstanceData.DirectCommandSnapshot.CommandId;
+	InstanceData.PreviousDirectCommandGeneration =
+		InstanceData.DirectCommandSnapshot.Generation;
+	InstanceData.PreviousDirectCommandIntent =
+		InstanceData.DirectCommandSnapshot.Intent;
 }
 
 FAIREApplyCompanionMovementSettingsTask::FAIREApplyCompanionMovementSettingsTask()
@@ -337,6 +1048,1425 @@ void FAIRECompanionBehaviorDebugTask::ExitState(
 		InstanceData.bOwnsMovementRequest ? TEXT("StateExit") : TEXT("None"));
 }
 
+FAIRECompanionDirectCommandTask::FAIRECompanionDirectCommandTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = true;
+}
+
+EStateTreeRunStatus FAIRECompanionDirectCommandTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.ActiveCommandId.Reset();
+	InstanceData.ActiveCommandGeneration = 0;
+	InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+	InstanceData.bMoveRequested = false;
+	InstanceData.bLeaseExpired = false;
+
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.DirectCommandComponent))
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Direct command task received invalid owner bindings."));
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const FAIREDirectCommandSnapshot Snapshot =
+		InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+	if (!Snapshot.bIsActive
+		|| Snapshot.CommandId.IsEmpty()
+		|| Snapshot.Generation <= 0
+		|| Snapshot.Intent == EAIREDirectCommandIntent::None)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!IsLeaseValid(Snapshot))
+	{
+		InstanceData.bLeaseExpired = true;
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if ((Snapshot.Intent == EAIREDirectCommandIntent::Follow
+			|| Snapshot.Intent == EAIREDirectCommandIntent::ReturnToPlayer)
+		&& (!IsValid(InstanceData.PlayerPawn)
+			|| InstanceData.PlayerPawn->IsActorBeingDestroyed()))
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			Snapshot.CommandId,
+			Snapshot.Generation,
+			EAIRECommandResultReason::PlayerUnavailable);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.ActiveCommandId = Snapshot.CommandId;
+	InstanceData.ActiveCommandGeneration = Snapshot.Generation;
+	InstanceData.ActiveIntent = Snapshot.Intent;
+	if (!InstanceData.DirectCommandComponent->ReportDirectCommandRunning(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration))
+	{
+		InstanceData.ActiveCommandId.Reset();
+		InstanceData.ActiveCommandGeneration = 0;
+		InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActiveIntent == EAIREDirectCommandIntent::HoldPosition)
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+
+	UE_LOG(
+		LogAIRECompanionStateTree,
+		Log,
+		TEXT("Direct command execution started. CommandId=%s Generation=%lld Intent=%s"),
+		*InstanceData.ActiveCommandId,
+		InstanceData.ActiveCommandGeneration,
+		*StaticEnum<EAIREDirectCommandIntent>()->GetNameStringByValue(
+			static_cast<int64>(InstanceData.ActiveIntent)));
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionDirectCommandTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.DirectCommandComponent))
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const FAIREDirectCommandSnapshot Snapshot =
+		InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+	if (!IsOwnedSnapshot(InstanceData, Snapshot))
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!Snapshot.bIsActive)
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!IsLeaseValid(Snapshot))
+	{
+		InstanceData.bLeaseExpired = true;
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActiveIntent == EAIREDirectCommandIntent::HoldPosition)
+	{
+		CancelOwnedMovement(InstanceData);
+		InstanceData.CompanionController->StopMovement();
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (!IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::PlayerUnavailable);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const bool bReturnCommand =
+		InstanceData.ActiveIntent == EAIREDirectCommandIntent::ReturnToPlayer;
+	const float StopDistance = bReturnCommand
+		? InstanceData.ReturnStopDistance
+		: InstanceData.FollowStopDistance;
+	if (!FMath::IsFinite(StopDistance) || StopDistance < 0.0f)
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::InvalidParameters);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+	if (!IsValid(CompanionPawn))
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::NavigationFailed);
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (IsWithinSurfaceRange(
+			*CompanionPawn,
+			*InstanceData.PlayerPawn,
+			StopDistance))
+	{
+		CancelOwnedMovement(InstanceData);
+		if (bReturnCommand)
+		{
+			const bool bReported =
+				InstanceData.DirectCommandComponent->ReportDirectCommandSucceeded(
+					InstanceData.ActiveCommandId,
+					InstanceData.ActiveCommandGeneration,
+					EAIRECommandResultReason::None);
+			return bReported
+				? EStateTreeRunStatus::Succeeded
+				: EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bMoveRequested
+		&& (InstanceData.CompanionController->GetMoveStatus()
+			== EPathFollowingStatus::Moving
+			|| InstanceData.CompanionController->GetMoveStatus()
+				== EPathFollowingStatus::Waiting
+			|| InstanceData.CompanionController->GetMoveStatus()
+				== EPathFollowingStatus::Paused))
+	{
+		return EStateTreeRunStatus::Running;
+	}
+	InstanceData.bMoveRequested = false;
+
+	const EPathFollowingRequestResult::Type MoveResult =
+		InstanceData.CompanionController->MoveToActor(
+			InstanceData.PlayerPawn,
+			StopDistance,
+			true,
+			true,
+			true,
+			nullptr,
+			true);
+	if (MoveResult == EPathFollowingRequestResult::Failed)
+	{
+		InstanceData.DirectCommandComponent->ReportDirectCommandFailed(
+			InstanceData.ActiveCommandId,
+			InstanceData.ActiveCommandGeneration,
+			EAIRECommandResultReason::NavigationFailed);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal)
+	{
+		if (bReturnCommand
+			&& IsWithinSurfaceRange(
+				*CompanionPawn,
+				*InstanceData.PlayerPawn,
+				StopDistance))
+		{
+			const bool bReported =
+				InstanceData.DirectCommandComponent->ReportDirectCommandSucceeded(
+					InstanceData.ActiveCommandId,
+					InstanceData.ActiveCommandGeneration,
+					EAIRECommandResultReason::None);
+			return bReported
+				? EStateTreeRunStatus::Succeeded
+				: EStateTreeRunStatus::Failed;
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	InstanceData.bMoveRequested = true;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionDirectCommandTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedMovement(InstanceData);
+	if (IsValid(InstanceData.DirectCommandComponent)
+		&& !InstanceData.bLeaseExpired
+		&& !InstanceData.ActiveCommandId.IsEmpty())
+	{
+		const FAIREDirectCommandSnapshot Snapshot =
+			InstanceData.DirectCommandComponent->GetDirectCommandSnapshot();
+		if (IsOwnedSnapshot(InstanceData, Snapshot)
+			&& Snapshot.bIsActive)
+		{
+			InstanceData.DirectCommandComponent->ReportDirectCommandPreempted(
+				InstanceData.ActiveCommandId,
+				InstanceData.ActiveCommandGeneration);
+		}
+	}
+	InstanceData.ActiveCommandId.Reset();
+	InstanceData.ActiveCommandGeneration = 0;
+	InstanceData.ActiveIntent = EAIREDirectCommandIntent::None;
+	InstanceData.bLeaseExpired = false;
+}
+
+void FAIRECompanionDirectCommandTask::CancelOwnedMovement(
+	FInstanceDataType& InstanceData)
+{
+	if (InstanceData.bMoveRequested
+		&& IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+	InstanceData.bMoveRequested = false;
+}
+
+bool FAIRECompanionDirectCommandTask::IsOwnedSnapshot(
+	const FInstanceDataType& InstanceData,
+	const FAIREDirectCommandSnapshot& Snapshot)
+{
+	return !InstanceData.ActiveCommandId.IsEmpty()
+		&& Snapshot.CommandId == InstanceData.ActiveCommandId
+		&& Snapshot.Generation == InstanceData.ActiveCommandGeneration;
+}
+
+bool FAIRECompanionDirectCommandTask::IsLeaseValid(
+	const FAIREDirectCommandSnapshot& Snapshot)
+{
+	return Snapshot.ExpiresAtUtc > FDateTime::UtcNow();
+}
+
+FAIRECompanionIdleNearPlayerTask::FAIRECompanionIdleNearPlayerTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FAIRECompanionIdleNearPlayerTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	InstanceData.ActivePlayerPawn = nullptr;
+	InstanceData.ActiveDestination = FVector::ZeroVector;
+	InstanceData.WaitTimeRemaining = 0.0f;
+	InstanceData.RetryCount = 0;
+	InstanceData.bMoveRequested = false;
+
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Idle-near-player task received invalid owner or player bindings."));
+		return EStateTreeRunStatus::Failed;
+	}
+	if (!FMath::IsFinite(InstanceData.WanderMinDistance)
+		|| InstanceData.WanderMinDistance < 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderMaxDistance)
+		|| InstanceData.WanderMaxDistance <= InstanceData.WanderMinDistance
+		|| !FMath::IsFinite(InstanceData.WanderWaitMin)
+		|| InstanceData.WanderWaitMin < 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderWaitMax)
+		|| InstanceData.WanderWaitMax < InstanceData.WanderWaitMin
+		|| InstanceData.WanderSampleCount < 1
+		|| InstanceData.WanderSampleCount > 8
+		|| !FMath::IsFinite(InstanceData.WanderAcceptanceRadius)
+		|| InstanceData.WanderAcceptanceRadius <= 0.0f
+		|| !FMath::IsFinite(InstanceData.WanderRetryDelay)
+		|| InstanceData.WanderRetryDelay < 0.0f)
+	{
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Warning,
+			TEXT("Idle-near-player task received invalid wander settings."));
+		return EStateTreeRunStatus::Failed;
+	}
+	InstanceData.ActivePlayerPawn = InstanceData.PlayerPawn;
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionIdleNearPlayerTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.PlayerPawn)
+		|| InstanceData.PlayerPawn->IsActorBeingDestroyed())
+	{
+		CancelOwnedMovement(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActivePlayerPawn.Get() != InstanceData.PlayerPawn)
+	{
+		CancelOwnedMovement(InstanceData);
+		InstanceData.ActivePlayerPawn = InstanceData.PlayerPawn;
+		InstanceData.ActiveDestination = FVector::ZeroVector;
+		InstanceData.WaitTimeRemaining = 0.0f;
+		InstanceData.RetryCount = 0;
+	}
+
+	if (InstanceData.bMoveRequested)
+	{
+		if (IsMovementActive(*InstanceData.CompanionController))
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		InstanceData.bMoveRequested = false;
+		const APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+		if (IsValid(CompanionPawn)
+			&& FVector::Dist2D(
+					CompanionPawn->GetActorLocation(),
+					InstanceData.ActiveDestination)
+				<= InstanceData.WanderAcceptanceRadius)
+		{
+			InstanceData.RetryCount = 0;
+			InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+			return EStateTreeRunStatus::Running;
+		}
+
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		else
+		{
+			UE_LOG(
+				LogAIRECompanionStateTree,
+				Warning,
+				TEXT("Idle-near-player move did not reach its sampled destination. Companion=%s Retries=%d"),
+				*GetNameSafe(InstanceData.CompanionCharacter),
+				InstanceData.RetryCount);
+			InstanceData.RetryCount = 0;
+			InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+			return EStateTreeRunStatus::Running;
+		}
+	}
+
+	if (InstanceData.WaitTimeRemaining > 0.0f)
+	{
+		InstanceData.WaitTimeRemaining = FMath::Max(
+			0.0f,
+			InstanceData.WaitTimeRemaining - DeltaTime);
+		return EStateTreeRunStatus::Running;
+	}
+
+	FVector Destination = FVector::ZeroVector;
+	if (!TrySampleReachableDestination(InstanceData, Destination))
+	{
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	const EPathFollowingRequestResult::Type MoveResult =
+		InstanceData.CompanionController->MoveToLocation(
+			Destination,
+			InstanceData.WanderAcceptanceRadius,
+			false,
+			true,
+			true,
+			true,
+			nullptr,
+			true);
+	if (MoveResult == EPathFollowingRequestResult::Failed)
+	{
+		if (InstanceData.RetryCount < 1)
+		{
+			++InstanceData.RetryCount;
+			InstanceData.WaitTimeRemaining =
+				InstanceData.WanderRetryDelay;
+			return EStateTreeRunStatus::Running;
+		}
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+	if (MoveResult == EPathFollowingRequestResult::AlreadyAtGoal)
+	{
+		InstanceData.RetryCount = 0;
+		InstanceData.WaitTimeRemaining = ChooseWaitDuration(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	InstanceData.ActiveDestination = Destination;
+	InstanceData.bMoveRequested = true;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionIdleNearPlayerTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedMovement(InstanceData);
+	InstanceData.ActivePlayerPawn.Reset();
+	InstanceData.ActiveDestination = FVector::ZeroVector;
+	InstanceData.WaitTimeRemaining = 0.0f;
+	InstanceData.RetryCount = 0;
+}
+
+bool FAIRECompanionIdleNearPlayerTask::TrySampleReachableDestination(
+	const FInstanceDataType& InstanceData,
+	FVector& OutDestination)
+{
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.PlayerPawn))
+	{
+		return false;
+	}
+
+	UWorld* World = InstanceData.CompanionCharacter->GetWorld();
+	UNavigationSystemV1* NavigationSystem =
+		IsValid(World)
+		? FNavigationSystem::GetCurrent<UNavigationSystemV1>(World)
+		: nullptr;
+	if (!IsValid(NavigationSystem))
+	{
+		return false;
+	}
+
+	for (int32 SampleIndex = 0;
+		SampleIndex < InstanceData.WanderSampleCount;
+		++SampleIndex)
+	{
+		FNavLocation NavLocation;
+		if (!NavigationSystem->GetRandomReachablePointInRadius(
+				InstanceData.PlayerPawn->GetActorLocation(),
+				InstanceData.WanderMaxDistance,
+				NavLocation))
+		{
+			continue;
+		}
+
+		const float PlayerDistance = FVector::Dist2D(
+			InstanceData.PlayerPawn->GetActorLocation(),
+			NavLocation.Location);
+		if (PlayerDistance + KINDA_SMALL_NUMBER
+			< InstanceData.WanderMinDistance
+			|| PlayerDistance - KINDA_SMALL_NUMBER
+			> InstanceData.WanderMaxDistance)
+		{
+			continue;
+		}
+
+		OutDestination = NavLocation.Location;
+		return true;
+	}
+
+	return false;
+}
+
+float FAIRECompanionIdleNearPlayerTask::ChooseWaitDuration(
+	const FInstanceDataType& InstanceData)
+{
+	return FMath::FRandRange(
+		InstanceData.WanderWaitMin,
+		InstanceData.WanderWaitMax);
+}
+
+void FAIRECompanionIdleNearPlayerTask::CancelOwnedMovement(
+	FInstanceDataType& InstanceData)
+{
+	if (InstanceData.bMoveRequested
+		&& IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+	}
+	InstanceData.bMoveRequested = false;
+}
+
+bool FAIRECompanionIdleNearPlayerTask::IsMovementActive(
+	const AAIRECompanionAIController& Controller)
+{
+	const EPathFollowingStatus::Type Status = Controller.GetMoveStatus();
+	return Status == EPathFollowingStatus::Waiting
+		|| Status == EPathFollowingStatus::Paused
+		|| Status == EPathFollowingStatus::Moving;
+}
+
+FAIRECompanionExecuteWorkOrderTask::FAIRECompanionExecuteWorkOrderTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.WorkOrderComponent)
+		|| !IsValid(InstanceData.InventoryComponent)
+		|| !IsValid(InstanceData.EquipmentComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent)
+		|| !InstanceData.WorkOrderId.IsValid())
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	FAIRECompanionWorkOrderSnapshot Snapshot =
+		InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+	if (Snapshot.WorkOrderId != InstanceData.WorkOrderId
+		|| Snapshot.WorkType == EAIRECompanionWorkOrderType::None
+		|| !IsValid(Snapshot.TargetActor.Get()))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.ActiveWorkOrderId != Snapshot.WorkOrderId)
+	{
+		InstanceData.ActiveWorkOrderId = Snapshot.WorkOrderId;
+		InstanceData.ElapsedCraftingTime = 0.0f;
+		InstanceData.ElapsedHarvestMovementTime = 0.0f;
+		InstanceData.ElapsedHarvestNoProgressTime = 0.0f;
+		InstanceData.LastObservedHarvestHealth = -1.0f;
+		InstanceData.HarvestApproachAttemptIndex = 0;
+		InstanceData.ElapsedStorageMovementTime = 0.0f;
+		InstanceData.ElapsedStorageWorkTime = 0.0f;
+		InstanceData.RetryTimeRemaining = 0.0f;
+		InstanceData.bMoveRequested = false;
+		InstanceData.ActiveStorageMontage = nullptr;
+	}
+	InstanceData.ActiveTarget = Snapshot.TargetActor;
+
+	if (Snapshot.State == EAIRECompanionWorkOrderState::PausedByCombat
+		&& !InstanceData.bIsCombatRequested)
+	{
+		if (!InstanceData.WorkOrderComponent->TryResumeAfterCombat(
+				Snapshot.WorkOrderId))
+		{
+			return EStateTreeRunStatus::Failed;
+		}
+		Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+	}
+	if (Snapshot.State == EAIRECompanionWorkOrderState::Requested
+		&& !InstanceData.WorkOrderComponent->TryStartMoving(
+			Snapshot.WorkOrderId))
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionCharacter)
+		|| !IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.WorkOrderComponent)
+		|| !IsValid(InstanceData.InventoryComponent)
+		|| !IsValid(InstanceData.EquipmentComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent))
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	FAIRECompanionWorkOrderSnapshot Snapshot =
+		InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+	if (Snapshot.WorkOrderId != InstanceData.ActiveWorkOrderId)
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+	if (Snapshot.State == EAIRECompanionWorkOrderState::Completed)
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Succeeded;
+	}
+	if (Snapshot.State == EAIRECompanionWorkOrderState::Cancelled
+		|| Snapshot.State == EAIRECompanionWorkOrderState::Failed
+		|| Snapshot.State == EAIRECompanionWorkOrderState::None)
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	if (InstanceData.bIsCombatRequested)
+	{
+		if (Snapshot.WorkType
+			== EAIRECompanionWorkOrderType::StorageTransfer)
+		{
+			InstanceData.ElapsedStorageMovementTime = 0.0f;
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+		}
+		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving
+			|| Snapshot.State == EAIRECompanionWorkOrderState::Working)
+		{
+			InstanceData.WorkOrderComponent->TryPauseForCombat(
+				Snapshot.WorkOrderId);
+		}
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+	if (Snapshot.State == EAIRECompanionWorkOrderState::PausedByCombat)
+	{
+		if (!InstanceData.WorkOrderComponent->TryResumeAfterCombat(
+				Snapshot.WorkOrderId))
+		{
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+		Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+	}
+
+	AActor* TargetActor = Snapshot.TargetActor.Get();
+	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+	if (!IsValid(TargetActor)
+		|| TargetActor->IsActorBeingDestroyed()
+		|| !IsValid(CompanionPawn))
+	{
+		InstanceData.WorkOrderComponent->TryFailWorkOrder(
+			Snapshot.WorkOrderId);
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.RetryTimeRemaining = FMath::Max(
+		0.0f,
+		InstanceData.RetryTimeRemaining - DeltaTime);
+	const bool bMoveRequestFinished = InstanceData.bMoveRequested
+		&& InstanceData.CompanionController->GetMoveStatus()
+			!= EPathFollowingStatus::Moving;
+	if (bMoveRequestFinished)
+	{
+		InstanceData.bMoveRequested = false;
+	}
+
+	if (Snapshot.State == EAIRECompanionWorkOrderState::Requested)
+	{
+		if (!InstanceData.WorkOrderComponent->TryStartMoving(
+				Snapshot.WorkOrderId))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			return EStateTreeRunStatus::Failed;
+		}
+		Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+	}
+
+	if (Snapshot.WorkType == EAIRECompanionWorkOrderType::Crafting)
+	{
+		const FAI_RECraftingRecipe* Recipe = ResolveCraftingRecipe(
+			TargetActor,
+			Snapshot.RecipeTable.Get(),
+			Snapshot.RecipeRowId);
+		if (Recipe == nullptr
+			|| !FMath::IsFinite(InstanceData.WorkbenchInteractionGap)
+			|| InstanceData.WorkbenchInteractionGap < 0.0f)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
+		{
+			const FVector ApproachLocation =
+				CalculateWorkbenchApproachLocation(
+					*CompanionPawn,
+					*TargetActor,
+					InstanceData.WorkbenchInteractionGap);
+			if (FVector::Dist2D(
+					CompanionPawn->GetActorLocation(),
+					ApproachLocation)
+				> WorkApproachAcceptanceRadius)
+			{
+				if (!InstanceData.bMoveRequested
+					&& InstanceData.RetryTimeRemaining <= 0.0f)
+				{
+					const EPathFollowingRequestResult::Type MoveResult =
+						InstanceData.CompanionController->MoveToLocation(
+							ApproachLocation,
+							WorkApproachAcceptanceRadius,
+							false,
+							true,
+							true,
+							true,
+							nullptr,
+							true);
+					InstanceData.bMoveRequested =
+						MoveResult
+							== EPathFollowingRequestResult::RequestSuccessful;
+					if (MoveResult == EPathFollowingRequestResult::Failed)
+					{
+						InstanceData.RetryTimeRemaining =
+							WorkMovementRetryInterval;
+					}
+				}
+				return EStateTreeRunStatus::Running;
+			}
+
+			InstanceData.CompanionController->StopMovement();
+			InstanceData.bMoveRequested = false;
+			InstanceData.CompanionController->SetFocus(
+				TargetActor,
+				EAIFocusPriority::Gameplay);
+			FaceWorkTarget(*CompanionPawn, *TargetActor);
+
+			UAI_REItemDataAsset* ResultItemAsset = ResolveItemAsset(
+				*InstanceData.CompanionCharacter,
+				Recipe->ResultItemId);
+			FAIREMakoCraftWorkRequest CraftRequest;
+			FAIREInventoryWorkResult PreflightResult;
+			const bool bCanWorldDrop =
+				InstanceData.DroppedItemActorClass != nullptr
+				&& IsValid(ResultItemAsset);
+			if (!FAIRECompanionCraftingWorkRequest::BuildInventoryWorkRequest(
+					*InstanceData.CompanionCharacter,
+					*InstanceData.InventoryComponent,
+					Snapshot.WorkOrderId,
+					*Recipe,
+					bCanWorldDrop,
+					CraftRequest)
+				|| !InstanceData.InventoryComponent
+					->CanCompleteMakoCraftWork(
+						CraftRequest,
+						PreflightResult)
+				|| (Snapshot.bRequireMakoDestination
+					&& PreflightResult.Destination
+						!= EAIREInventoryWorkResultDestination::Mako)
+				|| !InstanceData.WorkOrderComponent->TryStartWorking(
+					Snapshot.WorkOrderId))
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+			Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		}
+
+		const FVector WorkbenchApproachLocation =
+			CalculateWorkbenchApproachLocation(
+				*CompanionPawn,
+				*TargetActor,
+				InstanceData.WorkbenchInteractionGap);
+		if (Snapshot.State != EAIRECompanionWorkOrderState::Working
+			|| FVector::Dist2D(
+				CompanionPawn->GetActorLocation(),
+				WorkbenchApproachLocation)
+				> WorkApproachAcceptanceRadius)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		InstanceData.CompanionController->SetFocus(
+			TargetActor,
+			EAIFocusPriority::Gameplay);
+		FaceWorkTarget(*CompanionPawn, *TargetActor);
+		if (IsValid(InstanceData.WorkMontage))
+		{
+			UAnimInstance* AnimInstance =
+				InstanceData.CompanionCharacter->GetMesh()
+					? InstanceData.CompanionCharacter->GetMesh()
+						->GetAnimInstance()
+					: nullptr;
+			if (IsValid(AnimInstance)
+				&& !AnimInstance->Montage_IsPlaying(
+					InstanceData.WorkMontage))
+			{
+				AnimInstance->Montage_Play(InstanceData.WorkMontage);
+			}
+		}
+
+		InstanceData.ElapsedCraftingTime += FMath::Max(0.0f, DeltaTime);
+		if (InstanceData.ElapsedCraftingTime < Recipe->CraftingTime)
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		UAI_REItemDataAsset* ResultItemAsset = ResolveItemAsset(
+			*InstanceData.CompanionCharacter,
+			Recipe->ResultItemId);
+		const bool bCanWorldDrop =
+			InstanceData.DroppedItemActorClass != nullptr
+			&& IsValid(ResultItemAsset);
+		FAIREMakoCraftWorkRequest CraftRequest;
+		FAIREInventoryWorkResult PreflightResult;
+		if (!FAIRECompanionCraftingWorkRequest::BuildInventoryWorkRequest(
+				*InstanceData.CompanionCharacter,
+				*InstanceData.InventoryComponent,
+				Snapshot.WorkOrderId,
+				*Recipe,
+				bCanWorldDrop,
+				CraftRequest)
+			|| !InstanceData.InventoryComponent->CanCompleteMakoCraftWork(
+				CraftRequest,
+				PreflightResult)
+			|| (Snapshot.bRequireMakoDestination
+				&& PreflightResult.Destination
+					!= EAIREInventoryWorkResultDestination::Mako))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		FTransform DeferredDropTransform;
+		AAI_REItemActor* DeferredDrop = nullptr;
+		if (!PreflightResult.bAlreadyApplied
+			&& PreflightResult.Destination
+				== EAIREInventoryWorkResultDestination::WorldDrop)
+		{
+			DeferredDrop = IsValid(ResultItemAsset)
+				? SpawnDeferredWorkResult(
+					*InstanceData.CompanionCharacter,
+					*TargetActor,
+					InstanceData.DroppedItemActorClass,
+					*ResultItemAsset,
+					Recipe->ResultAmount,
+					DeferredDropTransform)
+				: nullptr;
+			if (!IsValid(DeferredDrop))
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+		}
+
+		const FAIREInventoryWorkResult CompletionResult =
+			InstanceData.InventoryComponent->TryCompleteMakoCraftWork(
+				CraftRequest);
+		const bool bCompletionApplied =
+			CompletionResult.Code == EAIREInventoryMutationCode::Succeeded
+			|| CompletionResult.Code
+				== EAIREInventoryMutationCode::AlreadyApplied;
+		if (!bCompletionApplied)
+		{
+			if (IsValid(DeferredDrop))
+			{
+				DeferredDrop->Destroy();
+			}
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+		if (IsValid(DeferredDrop))
+		{
+			if (CompletionResult.Code == EAIREInventoryMutationCode::Succeeded
+				&& CompletionResult.Destination
+					== EAIREInventoryWorkResultDestination::WorldDrop)
+			{
+				DeferredDrop->FinishSpawning(DeferredDropTransform);
+			}
+			else
+			{
+				DeferredDrop->Destroy();
+			}
+		}
+
+		if (!InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
+				Snapshot.WorkOrderId))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	if (Snapshot.WorkType == EAIRECompanionWorkOrderType::Harvesting)
+	{
+		AAI_REHarvestableResourceActor* ResourceActor =
+			Cast<AAI_REHarvestableResourceActor>(TargetActor);
+		UAI_REHarvestableResourceComponent* ResourceComponent =
+			IsValid(ResourceActor)
+				? ResourceActor->GetHarvestableResourceComponent()
+				: nullptr;
+		if (IsValid(ResourceComponent) && ResourceComponent->IsDepleted())
+		{
+			if (Snapshot.State == EAIRECompanionWorkOrderState::Requested)
+			{
+				InstanceData.WorkOrderComponent->TryStartMoving(
+					Snapshot.WorkOrderId);
+				Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+			}
+			if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
+			{
+				InstanceData.WorkOrderComponent->TryStartWorking(
+					Snapshot.WorkOrderId);
+				Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+			}
+			if (Snapshot.State == EAIRECompanionWorkOrderState::Working
+				&& InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
+					Snapshot.WorkOrderId))
+			{
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Succeeded;
+			}
+		}
+		if (!FAIRECompanionHarvestWorkRequest::IsValidRequestInputs(
+				ResourceActor))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition =
+			InstanceData.EquipmentComponent->GetCurrentWeaponDefinition();
+		const float AttackRange = IsValid(WeaponDefinition)
+			? WeaponDefinition->HarvestAttackRange
+			: -1.0f;
+		const float EffectiveAttackRange = AttackRange
+			+ AIRECompanionWeaponDefinition::HarvestRangeAcceptanceTolerance;
+		if (!IsValid(WeaponDefinition)
+			|| !WeaponDefinition->IsMeleeWeapon()
+			|| !FMath::IsFinite(AttackRange)
+			|| AttackRange < 0.0f
+			|| !FMath::IsFinite(EffectiveAttackRange))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const bool bInAttackRange = IsWithinHarvestRange(
+			*CompanionPawn,
+			*ResourceActor,
+			EffectiveAttackRange);
+		if (!bInAttackRange)
+		{
+			if (bMoveRequestFinished)
+			{
+				InstanceData.HarvestApproachAttemptIndex =
+					(InstanceData.HarvestApproachAttemptIndex + 1)
+					% HarvestApproachCount;
+				InstanceData.RetryTimeRemaining = 0.0f;
+			}
+			InstanceData.ElapsedHarvestMovementTime +=
+				FMath::Max(0.0f, DeltaTime);
+			InstanceData.ElapsedHarvestNoProgressTime = 0.0f;
+			if (InstanceData.ElapsedHarvestMovementTime
+				> HarvestMovementTimeout)
+			{
+				UE_LOG(
+					LogAIRECompanionStateTree,
+					Warning,
+					TEXT("Harvest movement timed out. WorkOrderId=%s Target=%s"),
+					*Snapshot.WorkOrderId.ToString(),
+					*GetNameSafe(ResourceActor));
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+			if (!InstanceData.bMoveRequested
+				&& InstanceData.RetryTimeRemaining <= 0.0f)
+			{
+				const FVector ApproachLocation = CalculateHarvestApproachLocation(
+					*CompanionPawn,
+					*ResourceActor,
+					AttackRange,
+					InstanceData.HarvestApproachAttemptIndex);
+				const EPathFollowingRequestResult::Type MoveResult =
+					InstanceData.CompanionController->MoveToLocation(
+						ApproachLocation,
+						WorkApproachAcceptanceRadius,
+						false,
+						true,
+						true,
+						true,
+						nullptr,
+						true);
+				InstanceData.bMoveRequested =
+					MoveResult
+						== EPathFollowingRequestResult::RequestSuccessful;
+				if (MoveResult == EPathFollowingRequestResult::Failed)
+				{
+					InstanceData.HarvestApproachAttemptIndex =
+						(InstanceData.HarvestApproachAttemptIndex + 1)
+						% HarvestApproachCount;
+					InstanceData.RetryTimeRemaining =
+						WorkMovementRetryInterval;
+				}
+				else if (MoveResult
+					== EPathFollowingRequestResult::AlreadyAtGoal)
+				{
+					InstanceData.HarvestApproachAttemptIndex =
+						(InstanceData.HarvestApproachAttemptIndex + 1)
+						% HarvestApproachCount;
+					InstanceData.RetryTimeRemaining =
+						WorkMovementRetryInterval;
+				}
+			}
+			return EStateTreeRunStatus::Running;
+		}
+
+		InstanceData.ElapsedHarvestMovementTime = 0.0f;
+		InstanceData.HarvestApproachAttemptIndex = 0;
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.bMoveRequested = false;
+		InstanceData.CompanionController->SetFocus(
+			TargetActor,
+			EAIFocusPriority::Gameplay);
+		FaceWorkTarget(*CompanionPawn, *TargetActor);
+		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
+		{
+			if (!InstanceData.WorkOrderComponent->TryStartWorking(
+					Snapshot.WorkOrderId))
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				return EStateTreeRunStatus::Failed;
+			}
+			Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		}
+		if (Snapshot.State != EAIRECompanionWorkOrderState::Working)
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		const float CurrentHarvestHealth = ResourceComponent->GetCurrentHealth();
+		if (InstanceData.LastObservedHarvestHealth < 0.0f
+			|| CurrentHarvestHealth
+				< InstanceData.LastObservedHarvestHealth - KINDA_SMALL_NUMBER)
+		{
+			InstanceData.LastObservedHarvestHealth = CurrentHarvestHealth;
+			InstanceData.ElapsedHarvestNoProgressTime = 0.0f;
+		}
+		else
+		{
+			InstanceData.ElapsedHarvestNoProgressTime +=
+				FMath::Max(0.0f, DeltaTime);
+			if (InstanceData.ElapsedHarvestNoProgressTime
+				> HarvestNoProgressTimeout)
+			{
+				UE_LOG(
+					LogAIRECompanionStateTree,
+					Warning,
+					TEXT("Harvest made no health progress. WorkOrderId=%s Target=%s Health=%.2f"),
+					*Snapshot.WorkOrderId.ToString(),
+					*GetNameSafe(ResourceActor),
+					CurrentHarvestHealth);
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+		}
+
+		if (InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+				AIRECompanionGameplayTags::StateActionAttacking)
+			|| InstanceData.RetryTimeRemaining > 0.0f)
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		FGameplayEventData AttackRequest;
+		AttackRequest.EventTag =
+			AIRECompanionGameplayTags::EventAttackRequest;
+		AttackRequest.Instigator = CompanionPawn;
+		AttackRequest.Target = TargetActor;
+		InstanceData.AbilitySystemComponent->HandleGameplayEvent(
+			AIRECompanionGameplayTags::EventAttackRequest,
+			&AttackRequest);
+		InstanceData.RetryTimeRemaining = WorkActivationRetryInterval;
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (Snapshot.WorkType
+		== EAIRECompanionWorkOrderType::StorageTransfer)
+	{
+		AAIRESharedStorageActor* StorageActor =
+			Cast<AAIRESharedStorageActor>(TargetActor);
+		const UAIRECompanionConfigDataAsset* CompanionConfig =
+			InstanceData.CompanionCharacter->GetCompanionConfig();
+		if (!IsValid(StorageActor)
+			|| !IsValid(CompanionConfig)
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageAcceptanceRadius)
+			|| CompanionConfig->StorageAcceptanceRadius < 0.0f
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageMovementTimeout)
+			|| CompanionConfig->StorageMovementTimeout <= 0.0f
+			|| !FMath::IsFinite(
+				CompanionConfig->StorageWorkDuration)
+			|| CompanionConfig->StorageWorkDuration < 0.0f)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const FTransform InteractionTransform =
+			StorageActor->GetCompanionInteractionTransform();
+		const FVector InteractionLocation =
+			InteractionTransform.GetLocation();
+		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
+		{
+			InstanceData.ElapsedStorageMovementTime +=
+				FMath::Max(0.0f, DeltaTime);
+			if (InstanceData.ElapsedStorageMovementTime
+				> CompanionConfig->StorageMovementTimeout)
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+
+			if (FVector::Dist2D(
+					CompanionPawn->GetActorLocation(),
+					InteractionLocation)
+				> CompanionConfig->StorageAcceptanceRadius)
+			{
+				if (!InstanceData.bMoveRequested
+					&& InstanceData.RetryTimeRemaining <= 0.0f)
+				{
+					const EPathFollowingRequestResult::Type MoveResult =
+						InstanceData.CompanionController->MoveToLocation(
+							InteractionLocation,
+							CompanionConfig->StorageAcceptanceRadius,
+							false,
+							true,
+							true,
+							true,
+							nullptr,
+							true);
+					InstanceData.bMoveRequested =
+						MoveResult
+							== EPathFollowingRequestResult::
+								RequestSuccessful;
+					if (MoveResult
+						== EPathFollowingRequestResult::Failed)
+					{
+						InstanceData.RetryTimeRemaining =
+							WorkMovementRetryInterval;
+					}
+				}
+				return EStateTreeRunStatus::Running;
+			}
+
+			InstanceData.CompanionController->StopMovement();
+			InstanceData.CompanionController->ClearFocus(
+				EAIFocusPriority::Gameplay);
+			InstanceData.bMoveRequested = false;
+			CompanionPawn->SetActorRotation(
+				FRotator(
+					0.0f,
+					InteractionTransform.Rotator().Yaw,
+					0.0f));
+			if (!InstanceData.WorkOrderComponent->TryStartWorking(
+					Snapshot.WorkOrderId))
+			{
+				InstanceData.WorkOrderComponent->TryFailWorkOrder(
+					Snapshot.WorkOrderId);
+				CancelOwnedRequests(InstanceData);
+				return EStateTreeRunStatus::Failed;
+			}
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+			Snapshot =
+				InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		}
+
+		if (Snapshot.State != EAIRECompanionWorkOrderState::Working
+			|| FVector::Dist2D(
+				CompanionPawn->GetActorLocation(),
+				InteractionLocation)
+				> CompanionConfig->StorageAcceptanceRadius)
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
+		CompanionPawn->SetActorRotation(
+			FRotator(
+				0.0f,
+				InteractionTransform.Rotator().Yaw,
+				0.0f));
+		if (IsValid(CompanionConfig->StorageWorkMontage))
+		{
+			UAnimInstance* AnimInstance =
+				InstanceData.CompanionCharacter->GetMesh()
+					? InstanceData.CompanionCharacter->GetMesh()
+						->GetAnimInstance()
+					: nullptr;
+			if (IsValid(AnimInstance)
+				&& !AnimInstance->Montage_IsPlaying(
+					CompanionConfig->StorageWorkMontage))
+			{
+				AnimInstance->Montage_Play(
+					CompanionConfig->StorageWorkMontage);
+			}
+			InstanceData.ActiveStorageMontage =
+				CompanionConfig->StorageWorkMontage;
+		}
+
+		InstanceData.ElapsedStorageWorkTime +=
+			FMath::Max(0.0f, DeltaTime);
+		if (InstanceData.ElapsedStorageWorkTime
+			< CompanionConfig->StorageWorkDuration)
+		{
+			return EStateTreeRunStatus::Running;
+		}
+
+		UGameInstance* GameInstance =
+			InstanceData.CompanionCharacter->GetGameInstance();
+		UAIREGameplayInventorySubsystem* GameplayInventory =
+			IsValid(GameInstance)
+				? GameInstance
+					->GetSubsystem<UAIREGameplayInventorySubsystem>()
+				: nullptr;
+		FAIREInventoryTransferRequest TransferRequest;
+		if (!IsValid(GameplayInventory)
+			|| !BuildStorageTransferRequest(
+				*InstanceData.InventoryComponent,
+				*StorageActor,
+				*CompanionConfig,
+				Snapshot,
+				TransferRequest))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const FAIREInventoryMutationResult TransferResult =
+			GameplayInventory->TryTransferItem(TransferRequest);
+		if (!TransferResult.WasApplied()
+			|| !InstanceData.WorkOrderComponent->TryCompleteWorkOrder(
+				Snapshot.WorkOrderId))
+		{
+			InstanceData.WorkOrderComponent->TryFailWorkOrder(
+				Snapshot.WorkOrderId);
+			CancelOwnedRequests(InstanceData);
+			return EStateTreeRunStatus::Failed;
+		}
+
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	InstanceData.WorkOrderComponent->TryFailWorkOrder(Snapshot.WorkOrderId);
+	CancelOwnedRequests(InstanceData);
+	return EStateTreeRunStatus::Failed;
+}
+
+void FAIRECompanionExecuteWorkOrderTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (InstanceData.bIsCombatRequested
+		&& IsValid(InstanceData.WorkOrderComponent))
+	{
+		const FAIRECompanionWorkOrderSnapshot Snapshot =
+			InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
+		if (Snapshot.WorkType
+			== EAIRECompanionWorkOrderType::StorageTransfer)
+		{
+			InstanceData.ElapsedStorageMovementTime = 0.0f;
+			InstanceData.ElapsedStorageWorkTime = 0.0f;
+		}
+		if (Snapshot.WorkOrderId == InstanceData.ActiveWorkOrderId
+			&& (Snapshot.State == EAIRECompanionWorkOrderState::Moving
+				|| Snapshot.State
+					== EAIRECompanionWorkOrderState::Working))
+		{
+			InstanceData.WorkOrderComponent->TryPauseForCombat(
+				Snapshot.WorkOrderId);
+		}
+	}
+	CancelOwnedRequests(InstanceData);
+}
+
+void FAIRECompanionExecuteWorkOrderTask::CancelOwnedRequests(
+	FInstanceDataType& InstanceData)
+{
+	if (IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
+	}
+	InstanceData.bMoveRequested = false;
+
+	if (IsValid(InstanceData.CompanionCharacter)
+		&& IsValid(InstanceData.WorkMontage))
+	{
+		UAnimInstance* AnimInstance =
+			InstanceData.CompanionCharacter->GetMesh()
+				? InstanceData.CompanionCharacter->GetMesh()->GetAnimInstance()
+				: nullptr;
+		if (IsValid(AnimInstance))
+		{
+			AnimInstance->Montage_Stop(0.2f, InstanceData.WorkMontage);
+		}
+	}
+	if (IsValid(InstanceData.CompanionCharacter)
+		&& IsValid(InstanceData.ActiveStorageMontage))
+	{
+		UAnimInstance* AnimInstance =
+			InstanceData.CompanionCharacter->GetMesh()
+				? InstanceData.CompanionCharacter->GetMesh()
+					->GetAnimInstance()
+				: nullptr;
+		if (IsValid(AnimInstance))
+		{
+			AnimInstance->Montage_Stop(
+				0.2f,
+				InstanceData.ActiveStorageMontage);
+		}
+	}
+	InstanceData.ActiveStorageMontage = nullptr;
+
+	if (!IsValid(InstanceData.EquipmentComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent))
+	{
+		return;
+	}
+	const FGameplayAbilitySpecHandle AttackAbilityHandle =
+		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
+			AIRECompanionGameplayTags::AbilityCombatBasicAttack);
+	if (const FGameplayAbilitySpec* AttackSpec =
+			InstanceData.AbilitySystemComponent->FindAbilitySpecFromHandle(
+				AttackAbilityHandle);
+		AttackSpec && AttackSpec->IsActive())
+	{
+		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
+			AttackAbilityHandle);
+	}
+}
+
 FAIRECompanionEngageThreatTask::FAIRECompanionEngageThreatTask()
 {
 	bShouldCallTick = true;
@@ -360,12 +2490,14 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::EnterState(
 	}
 
 	InstanceData.ActiveTarget = InstanceData.ThreatTarget;
-	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.MovementRetryTimeRemaining = 0.0f;
+	InstanceData.AbilityRetryTimeRemaining = 0.0f;
 	InstanceData.bMoveRequested = false;
 	InstanceData.bSkillIntentBuffered = false;
 	InstanceData.bSkillIntentEvaluatedForStep = false;
 	InstanceData.bWasSkillCancelWindowOpen = false;
 	InstanceData.bWasBasicAttackActive = false;
+	ResetPendingEvadeDecision(InstanceData);
 	UE_LOG(
 		LogAIRECompanionStateTree,
 		Log,
@@ -392,11 +2524,13 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	{
 		CancelOwnedRequests(InstanceData);
 		InstanceData.ActiveTarget = InstanceData.ThreatTarget;
-		InstanceData.RetryTimeRemaining = 0.0f;
+		InstanceData.MovementRetryTimeRemaining = 0.0f;
+		InstanceData.AbilityRetryTimeRemaining = 0.0f;
 		InstanceData.bSkillIntentBuffered = false;
 		InstanceData.bSkillIntentEvaluatedForStep = false;
 		InstanceData.bWasSkillCancelWindowOpen = false;
 		InstanceData.bWasBasicAttackActive = false;
+		ResetPendingEvadeDecision(InstanceData);
 	}
 
 	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
@@ -416,63 +2550,211 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	}
 	const float AttackRange = WeaponDefinition->AttackRange;
 
+	AAIRECompanionCharacter* CompanionCharacter =
+		Cast<AAIRECompanionCharacter>(CompanionPawn);
+	const UAIRECompanionConfigDataAsset* CompanionConfig =
+		IsValid(CompanionCharacter)
+			? CompanionCharacter->GetCompanionConfig()
+			: nullptr;
+	const FAIRECompanionAutonomousEvadeSettings* EvadeSettings =
+		IsValid(CompanionConfig)
+			? &CompanionConfig->AutonomousEvade
+			: nullptr;
+	UAIRECombatEvadeComponent* EvadeComponent =
+		IsValid(CompanionCharacter)
+			? CompanionCharacter->GetCombatEvadeComponent()
+			: nullptr;
+	UAIREEnemyAttackComponent* ThreatAttack =
+		TargetActor->FindComponentByClass<UAIREEnemyAttackComponent>();
+	const FAIREEnemyAttackSnapshot ThreatAttackSnapshot =
+		IsValid(ThreatAttack)
+			? ThreatAttack->GetAttackSnapshot()
+			: FAIREEnemyAttackSnapshot();
+	const bool bOpenEvadeOpportunity =
+		IsValid(ThreatAttack)
+		&& IsAutonomousEvadeOpportunity(
+			ThreatAttackSnapshot,
+			*CompanionPawn);
+	const bool bEvading =
+		(IsValid(EvadeComponent) && EvadeComponent->IsEvading())
+		|| InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionEvading);
+	if (bEvading)
+	{
+		if (bOpenEvadeOpportunity
+			&& !InstanceData.EvaluatedEvadeExecutionIds.Contains(
+				ThreatAttackSnapshot.ExecutionId))
+		{
+			RememberEvaluatedEvadeExecution(
+				InstanceData,
+				ThreatAttackSnapshot.ExecutionId);
+		}
+		ResetPendingEvadeDecision(InstanceData);
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.bMoveRequested = false;
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bEvadeDecisionPending)
+	{
+		const bool bPendingOpportunityStillOpen =
+			EvadeSettings
+			&& EvadeSettings->bEnabled
+			&& bOpenEvadeOpportunity
+			&& InstanceData.PendingEvadeThreat.Get() == TargetActor
+			&& InstanceData.PendingEvadeExecutionId
+				== ThreatAttackSnapshot.ExecutionId;
+		if (!bPendingOpportunityStillOpen)
+		{
+			UE_LOG(
+				LogAIRECompanionStateTree,
+				Verbose,
+				TEXT("Autonomous evade opportunity closed during reaction delay. Threat=%s ExecutionId=%s"),
+				*GetNameSafe(InstanceData.PendingEvadeThreat.Get()),
+				*InstanceData.PendingEvadeExecutionId.ToString());
+			ResetPendingEvadeDecision(InstanceData);
+		}
+		else
+		{
+			InstanceData.EvadeReactionTimeRemaining = FMath::Max(
+				0.0f,
+				InstanceData.EvadeReactionTimeRemaining - DeltaTime);
+			if (InstanceData.EvadeReactionTimeRemaining <= 0.0f)
+			{
+				const FGuid RequestedExecutionId =
+					InstanceData.PendingEvadeExecutionId;
+				ResetPendingEvadeDecision(InstanceData);
+
+				FAIRECombatEvadePlan EvadePlan;
+				const bool bPlanValid = IsValid(EvadeComponent)
+					&& EvadeComponent->BuildLateralDashPlan(
+						TargetActor,
+						RequestedExecutionId,
+						EvadePlan);
+				const float CurrentStamina =
+					InstanceData.AbilitySystemComponent->GetNumericAttribute(
+						UAIRECompanionAttributeSet::GetStaminaAttribute());
+				const bool bOnCooldown =
+					InstanceData.AbilitySystemComponent
+						->HasMatchingGameplayTag(
+							AIRECompanionGameplayTags::
+								CooldownAutonomousEvade);
+				const bool bHasClearance = bPlanValid
+					&& EvadePlan.AvailableDistance
+						+ KINDA_SMALL_NUMBER
+						>= EvadeSettings->MinimumClearance;
+				const bool bHasStamina =
+					FMath::IsFinite(CurrentStamina)
+					&& CurrentStamina + KINDA_SMALL_NUMBER
+						>= EvadeSettings->StaminaCost;
+				int32 ActivatedAbilityCount = 0;
+				if (!bOnCooldown && bHasClearance && bHasStamina)
+				{
+					FGameplayEventData EvadeRequest;
+					EvadeRequest.EventTag =
+						AIRECompanionGameplayTags::
+							EventAutonomousEvadeRequest;
+					EvadeRequest.Instigator = CompanionPawn;
+					EvadeRequest.Target = TargetActor;
+					ActivatedAbilityCount =
+						InstanceData.AbilitySystemComponent
+							->HandleGameplayEvent(
+								AIRECompanionGameplayTags::
+									EventAutonomousEvadeRequest,
+								&EvadeRequest);
+				}
+
+				UE_LOG(
+					LogAIRECompanionStateTree,
+					Verbose,
+					TEXT("Autonomous evade request resolved. Threat=%s ExecutionId=%s Activated=%d Cooldown=%s Stamina=%.2f/%.2f Clearance=%.2f/%.2f"),
+					*GetNameSafe(TargetActor),
+					*RequestedExecutionId.ToString(),
+					ActivatedAbilityCount,
+					bOnCooldown ? TEXT("true") : TEXT("false"),
+					CurrentStamina,
+					EvadeSettings->StaminaCost,
+					bPlanValid ? EvadePlan.AvailableDistance : 0.0f,
+					EvadeSettings->MinimumClearance);
+				if (ActivatedAbilityCount > 0)
+				{
+					InstanceData.CompanionController->StopMovement();
+					InstanceData.bMoveRequested = false;
+					return EStateTreeRunStatus::Running;
+				}
+			}
+		}
+	}
+
+	if (EvadeSettings
+		&& EvadeSettings->bEnabled
+		&& bOpenEvadeOpportunity
+		&& !InstanceData.bEvadeDecisionPending
+		&& !InstanceData.EvaluatedEvadeExecutionIds.Contains(
+			ThreatAttackSnapshot.ExecutionId))
+	{
+		RememberEvaluatedEvadeExecution(
+			InstanceData,
+			ThreatAttackSnapshot.ExecutionId);
+		const FAIRECompanionAutonomousEvadeDecision Decision =
+			FAIRECompanionAutonomousEvadePolicy::Evaluate(
+				ThreatAttackSnapshot.ExecutionId,
+				EvadeSettings->SelectionChance,
+				EvadeSettings->ReactionDelayMin,
+				EvadeSettings->ReactionDelayMax);
+		UE_LOG(
+			LogAIRECompanionStateTree,
+			Verbose,
+			TEXT("Autonomous evade decision evaluated. Threat=%s ExecutionId=%s Selected=%s Delay=%.3f Chance=%.2f"),
+			*GetNameSafe(TargetActor),
+			*ThreatAttackSnapshot.ExecutionId.ToString(),
+			Decision.bSelected ? TEXT("true") : TEXT("false"),
+			Decision.ReactionDelay,
+			EvadeSettings->SelectionChance);
+		if (Decision.bSelected)
+		{
+			InstanceData.PendingEvadeThreat = TargetActor;
+			InstanceData.PendingEvadeExecutionId =
+				ThreatAttackSnapshot.ExecutionId;
+			InstanceData.EvadeReactionTimeRemaining =
+				Decision.ReactionDelay;
+			InstanceData.bEvadeDecisionPending = true;
+		}
+	}
+
 	InstanceData.CompanionController->SetFocus(
 		TargetActor,
 		EAIFocusPriority::Gameplay);
 
-	bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+	const bool bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
 		AIRECompanionGameplayTags::StateActionAttacking);
-	const bool bCombatSkillWasActive =
-		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
-			AIRECompanionGameplayTags::StateActionAttackingSkill);
-	const float ActiveAttackRange = bCombatSkillWasActive
-		? WeaponDefinition->CombatSkill.AttackRange
-		: AttackRange;
-	const float AttackExitDistance =
-		ActiveAttackRange + CombatRangeExitSlack;
-	if (bAttackActive
-		&& !IsTargetInRange(*CompanionPawn, *TargetActor, AttackExitDistance))
-	{
-		const FGameplayTag CombatAbilityTags[] =
-		{
-			AIRECompanionGameplayTags::AbilityCombatBasicAttack,
-			AIRECompanionGameplayTags::AbilityCombatSkill
-		};
-		for (const FGameplayTag CombatAbilityTag : CombatAbilityTags)
-		{
-			const FGameplayAbilitySpecHandle AbilityHandle =
-				InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
-					CombatAbilityTag);
-			if (AbilityHandle.IsValid())
-			{
-				InstanceData.AbilitySystemComponent->CancelAbilityHandle(
-					AbilityHandle);
-			}
-		}
-		bAttackActive = InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
-			AIRECompanionGameplayTags::StateActionAttacking);
-		InstanceData.RetryTimeRemaining = 0.0f;
-		InstanceData.bSkillIntentBuffered = false;
-		InstanceData.bSkillIntentEvaluatedForStep = false;
-		InstanceData.bWasSkillCancelWindowOpen = false;
-		InstanceData.bWasBasicAttackActive = false;
-	}
 
-	InstanceData.RetryTimeRemaining = FMath::Max(
+	InstanceData.MovementRetryTimeRemaining = FMath::Max(
 		0.0f,
-		InstanceData.RetryTimeRemaining - DeltaTime);
+		InstanceData.MovementRetryTimeRemaining - DeltaTime);
+	InstanceData.AbilityRetryTimeRemaining = FMath::Max(
+		0.0f,
+		InstanceData.AbilityRetryTimeRemaining - DeltaTime);
+	bool bApproachMoveFinished = false;
 	if (InstanceData.bMoveRequested
 		&& InstanceData.CompanionController->GetMoveStatus()
 			!= EPathFollowingStatus::Moving)
 	{
 		InstanceData.bMoveRequested = false;
+		bApproachMoveFinished = true;
 	}
 
 	if (!IsTargetInRange(*CompanionPawn, *TargetActor, AttackRange))
 	{
+		if (!bAttackActive && bApproachMoveFinished)
+		{
+			InstanceData.MovementRetryTimeRemaining = FMath::Max(
+				InstanceData.MovementRetryTimeRemaining,
+				CombatMovementRetryInterval);
+		}
 		if (!bAttackActive
 			&& !InstanceData.bMoveRequested
-			&& InstanceData.RetryTimeRemaining <= 0.0f)
+			&& InstanceData.MovementRetryTimeRemaining <= 0.0f)
 		{
 			const FVector ApproachLocation = CalculateCombatApproachLocation(
 				*CompanionPawn,
@@ -490,17 +2772,21 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 					true);
 			InstanceData.bMoveRequested =
 				MoveResult == EPathFollowingRequestResult::RequestSuccessful;
-			if (MoveResult == EPathFollowingRequestResult::Failed)
+			if (MoveResult != EPathFollowingRequestResult::RequestSuccessful)
 			{
-				UE_LOG(
-					LogAIRECompanionStateTree,
-					Warning,
-					TEXT("Companion combat move failed. Companion=%s Target=%s ApproachLocation=%s AcceptanceRadius=%.2f"),
-					*GetNameSafe(CompanionPawn),
-					*GetNameSafe(TargetActor),
-					*ApproachLocation.ToCompactString(),
-					CombatApproachAcceptanceRadius);
-				InstanceData.RetryTimeRemaining = CombatMovementRetryInterval;
+				InstanceData.MovementRetryTimeRemaining =
+					CombatMovementRetryInterval;
+				if (MoveResult == EPathFollowingRequestResult::Failed)
+				{
+					UE_LOG(
+						LogAIRECompanionStateTree,
+						Warning,
+						TEXT("Companion combat move failed. Companion=%s Target=%s ApproachLocation=%s AcceptanceRadius=%.2f"),
+						*GetNameSafe(CompanionPawn),
+						*GetNameSafe(TargetActor),
+						*ApproachLocation.ToCompactString(),
+						CombatApproachAcceptanceRadius);
+				}
 			}
 		}
 		return EStateTreeRunStatus::Running;
@@ -525,9 +2811,13 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 	const FGameplayAbilitySpecHandle CombatSkillHandle =
 		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
 			AIRECompanionGameplayTags::AbilityCombatSkill);
+	const bool bCombatSkillOnCooldown =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::CooldownCombatSkill);
 	const bool bCanSelectCombatSkill =
 		WeaponDefinition->CombatSkill.bEnabled
-		&& CombatSkillHandle.IsValid();
+		&& CombatSkillHandle.IsValid()
+		&& !bCombatSkillOnCooldown;
 	const auto ShouldSelectCombatSkill =
 		[WeaponDefinition, bCanSelectCombatSkill]()
 		{
@@ -601,7 +2891,7 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 		InstanceData.bWasSkillCancelWindowOpen = false;
 	}
 
-	if (InstanceData.RetryTimeRemaining > 0.0f)
+	if (InstanceData.AbilityRetryTimeRemaining > 0.0f)
 	{
 		return EStateTreeRunStatus::Running;
 	}
@@ -641,10 +2931,18 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 				*GetNameSafe(TargetActor),
 				ActivatedAbilityCount,
 				CombatActivationRetryInterval);
-			InstanceData.RetryTimeRemaining =
+			InstanceData.AbilityRetryTimeRemaining =
 				CombatActivationRetryInterval;
 			return EStateTreeRunStatus::Running;
 		}
+	}
+
+	if (InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::CooldownBasicAttack))
+	{
+		InstanceData.AbilityRetryTimeRemaining =
+			CombatActivationRetryInterval;
+		return EStateTreeRunStatus::Running;
 	}
 
 	FGameplayEventData AttackRequest;
@@ -675,7 +2973,7 @@ EStateTreeRunStatus FAIRECompanionEngageThreatTask::Tick(
 			*GetNameSafe(TargetActor),
 			CombatActivationRetryInterval);
 	}
-	InstanceData.RetryTimeRemaining = CombatActivationRetryInterval;
+	InstanceData.AbilityRetryTimeRemaining = CombatActivationRetryInterval;
 	return EStateTreeRunStatus::Running;
 }
 
@@ -693,11 +2991,13 @@ void FAIRECompanionEngageThreatTask::ExitState(
 		*StaticEnum<EStateTreeRunStatus>()->GetNameStringByValue(
 			static_cast<int64>(Transition.CurrentRunStatus)));
 	InstanceData.ActiveTarget.Reset();
-	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.MovementRetryTimeRemaining = 0.0f;
+	InstanceData.AbilityRetryTimeRemaining = 0.0f;
 	InstanceData.bSkillIntentBuffered = false;
 	InstanceData.bSkillIntentEvaluatedForStep = false;
 	InstanceData.bWasSkillCancelWindowOpen = false;
 	InstanceData.bWasBasicAttackActive = false;
+	ResetPendingEvadeDecision(InstanceData);
 }
 
 bool FAIRECompanionEngageThreatTask::IsTargetUsable(const AActor* TargetActor)
@@ -728,6 +3028,7 @@ bool FAIRECompanionEngageThreatTask::IsTargetInRange(
 void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	FInstanceDataType& InstanceData)
 {
+	ResetPendingEvadeDecision(InstanceData);
 	if (IsValid(InstanceData.CompanionController))
 	{
 		InstanceData.CompanionController->StopMovement();
@@ -736,8 +3037,16 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	}
 	InstanceData.bMoveRequested = false;
 
-	if (!IsValid(InstanceData.EquipmentComponent)
-		|| !IsValid(InstanceData.AbilitySystemComponent))
+	if (!IsValid(InstanceData.AbilitySystemComponent))
+	{
+		return;
+	}
+	FGameplayTagContainer EvadeAbilityTags;
+	EvadeAbilityTags.AddTag(
+		AIRECompanionGameplayTags::AbilityCombatAutonomousEvade);
+	InstanceData.AbilitySystemComponent->CancelAbilities(&EvadeAbilityTags);
+
+	if (!IsValid(InstanceData.EquipmentComponent))
 	{
 		return;
 	}
@@ -754,7 +3063,10 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	const FGameplayAbilitySpecHandle CombatSkillAbilityHandle =
 		InstanceData.EquipmentComponent->FindGrantedAbilityHandle(
 			AIRECompanionGameplayTags::AbilityCombatSkill);
-	if (CombatSkillAbilityHandle.IsValid())
+	if (const FGameplayAbilitySpec* CombatSkillSpec =
+			InstanceData.AbilitySystemComponent->FindAbilitySpecFromHandle(
+				CombatSkillAbilityHandle);
+		CombatSkillSpec && CombatSkillSpec->IsActive())
 	{
 		InstanceData.AbilitySystemComponent->CancelAbilityHandle(
 			CombatSkillAbilityHandle);
@@ -764,4 +3076,195 @@ void FAIRECompanionEngageThreatTask::CancelOwnedRequests(
 	InstanceData.bSkillIntentEvaluatedForStep = false;
 	InstanceData.bWasSkillCancelWindowOpen = false;
 	InstanceData.bWasBasicAttackActive = false;
+}
+
+FAIRECompanionEngageSupportTask::FAIRECompanionEngageSupportTask()
+{
+	bShouldCallTick = true;
+	bShouldStateChangeOnReselect = false;
+}
+
+EStateTreeRunStatus FAIRECompanionEngageSupportTask::EnterState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.SupportComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent)
+		|| !InstanceData.SupportComponent->IsSupportRequested()
+		|| InstanceData.SupportComponent->GetSupportTarget()
+			!= InstanceData.SupportTarget)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.ActiveTarget = InstanceData.SupportTarget;
+	InstanceData.RetryTimeRemaining = 0.0f;
+	InstanceData.bMoveRequested = false;
+	return EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FAIRECompanionEngageSupportTask::Tick(
+	FStateTreeExecutionContext& Context,
+	const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!IsValid(InstanceData.CompanionController)
+		|| !IsValid(InstanceData.SupportComponent)
+		|| !IsValid(InstanceData.AbilitySystemComponent))
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	AActor* TargetActor = InstanceData.ActiveTarget.Get();
+	APawn* CompanionPawn = InstanceData.CompanionController->GetPawn();
+	if (!IsValid(TargetActor)
+		|| !IsValid(CompanionPawn)
+		|| InstanceData.SupportComponent->GetSupportTarget()
+			!= TargetActor
+		|| !InstanceData.SupportComponent->IsSupportRequested())
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Running;
+	}
+
+	const float SupportRange =
+		InstanceData.SupportComponent->GetSupportRange();
+	if (!FMath::IsFinite(SupportRange) || SupportRange < 0.0f)
+	{
+		CancelOwnedRequests(InstanceData);
+		return EStateTreeRunStatus::Failed;
+	}
+
+	InstanceData.RetryTimeRemaining = FMath::Max(
+		0.0f,
+		InstanceData.RetryTimeRemaining - DeltaTime);
+	if (InstanceData.bMoveRequested
+		&& InstanceData.CompanionController->GetMoveStatus()
+			!= EPathFollowingStatus::Moving)
+	{
+		InstanceData.bMoveRequested = false;
+	}
+
+	const bool bSupportAbilityActive =
+		InstanceData.AbilitySystemComponent->HasMatchingGameplayTag(
+			AIRECompanionGameplayTags::StateActionSupporting);
+	if (!IsTargetInRange(
+			*CompanionPawn,
+			*TargetActor,
+			SupportRange))
+	{
+		if (bSupportAbilityActive)
+		{
+			const FGameplayAbilitySpecHandle AbilityHandle =
+				InstanceData.SupportComponent
+					->FindSupportAbilityHandle();
+			if (AbilityHandle.IsValid())
+			{
+				InstanceData.AbilitySystemComponent
+					->CancelAbilityHandle(AbilityHandle);
+			}
+		}
+
+		if (!InstanceData.bMoveRequested
+			&& InstanceData.RetryTimeRemaining <= 0.0f)
+		{
+			const FVector ApproachLocation =
+				CalculateSupportApproachLocation(
+					*CompanionPawn,
+					*TargetActor,
+					SupportRange);
+			const EPathFollowingRequestResult::Type MoveResult =
+				InstanceData.CompanionController->MoveToLocation(
+					ApproachLocation,
+					SupportApproachAcceptanceRadius,
+					false,
+					true,
+					true,
+					true,
+					nullptr,
+					true);
+			InstanceData.bMoveRequested =
+				MoveResult
+				== EPathFollowingRequestResult::RequestSuccessful;
+			if (MoveResult == EPathFollowingRequestResult::Failed)
+			{
+				InstanceData.RetryTimeRemaining =
+					SupportMovementRetryInterval;
+			}
+		}
+		return EStateTreeRunStatus::Running;
+	}
+
+	if (InstanceData.bMoveRequested)
+	{
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.bMoveRequested = false;
+	}
+
+	InstanceData.CompanionController->SetFocus(
+		TargetActor,
+		EAIFocusPriority::Gameplay);
+	if (bSupportAbilityActive
+		|| InstanceData.RetryTimeRemaining > 0.0f)
+	{
+		return EStateTreeRunStatus::Running;
+	}
+
+	FGameplayEventData HealRequest;
+	HealRequest.EventTag =
+		AIRECompanionGameplayTags::EventSupportHealRequest;
+	HealRequest.Instigator = CompanionPawn;
+	HealRequest.Target = TargetActor;
+	InstanceData.AbilitySystemComponent->HandleGameplayEvent(
+		AIRECompanionGameplayTags::EventSupportHealRequest,
+		&HealRequest);
+	InstanceData.RetryTimeRemaining =
+		SupportActivationRetryInterval;
+	return EStateTreeRunStatus::Running;
+}
+
+void FAIRECompanionEngageSupportTask::ExitState(
+	FStateTreeExecutionContext& Context,
+	const FStateTreeTransitionResult&) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	CancelOwnedRequests(InstanceData);
+	InstanceData.ActiveTarget.Reset();
+	InstanceData.RetryTimeRemaining = 0.0f;
+}
+
+bool FAIRECompanionEngageSupportTask::IsTargetInRange(
+	const APawn& CompanionPawn,
+	const AActor& TargetActor,
+	const float SupportRange)
+{
+	const float HorizontalDistance = FVector::Dist2D(
+		CompanionPawn.GetActorLocation(),
+		TargetActor.GetActorLocation());
+	const float EffectiveDistance = FMath::Max(
+		0.0f,
+		HorizontalDistance
+			- CompanionPawn.GetSimpleCollisionRadius()
+			- TargetActor.GetSimpleCollisionRadius());
+	return EffectiveDistance <= SupportRange;
+}
+
+void FAIRECompanionEngageSupportTask::CancelOwnedRequests(
+	FInstanceDataType& InstanceData)
+{
+	if (IsValid(InstanceData.CompanionController))
+	{
+		InstanceData.CompanionController->StopMovement();
+		InstanceData.CompanionController->ClearFocus(
+			EAIFocusPriority::Gameplay);
+	}
+	InstanceData.bMoveRequested = false;
+
+	if (IsValid(InstanceData.SupportComponent))
+	{
+		InstanceData.SupportComponent->CancelSupportRequest();
+	}
 }

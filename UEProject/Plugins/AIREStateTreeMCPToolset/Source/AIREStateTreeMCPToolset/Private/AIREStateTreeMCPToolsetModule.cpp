@@ -2,6 +2,7 @@
 
 #include "AIREAnimationMCPToolset.h"
 #include "AIRECompanionTestMCPToolset.h"
+#include "AIREIKRetargetMCPToolset.h"
 #include "AIREStateTreeMCPToolset.h"
 #include "AIREUMGMCPToolset.h"
 #include "Misc/CoreDelegates.h"
@@ -27,10 +28,12 @@ void FAIREStateTreeMCPToolsetModule::RegisterToolset()
 	UToolsetRegistry::RegisterToolsetClass(UAIRECompanionTestMCPToolset::StaticClass());
 	UToolsetRegistry::RegisterToolsetClass(UAIREUMGMCPToolset::StaticClass());
 	UToolsetRegistry::RegisterToolsetClass(UAIREAnimationMCPToolset::StaticClass());
+	UToolsetRegistry::RegisterToolsetClass(UAIREIKRetargetMCPToolset::StaticClass());
 }
 
 void FAIREStateTreeMCPToolsetModule::UnregisterToolset()
 {
+	UToolsetRegistry::UnregisterToolsetClass(UAIREIKRetargetMCPToolset::StaticClass());
 	UToolsetRegistry::UnregisterToolsetClass(UAIREAnimationMCPToolset::StaticClass());
 	UToolsetRegistry::UnregisterToolsetClass(UAIREUMGMCPToolset::StaticClass());
 	UToolsetRegistry::UnregisterToolsetClass(UAIRECompanionTestMCPToolset::StaticClass());

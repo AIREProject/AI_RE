@@ -4,18 +4,16 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/Image.h"
-#include "Components/TextBlock.h"
-#include "Components/Image.h"
 #include "AI_REItemDataAsset.h"
 #include "AI_RECraftingUI.h"
 
-void UAI_RECraftingRecipeRowUI::NativeConstruct()
+void UAI_RECraftingRecipeRowUI::NativeOnInitialized()
 {
-	Super::NativeConstruct();
+	Super::NativeOnInitialized();
 	
 	if (Btn_SelectRecipe)
 	{
-		Btn_SelectRecipe->OnClicked.AddDynamic(this, &UAI_RECraftingRecipeRowUI::OnButtonClicked);
+		Btn_SelectRecipe->OnClicked.AddUniqueDynamic(this, &UAI_RECraftingRecipeRowUI::OnButtonClicked);
 	}
 }
 

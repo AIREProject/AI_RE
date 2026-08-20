@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "LocalAI/Policy/AIRECompanionLocalBehaviorPolicy.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "AIRECompanionThreatComponent.generated.h"
 
@@ -8,6 +9,7 @@ class AAIRECompanionCharacter;
 class AActor;
 class APawn;
 class UAIRECompanionConfigDataAsset;
+class UAIRECompanionLocalBehaviorPolicyComponent;
 class UAISenseConfig_Sight;
 
 UCLASS(ClassGroup = AI, meta = (BlueprintSpawnableComponent))
@@ -27,6 +29,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Threat")
 	bool IsCombatRequested() const;
 
+	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Threat")
+	int32 GetPerceivedHostileCount() const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -44,7 +49,10 @@ private:
 		TargetInvalid,
 		NoPlayer,
 		OutsideDetectionDistance,
+		OutsideDefendPlayerRadius,
 		OutsidePlayerChaseDistance,
+		HoldFire,
+		PolicyUnavailable,
 		CompanionDisabled,
 		DetectionStopped
 	};
@@ -55,6 +63,11 @@ private:
 	UFUNCTION()
 	void HandlePerceivedActorDestroyed(AActor* DestroyedActor);
 
+	UFUNCTION()
+	void HandleLocalBehaviorPolicyChanged(
+		FAIRECompanionLocalBehaviorPolicy PreviousPolicy,
+		FAIRECompanionLocalBehaviorPolicy CurrentPolicy);
+
 	void ConfigureSight(const UAIRECompanionConfigDataAsset& CompanionConfig);
 	void RefreshThreatSelection();
 	bool IsActorHostile(AActor* Actor) const;
@@ -62,12 +75,14 @@ private:
 		AActor* Actor,
 		const APawn* PlayerPawn,
 		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		EAIRECompanionEngagementPolicy EngagementPolicy,
 		EAIREThreatCleanupReason& OutFailureReason) const;
 	void AddPerceivedHostile(AActor* Actor);
 	void RemovePerceivedHostile(AActor* Actor, EAIREThreatCleanupReason Reason);
 	void SelectClosestEligibleTarget(
 		const APawn& PlayerPawn,
-		const UAIRECompanionConfigDataAsset& CompanionConfig);
+		const UAIRECompanionConfigDataAsset& CompanionConfig,
+		EAIRECompanionEngagementPolicy EngagementPolicy);
 	void ClearSelectedTarget(EAIREThreatCleanupReason Reason);
 	void ClearPerceivedHostiles(EAIREThreatCleanupReason Reason);
 	static const TCHAR* GetCleanupReasonName(EAIREThreatCleanupReason Reason);
@@ -76,7 +91,10 @@ private:
 	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
 	TWeakObjectPtr<AAIRECompanionCharacter> CompanionCharacter;
+	TWeakObjectPtr<UAIRECompanionLocalBehaviorPolicyComponent>
+		LocalBehaviorPolicyComponent;
 	TWeakObjectPtr<AActor> SelectedThreatTarget;
 	TArray<TWeakObjectPtr<AActor>> PerceivedHostiles;
+	TMap<TWeakObjectPtr<AActor>, double> PendingSightLossDeadlines;
 	bool bIsThreatDetectionActive = false;
 };

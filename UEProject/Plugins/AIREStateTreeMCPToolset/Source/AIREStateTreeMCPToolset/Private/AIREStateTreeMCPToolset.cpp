@@ -1,6 +1,10 @@
 #include "AIREStateTreeMCPToolset.h"
 
+#include "AIREEnemyStateTree.h"
+#include "AssetToolsModule.h"
 #include "Editor.h"
+#include "Misc/PackageName.h"
+#include "Modules/ModuleManager.h"
 #include "ScopedTransaction.h"
 #include "PropertyBindingPath.h"
 #include "StateTree.h"
@@ -13,6 +17,7 @@
 #include "StateTreePropertyBindings.h"
 #include "StateTreeState.h"
 #include "StateTreeTaskBase.h"
+#include "StateTreeFactory.h"
 #include "Subsystems/EditorAssetSubsystem.h"
 #include "UObject/UObjectIterator.h"
 
@@ -20,7 +25,7 @@
 
 namespace
 {
-	constexpr TCHAR AllowedAssetRoot[] = TEXT("/Game/Work/LMK/");
+	constexpr TCHAR StateTreeAllowedAssetRoot[] = TEXT("/Game/Work/LMK/");
 	constexpr int32 MaximumPropertyTextLength = 4096;
 
 	struct FAIRELocatedStateTreeNode
@@ -57,12 +62,12 @@ namespace
 			return false;
 		}
 
-		if (!StateTree->GetPathName().StartsWith(AllowedAssetRoot))
+		if (!StateTree->GetPathName().StartsWith(StateTreeAllowedAssetRoot))
 		{
 			OutError = FString::Printf(
 				TEXT("Asset '%s' is outside the allowed root '%s'."),
 				*StateTree->GetPathName(),
-				AllowedAssetRoot);
+				StateTreeAllowedAssetRoot);
 			return false;
 		}
 
@@ -87,13 +92,18 @@ namespace
 			&& State->GetTypedOuter<UStateTree>() == StateTree;
 	}
 
-	void FinalizeMutation(UStateTree* StateTree, UStateTreeEditorData* EditorData)
+	void FinalizeMutation(
+		UStateTree* StateTree,
+		UStateTreeEditorData* EditorData,
+		const bool bRemoveInvalidBindings = false)
 	{
-		EditorData->ReparentStates();
-		EditorData->FixDuplicateIDs();
-		EditorData->UpdateBindings();
-		EditorData->RemoveInvalidBindings();
-		UStateTreeEditingSubsystem::ValidateStateTree(StateTree);
+		if (bRemoveInvalidBindings)
+		{
+			EditorData->RemoveInvalidBindings();
+		}
+
+		// Full normalization and validation are intentionally deferred to ValidateAndCompile().
+		// Running them after every small MCP edit repeatedly walks the entire StateTree.
 		UStateTreeEditingSubsystem::MarkAsModified(StateTree);
 		StateTree->MarkPackageDirty();
 	}
@@ -417,6 +427,66 @@ namespace
 	}
 }
 
+FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::CreateEnemyStateTree(
+	const FString& FolderPath,
+	const FName AssetName)
+{
+	if (!FolderPath.StartsWith(StateTreeAllowedAssetRoot))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("Folder '%s' is outside the allowed root '%s'."),
+			*FolderPath,
+			StateTreeAllowedAssetRoot));
+	}
+	if (AssetName.IsNone()
+		|| AssetName.ToString().Contains(TEXT("/")))
+	{
+		return MakeFailure(TEXT("AssetName must be a non-empty object name."));
+	}
+
+	const FString PackageName = FolderPath / AssetName.ToString();
+	if (!FPackageName::IsValidLongPackageName(PackageName))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("'%s' is not a valid Unreal package path."),
+			*PackageName));
+	}
+
+	UEditorAssetSubsystem* AssetSubsystem = GEditor != nullptr
+		? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>()
+		: nullptr;
+	if (!IsValid(AssetSubsystem))
+	{
+		return MakeFailure(TEXT("Editor Asset Subsystem is unavailable."));
+	}
+	if (AssetSubsystem->DoesAssetExist(PackageName))
+	{
+		return MakeFailure(FString::Printf(
+			TEXT("Asset '%s' already exists."),
+			*PackageName));
+	}
+
+	UStateTreeFactory* Factory = NewObject<UStateTreeFactory>();
+	Factory->SetSchemaClass(UAIREEnemyStateTreeSchema::StaticClass());
+	FAssetToolsModule& AssetToolsModule =
+		FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+	UStateTree* NewStateTree = Cast<UStateTree>(
+		AssetToolsModule.Get().CreateAsset(
+			AssetName.ToString(),
+			FolderPath,
+			UStateTree::StaticClass(),
+			Factory));
+	if (!IsValid(NewStateTree))
+	{
+		return MakeFailure(TEXT("StateTree factory could not create the asset."));
+	}
+
+	FAIREStateTreeMutationResult Result = MakeSuccess(
+		TEXT("Enemy AI StateTree created in memory. Configure, compile, and save explicitly."));
+	Result.StateTree = NewStateTree;
+	return Result;
+}
+
 TArray<FAIREStateTreeNodeTypeInfo> UAIREStateTreeMCPToolset::ListNodeTypes(
 	const EAIREStateTreeNodeKind NodeKind,
 	const FString& NameFilter)
@@ -604,7 +674,10 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::AddState(
 		ParentState->Modify();
 	}
 
-	UStateTreeState* NewState = NewObject<UStateTreeState>(EditorData, NAME_None, RF_Transactional);
+	UObject* StateOuter = IsValid(ParentState)
+		? static_cast<UObject*>(ParentState)
+		: static_cast<UObject*>(EditorData);
+	UStateTreeState* NewState = NewObject<UStateTreeState>(StateOuter, NAME_None, RF_Transactional);
 	NewState->Name = StateName;
 	NewState->Type = EngineStateType;
 	NewState->Parent = ParentState;
@@ -699,7 +772,7 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::RemoveState(
 	TArray<TObjectPtr<UStateTreeState>>* Source = GetStateContainer(EditorData, State->Parent);
 	Source->Remove(State);
 	State->Parent = nullptr;
-	FinalizeMutation(StateTree, EditorData);
+	FinalizeMutation(StateTree, EditorData, true);
 	return MakeSuccess(TEXT("State and its child hierarchy were detached. Compile and save explicitly after all edits."));
 }
 
@@ -864,7 +937,7 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::RemoveNode(
 		{
 			return Candidate.ID == NodeID;
 		});
-	FinalizeMutation(StateTree, EditorData);
+	FinalizeMutation(StateTree, EditorData, true);
 	return MakeSuccess(TEXT("Node removed. Compile and save explicitly after all edits."));
 }
 
@@ -910,6 +983,19 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::SetNodePropertyText(
 		return MakeFailure(TEXT("Property was not found or is transient and cannot be edited."));
 	}
 
+	void* ValueAddress = Property->ContainerPtrToValuePtr<void>(DataMemory);
+	FString PreviousValue;
+	Property->ExportTextItem_Direct(
+		PreviousValue,
+		ValueAddress,
+		nullptr,
+		OwnerObject,
+		PPF_None);
+	if (PreviousValue == ExportedValue)
+	{
+		return MakeSuccess(TEXT("Node property already has the requested value; no mutation was applied."));
+	}
+
 	FScopedTransaction Transaction(LOCTEXT("SetStateTreeNodeProperty", "Set AIRE StateTree Node Property"));
 	StateTree->Modify();
 	EditorData->Modify();
@@ -922,14 +1008,6 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::SetNodePropertyText(
 		OwnerObject->Modify();
 	}
 
-	void* ValueAddress = Property->ContainerPtrToValuePtr<void>(DataMemory);
-	FString PreviousValue;
-	Property->ExportTextItem_Direct(
-		PreviousValue,
-		ValueAddress,
-		nullptr,
-		OwnerObject,
-		PPF_None);
 	if (Property->ImportText_Direct(*ExportedValue, ValueAddress, OwnerObject, PPF_None) == nullptr)
 	{
 		Property->ImportText_Direct(*PreviousValue, ValueAddress, OwnerObject, PPF_None);
@@ -970,12 +1048,20 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::AddGotoTransition(
 		if (ExistingTransition.Trigger == EngineTrigger
 			&& ExistingTransition.State.ID == TargetState->ID)
 		{
+			const FGuid ExistingTransitionID = ExistingTransition.ID;
+			if (ExistingTransition.Priority == EnginePriority)
+			{
+				FAIREStateTreeMutationResult Result = MakeSuccess(
+					TEXT("Matching transition already has the requested priority; no mutation was applied."));
+				Result.TransitionID = ExistingTransitionID;
+				return Result;
+			}
+
 			const FScopedTransaction Transaction(LOCTEXT("UpdateStateTreeTransition", "Update AIRE StateTree Transition"));
 			StateTree->Modify();
 			EditorData->Modify();
 			SourceState->Modify();
 			ExistingTransition.Priority = EnginePriority;
-			const FGuid ExistingTransitionID = ExistingTransition.ID;
 			FinalizeMutation(StateTree, EditorData);
 
 			FAIREStateTreeMutationResult Result = MakeSuccess(TEXT("Matching transition already existed; its priority was updated."));
@@ -1032,7 +1118,7 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::RemoveTransition(
 	EditorData->Modify();
 	SourceState->Modify();
 	SourceState->Transitions.RemoveAt(ExistingIndex);
-	FinalizeMutation(StateTree, EditorData);
+	FinalizeMutation(StateTree, EditorData, true);
 	return MakeSuccess(TEXT("Transition removed. Compile and save explicitly after all edits."));
 }
 
@@ -1073,6 +1159,14 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::AddPropertyBinding(
 	{
 		return MakeFailure(FString::Printf(TEXT("Invalid target property path: %s"), *Error));
 	}
+	for (const FStateTreePropertyPathBinding& ExistingBinding : EditorData->GetPropertyEditorBindings()->GetBindings())
+	{
+		if (ExistingBinding.GetSourcePath() == SourceBindingPath
+			&& ExistingBinding.GetTargetPath() == TargetBindingPath)
+		{
+			return MakeSuccess(TEXT("Matching property binding already exists; no mutation was applied."));
+		}
+	}
 
 	const FScopedTransaction Transaction(LOCTEXT("AddStateTreePropertyBinding", "Add AIRE StateTree Property Binding"));
 	StateTree->Modify();
@@ -1108,6 +1202,19 @@ FAIREStateTreeMutationResult UAIREStateTreeMCPToolset::RemovePropertyBinding(
 	if (!TargetBindingPath.UpdateSegmentsFromValue(TargetView, &Error))
 	{
 		return MakeFailure(FString::Printf(TEXT("Invalid target property path: %s"), *Error));
+	}
+	bool bHasMatchingBinding = false;
+	for (const FStateTreePropertyPathBinding& ExistingBinding : EditorData->GetPropertyEditorBindings()->GetBindings())
+	{
+		if (ExistingBinding.GetTargetPath() == TargetBindingPath)
+		{
+			bHasMatchingBinding = true;
+			break;
+		}
+	}
+	if (!bHasMatchingBinding)
+	{
+		return MakeSuccess(TEXT("No property binding targets the supplied path; no mutation was applied."));
 	}
 
 	const FScopedTransaction Transaction(LOCTEXT("RemoveStateTreePropertyBinding", "Remove AIRE StateTree Property Binding"));

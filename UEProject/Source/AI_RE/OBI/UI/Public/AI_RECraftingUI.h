@@ -19,17 +19,17 @@ UCLASS(Abstract)
 class AI_RE_API UAI_RECraftingUI : public UUserWidget
 {
 	GENERATED_BODY()
-
+	
 public:
-	virtual void NativeConstruct() override;
+	// Called by Row UI when clicked
+	void OnRecipeSelected(FName SelectedRecipeName);
 
 	// Called by character when interacting with a workbench
 	void InitializeCrafting(UAI_REPlayerCraftingComponent* InCraftingComp, EWorkbenchType InFilterType);
 
-	// Called by Row UI when clicked
-	void OnRecipeSelected(FName SelectedRecipeName);
-
 protected:
+	virtual void NativeOnInitialized() override;
+
 	// Automatically bound widgets from blueprint
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UScrollBox> RecipeScrollBox;

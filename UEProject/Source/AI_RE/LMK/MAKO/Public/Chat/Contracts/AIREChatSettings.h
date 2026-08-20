@@ -11,7 +11,7 @@ class AI_RE_API UAIREChatSettings : public UObject
 
 public:
 	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Companion|Chat")
-	FString BackendBaseUrl = TEXT("https://api.mtvs2026.work");
+	FString BackendBaseUrl = TEXT("https://traip.mtvs2026.work");
 
 	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Companion|Chat")
 	FString GameWebSocketPath = TEXT("/api/v1/game/chat");
@@ -20,10 +20,7 @@ public:
 	FString HttpChatPath = TEXT("/api/v1/chat");
 
 	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Companion|Chat")
-	FString RegisterGamePath = TEXT("/api/v1/devices/register-game");
-
-	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Companion|Chat")
-	EAIREChatTransportMode TransportMode = EAIREChatTransportMode::WebSocket;
+	EAIREChatTransportMode TransportMode = EAIREChatTransportMode::Http;
 
 	UPROPERTY(Config, EditAnywhere, Category = "AIRE|Companion|Chat", meta = (ClampMin = "1.0"))
 	float ConnectionTimeoutSeconds = 10.0f;

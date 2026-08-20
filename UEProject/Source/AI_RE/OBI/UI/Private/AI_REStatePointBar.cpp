@@ -45,6 +45,14 @@ void UAI_REStatePointBar::NativePreConstruct()
 	}
 }
 
+void UAI_REStatePointBar::NativeConstruct()
+{
+	Super::NativeConstruct();
+	
+	// 위젯이 생성된 직후 머티리얼이 확실하게 적용되도록 한번 밀어줍니다.
+	SetPercentInstantly(CurrentPercent);
+}
+
 void UAI_REStatePointBar::SetPercentInstantly(float NewPercent)
 {
 	TargetPercent = NewPercent;

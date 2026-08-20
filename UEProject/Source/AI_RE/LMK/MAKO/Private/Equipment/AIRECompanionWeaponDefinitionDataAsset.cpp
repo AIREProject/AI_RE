@@ -1,22 +1,58 @@
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 
-#include "Equipment/AIRECompanionAbilitySetDataAsset.h"
+#include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "GameplayTagsManager.h"
 #include "Misc/DataValidation.h"
 
+bool FAIREWeaponTraceSocketPair::IsConfigured() const
+{
+	return !TraceStartSocket.IsNone() && !TraceEndSocket.IsNone();
+}
+
+bool FAIREWeaponTraceSocketPair::IsPartiallyConfigured() const
+{
+	return TraceStartSocket.IsNone() != TraceEndSocket.IsNone();
+}
+
+UAIRECompanionWeaponDefinitionDataAsset::UAIRECompanionWeaponDefinitionDataAsset()
+{
+	LeftTraceSockets.TraceStartSocket = FName(TEXT("weapon_l"));
+	LeftTraceSockets.TraceEndSocket = FName(TEXT("weapon_trace_tip_l"));
+	RightTraceSockets.TraceStartSocket = FName(TEXT("weapon_r"));
+	RightTraceSockets.TraceEndSocket = FName(TEXT("weapon_trace_tip_r"));
+}
+
 bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& OutValidationError) const
 {
 	OutValidationError = FText::GetEmpty();
-	if (!WeaponTag.IsValid()
-		|| !WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanion)
-		|| WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanionMelee))
+	if (!WeaponTag.IsValid())
+	{
+		OutValidationError = NSLOCTEXT("AIRECompanionWeaponDefinition", "InvalidWeaponTag", "Weapon Tag is invalid.");
+		return false;
+	}
+
+	bool bIsCompanionWeapon = WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanion);
+	bool bIsPlayerWeapon = WeaponTag.MatchesTag(FGameplayTag::RequestGameplayTag(FName("Weapon.Player")));
+
+	if (!bIsCompanionWeapon && !bIsPlayerWeapon)
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionWeaponDefinition",
 			"InvalidWeaponTag",
-			"Weapon Tag must be a concrete child of Weapon.Companion.");
+			"Weapon Tag must be a child of Weapon.Companion or Weapon.Player.");
+		return false;
+	}
+
+	if (WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanion) ||
+		WeaponTag.MatchesTagExact(AIRECompanionGameplayTags::WeaponCompanionMelee) ||
+		WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Player"))) ||
+		WeaponTag.MatchesTagExact(FGameplayTag::RequestGameplayTag(FName("Weapon.Player.Melee"))))
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidWeaponTag",
+			"Weapon Tag must be a concrete child (e.g. Weapon.Player.Melee.GreatSword), not a base category.");
 		return false;
 	}
 
@@ -38,12 +74,84 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 		return false;
 	}
 
+	if (!LeftTraceSockets.IsConfigured()
+		|| LeftTraceSockets.TraceStartSocket
+			== LeftTraceSockets.TraceEndSocket
+		|| !RightTraceSockets.IsConfigured()
+		|| RightTraceSockets.TraceStartSocket
+			== RightTraceSockets.TraceEndSocket)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidDefaultTraceSockets",
+			"Left and Right Trace Sockets must each specify distinct start and end sockets.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(TraceRadius) || TraceRadius <= 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceRadius",
+			"Trace Radius must be finite and greater than zero.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(TraceCapsuleRadius)
+		|| TraceCapsuleRadius <= 0.0f
+		|| !FMath::IsFinite(TraceCapsuleHalfHeight)
+		|| TraceCapsuleHalfHeight < TraceCapsuleRadius)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceCapsule",
+			"Trace Capsule Radius must be positive and Half Height must be at least the Radius.");
+		return false;
+	}
+
+	if (TraceChannel.GetValue() >= ECC_MAX)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidTraceChannel",
+			"Trace Channel must be a valid collision channel.");
+		return false;
+	}
+
+	if (!FMath::IsFinite(HarvestAttackRange)
+		|| HarvestAttackRange < 0.0f)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidHarvestAttackRange",
+			"Harvest Attack Range must be finite and non-negative.");
+		return false;
+	}
+
 	if (!FMath::IsFinite(Damage) || Damage < 0.0f)
 	{
 		OutValidationError = NSLOCTEXT(
 			"AIRECompanionWeaponDefinition",
 			"InvalidDamage",
 			"Damage must be finite and non-negative.");
+		return false;
+	}
+	if (!FMath::IsFinite(StaggerValue)
+		|| StaggerValue < 0.0f
+		|| (Damage <= 0.0f && StaggerValue <= 0.0f))
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"InvalidStagger",
+			"Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
+		return false;
+	}
+	if (TargetingMode != EAIRECombatTargetingMode::SingleTarget)
+	{
+		OutValidationError = NSLOCTEXT(
+			"AIRECompanionWeaponDefinition",
+			"UnsupportedTargetingMode",
+			"Current companion damage execution supports SingleTarget attacks only.");
 		return false;
 	}
 
@@ -82,6 +190,43 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 					"AIRECompanionWeaponDefinition",
 					"InvalidComboDamage",
 					"Combo Step {0} Damage must be finite and non-negative."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+		if (!FMath::IsFinite(ComboStep.StaggerValue)
+			|| ComboStep.StaggerValue < 0.0f
+			|| (ComboStep.Damage <= 0.0f
+				&& ComboStep.StaggerValue <= 0.0f))
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboStagger",
+					"Combo Step {0} Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+		if (ComboStep.TargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"UnsupportedComboTargetingMode",
+					"Combo Step {0} must use SingleTarget until area damage fan-out is implemented."),
+				FText::AsNumber(StepIndex));
+			return false;
+		}
+		if (ComboStep.TraceSocketOverride.IsPartiallyConfigured()
+			|| (ComboStep.TraceSocketOverride.IsConfigured()
+				&& ComboStep.TraceSocketOverride.TraceStartSocket
+					== ComboStep.TraceSocketOverride.TraceEndSocket))
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboTraceSocketOverride",
+					"Combo Step {0} Trace Socket Override must be empty or specify distinct start and end sockets."),
 				FText::AsNumber(StepIndex));
 			return false;
 		}
@@ -132,6 +277,37 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 				"AIRECompanionWeaponDefinition",
 				"InvalidCombatSkillDamage",
 				"Combat Skill Damage must be finite and non-negative.");
+			return false;
+		}
+		if (!FMath::IsFinite(CombatSkill.StaggerValue)
+			|| CombatSkill.StaggerValue < 0.0f
+			|| (CombatSkill.Damage <= 0.0f
+				&& CombatSkill.StaggerValue <= 0.0f))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillStagger",
+				"Combat Skill Stagger must be finite and non-negative, and Damage and Stagger cannot both be zero.");
+			return false;
+		}
+		if (CombatSkill.TargetingMode
+			!= EAIRECombatTargetingMode::SingleTarget)
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"UnsupportedCombatSkillTargetingMode",
+				"Current companion combat skills support SingleTarget only.");
+			return false;
+		}
+		if (CombatSkill.TraceSocketOverride.IsPartiallyConfigured()
+			|| (CombatSkill.TraceSocketOverride.IsConfigured()
+				&& CombatSkill.TraceSocketOverride.TraceStartSocket
+					== CombatSkill.TraceSocketOverride.TraceEndSocket))
+		{
+			OutValidationError = NSLOCTEXT(
+				"AIRECompanionWeaponDefinition",
+				"InvalidCombatSkillTraceSocketOverride",
+				"Combat Skill Trace Socket Override must be empty or specify distinct start and end sockets.");
 			return false;
 		}
 
@@ -186,6 +362,21 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsMeleeWeapon() const
 {
 	return WeaponTag.IsValid()
 		&& WeaponTag.MatchesTag(AIRECompanionGameplayTags::WeaponCompanionMelee);
+}
+
+FAIREWeaponTraceSocketPair
+UAIRECompanionWeaponDefinitionDataAsset::ResolveTraceSockets(
+	const EAIRECompanionWeaponTraceSide TraceSide,
+	const FAIREWeaponTraceSocketPair& TraceSocketOverride) const
+{
+	if (TraceSocketOverride.IsConfigured())
+	{
+		return TraceSocketOverride;
+	}
+
+	return TraceSide == EAIRECompanionWeaponTraceSide::Left
+		? LeftTraceSockets
+		: RightTraceSockets;
 }
 
 #if WITH_EDITOR

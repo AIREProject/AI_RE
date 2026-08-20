@@ -30,6 +30,9 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "QuickSlot")
 	bool bIsQuickSlot = false;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory|Equipment")
+	bool bIsEquipmentSlot = false;
+
 	UPROPERTY()
 	TObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComp;
 

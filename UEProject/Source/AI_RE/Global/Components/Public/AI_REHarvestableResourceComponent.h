@@ -5,13 +5,14 @@
 #include "GameplayTagContainer.h"
 #include "AI_REHarvestableResourceComponent.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_SixParams(
 	FAI_REHarvestedSignature,
 	AActor*, InstigatorActor,
 	float, DamageAmount,
 	float, CurrentHealth,
 	class UAI_REItemDataAsset*, RewardItemAsset,
-	int32, RewardAmount);
+	int32, RewardAmount,
+	FGuid, DeliveryId);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAI_REHarvestDepletedSignature, AActor*, InstigatorActor);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAI_REHarvestRespawnedSignature);
@@ -98,7 +99,4 @@ private:
 	void RespawnResource();
 	void BroadcastDepletedState();
 	int32 ConsumeRewardIntervals(float AppliedDamage);
-	
-	// Singleplayer simplified reward grant
-	void GrantReward(AActor* InstigatorActor, int32 RewardMultiplier);
 };

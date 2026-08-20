@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fbf9f6">
+  <title>TRAIP | AI : RE 프로젝트 발표</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <button class="menu-toggle" id="menuToggle" type="button" aria-controls="slideMenu" aria-expanded="false">
+    <span class="menu-toggle__icon" aria-hidden="true"></span>
+    <span>목차</span>
+  </button>
+
+  <aside class="slide-menu" id="slideMenu" aria-label="슬라이드 목차" aria-hidden="true">
+    <div class="slide-menu__head">
+      <div>
+        <span class="slide-menu__eyebrow">TEAM TRAIP</span>
+        <strong>AI : RE</strong>
+      </div>
+      <button class="menu-close" id="menuClose" type="button" aria-label="목차 닫기">×</button>
+    </div>
+    <nav id="menuList"></nav>
+    <p class="slide-menu__hint"><kbd>M</kbd> 목차 · <kbd>←</kbd><kbd>→</kbd> 이동 · <kbd>Esc</kbd> 닫기</p>
+  </aside>
+  <div class="menu-scrim" id="menuScrim" aria-hidden="true"></div>
+
+  <main class="deck" id="deck" aria-live="polite">
+    <section class="slide slide--cover is-active" data-title="표지" aria-label="1. 표지">
+      <div class="cover-geometry" aria-hidden="true">
+        <span class="cover-geometry__plane"></span>
+        <span class="cover-geometry__line cover-geometry__line--one"></span>
+        <span class="cover-geometry__line cover-geometry__line--two"></span>
+        <span class="cover-geometry__line cover-geometry__line--three"></span>
+      </div>
+      <div class="cover-content">
+        <p class="cover-slogan">하나의 관계로 이어지는 새로운 경험</p>
+        <h1>AI <span>|</span> RE</h1>
+        <div class="cover-meta">
+          <strong>TEAM TRAIP</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide--overview-focus" data-title="프로젝트 개요" aria-label="2. 프로젝트 개요">
+      <div class="slide-accent"></div>
+      <div class="slide-inner split split--overview">
+        <div class="copy">
+          <span class="kicker">PROJECT</span>
+          <h2>개인화 AI로<br>확장되는 사용자 경험</h2>
+          <ul class="feature-list">
+            <li><strong>맥락 이해</strong><span>사용자와 환경의 상태를 읽습니다</span></li>
+            <li><strong>자율 판단</strong><span>대화에 머물지 않고 제안하고 행동합니다</span></li>
+            <li><strong>경험 확장</strong><span>다양한 인터페이스에서 같은 AI를 만납니다</span></li>
+          </ul>
+        </div>
+        <figure class="media-frame media-frame--hero">
+          <img src="./assets/overview-device-connection-v5.png" alt="평범한 방의 게임 화면 속 OUTOPIA와 모바일 웹 디바이스를 잇는 빛의 흐름">
+          <figcaption>YOUR AI · EVERYWHERE</figcaption>
+        </figure>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--gameplay-video" data-title="플레이 영상" aria-label="3. 플레이 영상">
+      <div class="slide-accent"></div>
+      <div class="slide-inner slide-inner--gameplay-video">
+        <header class="gameplay-video-header">
+          <span class="kicker">GAMEPLAY</span>
+        </header>
+        <div class="gameplay-video-placeholder">
+          <video controls playsinline preload="metadata" aria-label="AI : RE 게임플레이 영상">
+            <source src="./assets/Gameplay.mp4" type="video/mp4">
+            브라우저가 영상을 지원하지 않습니다.
+          </video>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide slide--differentiation" data-title="차별화 · AX" aria-label="4. 차별화와 AX">
+      <div class="slide-accent"></div>
+      <div class="slide-inner">
+        <header class="slide-header slide-header--compact differentiation-header">
+          <div>
+            <span class="kicker">DIFFERENCE</span>
+            <h2>사용자를 기억하는 개인화,<br>접점을 잇는 멀티플랫폼</h2>
+          </div>
+        </header>
+        <div class="ax-comparison">
+          <article class="ax-comparison__legacy">
+            <span>일반 대화형 AI</span>
+            <ol>
+              <li><em>01</em><strong>공통된 응답</strong><small>사용자별 맥락이 제한적</small></li>
+              <li><em>02</em><strong>하나의 접점</strong><small>대화 화면 안에서 종료</small></li>
+              <li><em>03</em><strong>끊기는 경험</strong><small>세션이 바뀌면 관계도 단절</small></li>
+            </ol>
+          </article>
+          <div class="ax-shift" aria-label="AI | RE가 만드는 경험 전환">
+            <span>AX SHIFT</span>
+            <strong>→</strong>
+          </div>
+          <article class="ax-comparison__agent">
+            <span>AI | RE</span>
+            <ol>
+              <li><em>01</em><strong>개인화된 맥락</strong><small>사용자 · 환경 · 관계를 이해</small></li>
+              <li><em>02</em><strong>여러 접점의 연결</strong><small>PC · 모바일 · 다음 디바이스</small></li>
+              <li><em>03</em><strong>이어지는 경험</strong><small>접점이 달라도 같은 AI 정체성</small></li>
+            </ol>
+          </article>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--audience" data-title="타깃 유저" aria-label="5. 타깃 유저">
+      <div class="slide-accent"></div>
+      <div class="slide-inner">
+        <header class="slide-header audience-header">
+          <div>
+            <span class="kicker">TARGET USERS</span>
+            <h2>나를 이해하고<br>함께할 AI를 원하는 사용자</h2>
+          </div>
+        </header>
+        <div class="audience-grid">
+          <article>
+            <span>RELATIONSHIP</span>
+            <strong>관계 몰입</strong>
+            <p>캐릭터와 서사에 감정적으로 몰입하고 유대감을 느끼는 사용자</p>
+          </article>
+          <article>
+            <span>CONNECTION</span>
+            <strong>연결 경험형 사용자</strong>
+            <p>하나의 콘텐츠 경험이 일상에서도 자연스럽게 이어지길 원하는 사용자</p>
+          </article>
+          <article>
+            <span>EXPLORATION</span>
+            <strong>AI 경험 탐색자</strong>
+            <p>질문과 답변을 넘어 새로운 방식으로 AI를 경험하고 싶은 사용자</p>
+          </article>
+        </div>
+        <div class="audience-insight">
+          <span>USER NEED</span>
+          <strong>함께한 시간이 쌓일수록, 나를 더 잘 알아주는 AI</strong>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide team-slide" data-title="R&amp;R" aria-label="R&amp;R">
+      <div class="slide-accent"></div>
+      <div class="slide-inner">
+        <header class="team-header">
+          <h2>TEAM TRAIP</h2>
+          <p>각자의 전문성이 연결되어 하나의 동료 경험을 만듭니다</p>
+        </header>
+        <div class="team-grid">
+          <article class="team-card team-card--companion">
+            <div class="team-identity"><em>UNREAL / WEB</em><strong>최창욱</strong></div>
+            <p>MAKO 로컬 AI·전투 시스템과 웹 경험 연동</p>
+            <span class="team-handoff">ART SUPPORT</span>
+          </article>
+          <article class="team-card team-card--player">
+            <div class="team-identity"><em>UNREAL / BACKEND</em><strong>오병일</strong></div>
+            <p>플레이어 생존 루프·UI와 서비스 연동</p>
+            <span class="team-handoff">ART SUPPORT</span>
+          </article>
+          <article class="team-card team-card--ai">
+            <div class="team-identity"><em>AI / BACKEND</em><strong>이승형</strong></div>
+            <p>동료 대화·기억 설계와 AI 서비스 구현</p>
+          </article>
+        </div>
+        <span class="team-footer">ONE COMPANION · THREE SPECIALISTS</span>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--world-art" data-title="월드 디자인" aria-label="6. 월드 디자인">
+      <div class="slide-accent"></div>
+      <div class="slide-inner split split--world">
+        <div class="copy">
+          <span class="kicker">WORLD CONCEPT · STYLIZED ART</span>
+          <h2>현실과 경계가<br>흐려진 월드</h2>
+          <div class="story-lines">
+            <p><strong>OUTOPIA</strong>는 거대한 인공 구조물과 침식된 자연이 공존하는 근미래 폐허입니다.</p>
+            <p>현실과 생사의 경계가 뒤섞인 낯선 공간을 스타일라이즈드 아트로 표현합니다.</p>
+            <p>절제된 색감과 거대한 실루엣으로 고독함과 동료가 주는 온기를 함께 강조합니다.</p>
+          </div>
+        </div>
+        <figure class="media-frame media-frame--tall">
+          <img src="./assets/world-concept-v2.png" alt="거대한 폐허 구조물 앞에 선 플레이어와 AI 동료 MAKO">
+        </figure>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--character-design" data-title="캐릭터 디자인" aria-label="7. 캐릭터 디자인">
+      <div class="slide-accent"></div>
+      <div class="slide-inner">
+        <header class="slide-header slide-header--compact character-design-header">
+          <div>
+            <span class="kicker">PROGRESS 02 · CHARACTER</span>
+            <h2>한눈에 구분되지만 같은 세계에 속한 두 인물</h2>
+          </div>
+        </header>
+        <div class="character-grid">
+          <figure>
+            <img src="./assets/player-design.png" alt="플레이어 캐릭터 정면, 후면, 측면 디자인">
+            <figcaption><strong>PLAYER</strong><span>현실적인 생존자</span></figcaption>
+          </figure>
+          <figure>
+            <img src="./assets/mako-design_v2.png" alt="MAKO 캐릭터 정면, 후면, 측면 디자인">
+            <figcaption><strong>MAKO</strong><span>신비한 미지의 동료</span></figcaption>
+          </figure>
+        </div>
+        <div class="art-pipeline">
+          <strong>CHARACTER PIPELINE</strong>
+          <span>Tripo 3D</span><i>→</i>
+          <span>InstaLOD</span><i>→</i>
+          <span>Blender</span><i>→</i>
+          <span>AccuRIG</span><i>→</i>
+          <span>In-game Character</span>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--gameplay-loop" data-title="생존 플레이 루프" aria-label="8. 생존 플레이 루프">
+      <div class="slide-accent"></div>
+      <div class="slide-inner">
+        <header class="gameplay-loop-header">
+          <span class="kicker">LOCAL GAMEPLAY LOOP</span>
+          <h2>동료와 함께 완성하는<br>생존 플레이 사이클</h2>
+        </header>
+        <div class="game-cycle" aria-label="Unreal 로컬 게임플레이 사이클">
+          <article class="game-cycle__stage game-cycle__stage--explore">
+            <span>01</span>
+            <strong>탐색 · 획득</strong>
+            <p>필드 자원과 아이템</p>
+          </article>
+          <article class="game-cycle__stage game-cycle__stage--inventory">
+            <span>02</span>
+            <strong>보관 · 장비</strong>
+            <p>인벤토리와 공유 창고</p>
+          </article>
+          <article class="game-cycle__stage game-cycle__stage--work">
+            <span>03</span>
+            <strong>제작 · 작업</strong>
+            <p>Workbench와 MAKO Work</p>
+          </article>
+          <article class="game-cycle__stage game-cycle__stage--combat">
+            <span>04</span>
+            <strong>협력 · 전투</strong>
+            <p>PLAYER × MAKO Combat</p>
+          </article>
+          <div class="game-cycle__hub"><span>PLAYER</span><i>×</i><strong>MAKO</strong></div>
+          <span class="game-cycle__arrow game-cycle__arrow--one">↘</span>
+          <span class="game-cycle__arrow game-cycle__arrow--two">↙</span>
+          <span class="game-cycle__arrow game-cycle__arrow--three">↖</span>
+          <span class="game-cycle__arrow game-cycle__arrow--four">↗</span>
+        </div>
+        <figure class="gameplay-loop-mako" aria-hidden="true">
+          <img src="./assets/mako-portrait-transparent.png" alt="">
+          <figcaption>MAKO · AI COMPANION</figcaption>
+        </figure>
+        <p class="gameplay-loop-outcome">탐색부터 전투까지, PLAYER와 MAKO가 하나의 생존 사이클을 함께 반복합니다.</p>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--local-ai" data-title="스스로 판단하는 MAKO" aria-label="9. 스스로 판단하는 MAKO">
+      <div class="slide-accent"></div>
+      <div class="slide-inner split split--local-ai">
+        <div class="copy">
+          <span class="kicker">COMPANION BEHAVIOR</span>
+          <h2>스스로 상황을 읽고<br>판단하는<br>동료 MAKO</h2>
+          <div class="local-ai-flow" aria-label="인식, 판단, 행동으로 이어지는 MAKO의 행동 사이클">
+            <article><span>01</span><div><strong>인식</strong><p>주변 상황 확인</p></div></article>
+            <span class="local-ai-flow__arrow local-ai-flow__arrow--one" aria-hidden="true">→</span>
+            <article><span>02</span><div><strong>판단</strong><p>필요한 행동 선택</p></div></article>
+            <span class="local-ai-flow__arrow local-ai-flow__arrow--two" aria-hidden="true">↙</span>
+            <article><span>03</span><div><strong>행동</strong><p>추적 · 전투 · 작업</p></div></article>
+            <span class="local-ai-flow__arrow local-ai-flow__arrow--three" aria-hidden="true">↖</span>
+            <strong class="local-ai-flow__hub">MAKO<br>CYCLE</strong>
+          </div>
+        </div>
+        <figure class="media-frame media-frame--local-ai media-frame--dark">
+          <img src="./assets/mako-combat-v3.png" alt="대형 기계형 적과 대치하는 AI 동료 MAKO">
+        </figure>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--multiplatform" data-title="기술 프레임워크" aria-label="10. 기술 프레임워크">
+      <div class="slide-accent"></div>
+      <div class="slide-inner slide-inner--multiplatform">
+        <header class="slide-header slide-header--compact multiplatform-header">
+          <div>
+            <span class="kicker">TECH FRAMEWORK</span>
+            <h2>하나의 MAKO를 연결하는 기술 프레임워크</h2>
+          </div>
+        </header>
+        <div class="architecture architecture--matrix architecture--multiplatform">
+          <div class="architecture__column architecture__column--frontend">
+            <span class="architecture__label">FRONTEND</span>
+            <article class="architecture__ue">
+              <span class="status status--done">CURRENT</span>
+              <strong>PC</strong>
+              <p>전투 · 이동 · 작업</p>
+            </article>
+            <article class="architecture__mobile">
+              <span class="status status--progress">PROTOTYPE</span>
+              <strong>MOBILE</strong>
+              <p>게임 밖 대화 · 요청</p>
+            </article>
+          </div>
+          <div class="architecture__bridge" aria-hidden="true">
+            <span>REQUEST</span>
+            <div class="architecture__bridge-track">
+              <i>→</i>
+              <i>←</i>
+            </div>
+            <strong>RESPONSE</strong>
+          </div>
+          <div class="architecture__column architecture__column--service">
+            <span class="architecture__label">BACKEND</span>
+            <article class="architecture__backend">
+              <span class="status status--done">GATEWAY</span>
+              <strong>SERVER</strong>
+              <p>인증 · 검증 · 맥락 연결</p>
+            </article>
+            <div class="architecture__service-link" aria-hidden="true">↕</div>
+            <article class="architecture__llm">
+              <span class="status status--next">AI ENGINE</span>
+              <strong>AI</strong>
+              <p>언어 이해 · 대화 · 개인화 후보</p>
+            </article>
+          </div>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--mobile-final" data-title="모바일 경험" aria-label="11. 모바일 경험">
+      <div class="slide-accent"></div>
+      <div class="slide-inner split split--mobile">
+        <div class="copy">
+          <span class="kicker">MOBILE EXPERIENCE</span>
+          <h2>게임 밖에서도<br>MAKO와의 관계는 이어집니다</h2>
+          <div class="mobile-status">
+            <article>
+              <span class="mobile-status__index">01</span>
+              <strong>언제든 대화</strong>
+              <p>게임 밖에서도 MAKO와 자연스럽게 대화를 이어갑니다.</p>
+            </article>
+            <article>
+              <span class="mobile-status__index">02</span>
+              <strong>하나의 동료</strong>
+              <p>게임과 모바일이 같은 MAKO의 정체성과 관계를 공유합니다.</p>
+            </article>
+            <article>
+              <span class="mobile-status__index">03</span>
+              <strong>이어지는 기억</strong>
+              <p>일상의 대화와 게임 속 사건을 기억하고, 다음 만남에서 자연스럽게 회상합니다.</p>
+            </article>
+          </div>
+        </div>
+        <div class="phone-presentation">
+          <div class="phone-device phone-device--chat-demo">
+            <span class="phone-side phone-side--volume" aria-hidden="true"></span>
+            <span class="phone-side phone-side--power" aria-hidden="true"></span>
+            <div class="phone-screen">
+              <span class="phone-island" aria-hidden="true"></span>
+              <div class="chat-demo" aria-label="MAKO와의 모바일 대화 예시">
+                <header class="chat-demo__header">
+                  <img class="chat-demo__avatar" src="./assets/mako-chat-profile-crop.png" alt="MAKO">
+                  <div><small>나의 동료</small><strong>MAKO</strong></div>
+                  <i>ONLINE</i>
+                </header>
+                <div class="chat-demo__viewport">
+                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="500">
+                    <p>오늘 드디어 AI : RE를 소개하는 날이야.</p>
+                  </div>
+                  <div class="chat-demo__typing" data-chat-delay="1300" data-chat-hide="2300" aria-label="MAKO가 답변을 입력 중">
+                    <span></span><span></span><span></span>
+                  </div>
+                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="2300">
+                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
+                    <div><strong>MAKO</strong><p>드디어 오늘이네요! 그동안 발표 자료 계속 다듬느라 고생했잖아요. 준비한 만큼 분명 잘할 수 있을 거예요.</p></div>
+                  </div>
+                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="4300">
+                    <p>붕대 제작법 알려줘.</p>
+                  </div>
+                  <div class="chat-demo__typing" data-chat-delay="5200" data-chat-hide="6200" aria-label="MAKO가 답변을 입력 중">
+                    <span></span><span></span><span></span>
+                  </div>
+                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="6200">
+                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
+                    <div><strong>MAKO</strong><p>식물 줄기 2개가 필요해요. 작업대에서 바로 만들 수 있어요.</p></div>
+                  </div>
+                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="8200">
+                    <p>그럼 붕대 하나 만들어 줘.</p>
+                  </div>
+                  <div class="chat-demo__typing" data-chat-delay="9000" data-chat-hide="9900" aria-label="MAKO가 답변을 입력 중">
+                    <span></span><span></span><span></span>
+                  </div>
+                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="9900">
+                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
+                    <div><strong>MAKO</strong><p>좋아요. 제가 바로 붕대 하나를 만들게요.</p></div>
+                  </div>
+                  <div class="chat-demo__task" data-chat-delay="10800">
+                    <span>✓</span><div><small>제작 시작</small><strong>붕대 × 1</strong></div>
+                  </div>
+                </div>
+              </div>
+              <span class="phone-home" aria-hidden="true"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--generative-ai" data-title="Appendix · 생성형 AI 활용" aria-label="Appendix. 생성형 AI 활용 경험">
+      <div class="slide-accent"></div>
+      <div class="slide-inner slide-inner--generative-ai">
+        <header class="slide-header slide-header--compact generative-ai-header">
+          <div>
+            <span class="kicker">APPENDIX · GENERATIVE AI</span>
+            <h2>아이디어를 빠르게 형태로 옮기는<br>우리의 제작 도구</h2>
+          </div>
+          <p class="lead">생성형 AI를 결과를 대신 만드는 도구가 아니라,<br>탐색과 시안, 구현을 빠르게 연결하는 제작 파트너로 활용했습니다.</p>
+        </header>
+        <div class="generative-ai-stages">
+          <article class="generative-ai-stage generative-ai-stage--model">
+            <span>01</span>
+            <em>PLAYER MODEL</em>
+            <strong>플레이어 모델</strong>
+            <p>레퍼런스 탐색과 콘셉트 방향을 빠르게 비교하며 캐릭터의 첫 인상을 구체화했습니다.</p>
+          </article>
+          <article class="generative-ai-stage generative-ai-stage--ui">
+            <span>02</span>
+            <em>UI / UX</em>
+            <strong>UI 설계</strong>
+            <p>플레이 흐름에 맞는 화면 구성과 문구를 여러 시안으로 검토해, 더 자연스러운 경험을 다듬었습니다.</p>
+          </article>
+          <article class="generative-ai-stage generative-ai-stage--image">
+            <span>03</span>
+            <em>VISUAL ASSET</em>
+            <strong>이미지 제작</strong>
+            <p>월드와 캐릭터의 분위기를 전달할 이미지 초안을 만들고, 발표와 프로토타입의 톤을 맞췄습니다.</p>
+          </article>
+          <article class="generative-ai-stage generative-ai-stage--code">
+            <span>04</span>
+            <em>CODE / BACKEND</em>
+            <strong>구현 가속</strong>
+            <p>게임 로직부터 UI, 백엔드 구조와 API 검증 흐름까지 구현의 출발점과 점검을 보조했습니다.</p>
+          </article>
+        </div>
+        <p class="generative-ai-statement"><strong>사람의 판단</strong>으로 방향을 정하고, <strong>생성형 AI</strong>로 반복의 속도를 높였습니다.</p>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--final-polish" data-title="남은 작업" aria-label="12. 남은 작업">
+      <div class="slide-accent"></div>
+      <div class="slide-inner slide-inner--final-polish">
+        <header class="slide-header slide-header--compact polish-header">
+          <div>
+            <span class="kicker">NEXT TODO</span>
+            <h2>완성도를 위해 남은 일</h2>
+          </div>
+        </header>
+        <div class="todo-board" aria-label="발표 이후 남은 작업">
+          <article>
+            <span aria-hidden="true"></span>
+            <em>TODO 01</em>
+            <div><strong>플레이 흐름 다듬기</strong><p>조작 · UI · 피드백</p></div>
+          </article>
+          <article>
+            <span aria-hidden="true"></span>
+            <em>TODO 02</em>
+            <div><strong>예외 상황 점검하기</strong><p>지연 · 실패 · 재시작</p></div>
+          </article>
+          <article>
+            <span aria-hidden="true"></span>
+            <em>TODO 03</em>
+            <div><strong>최종 완성도 높이기</strong><p>아트 · 사운드 · 밸런스</p></div>
+          </article>
+        </div>
+        <p class="polish-statement">새로운 기능보다, <strong>남은 어색함을 하나씩 지우는 단계.</strong></p>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section class="slide slide--closing" data-title="마무리" aria-label="14. 마무리">
+      <img class="closing-image" src="./assets/closing-journey-v2.png" alt="밝은 폐허의 세계를 함께 걸어가는 PLAYER와 MAKO">
+      <div class="closing-overlay"></div>
+      <div class="closing-content">
+        <span class="kicker">TEAM TRAIP · AI : RE</span>
+        <h2>개인화 AI를 넘어,<br>새로운 일상으로</h2>
+        <p>하나의 AI와 쌓은 관계가, 새로운 일상 속으로 이어집니다.</p>
+      </div>
+    </section>
+
+    <section class="slide slide--appendix-interface" data-title="Appendix · Physical AI" aria-label="Appendix. Physical AI">
+      <div class="slide-accent"></div>
+      <div class="slide-inner appendix-interface">
+        <span class="kicker">APPENDIX · PHYSICAL AI</span>
+        <div class="appendix-interface__content">
+          <span>PHYSICAL AI · COMPANION ROBOT</span>
+          <h2>화면 밖으로 이어지는 동행</h2>
+        </div>
+        <div class="appendix-interface__geometry" aria-hidden="true">
+          <i></i><i></i><i></i>
+          <strong>AI | RE</strong>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="deck-footer" aria-label="발표 조작">
+    <span class="progress-label"><strong id="currentNumber">01</strong><i></i><span id="totalNumber">12</span></span>
+    <div class="controls">
+      <button id="prevButton" type="button" aria-label="이전 슬라이드">←</button>
+      <button id="nextButton" type="button" aria-label="다음 슬라이드">→</button>
+    </div>
+  </div>
+  <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
+
+  <script src="./presentation.js"></script>
+</body>
+</html>

@@ -7,6 +7,19 @@
 // UI 업데이트를 위한 다이내믹 델리게이트 선언
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStatChangedSignature, float, CurrentValue, float, MaxValue);
 
+USTRUCT(BlueprintType)
+struct FGradualRecovery
+{
+	GENERATED_BODY()
+
+	float HPPerTick = 0.f;
+	float SPPerTick = 0.f;
+	float HungerPerTick = 0.f;
+	float ThirstyPerTick = 0.f;
+	
+	int32 TicksRemaining = 0;
+};
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class AI_RE_API UAI_REStatusComponent : public UActorComponent
 {
@@ -39,56 +52,6 @@ public:
 	FTimerHandle SurvivalTimerHandle;
 
     // ----------------------------------------------------
-    // Stats
-    // ----------------------------------------------------
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|HP")
-	float MaxHP;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|HP")
-	float CurrentHP;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|SP")
-	float MaxSP;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|SP")
-	float CurrentSP;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Hunger")
-	float MaxHunger;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status|Hunger")
-	float CurrentHunger;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Thirsty")
-	float MaxThirsty;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Thirsty")
-	float CurrentThirsty;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Combat")
-	float Attack;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Combat")
-	float Defense;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Work")
-	float WorkSpeed;
-
-    // ----------------------------------------------------
-    // Delegates (UI 연동용)
-    // ----------------------------------------------------
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnHPChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnSPChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnHungerChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "Status|Events")
-	FOnStatChangedSignature OnThirstyChanged;
-
-    // ----------------------------------------------------
     // Functions
     // ----------------------------------------------------
     UFUNCTION(BlueprintCallable, Category = "Status|Functions")
@@ -97,7 +60,33 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Status|Functions")
     void ApplyDamage(float Amount);
 
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverHP(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverSP(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverHunger(float Amount);
+
+    UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+    void RecoverThirsty(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+	void AddGradualRecovery(float HP, float SP, float Hunger, float Thirsty, float Duration);
+
+	UFUNCTION(BlueprintCallable, Category = "Status|Functions")
+	void BroadcastCurrentStats();
+
 private:
 	void HandleSurvivalStats();
 	bool IsOwnerRunning() const;
+
+	// Gradual Recovery (HoT)
+	UPROPERTY()
+	TArray<FGradualRecovery> ActiveRecoveries;
+
+	FTimerHandle RecoveryTimerHandle;
+	
+	void ProcessGradualRecovery();
 };

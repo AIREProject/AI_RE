@@ -18,7 +18,7 @@ class AI_RE_API UAI_REMainUI : public UUserWidget
 {
 	GENERATED_BODY()
 	
-private:
+protected:
 	UFUNCTION(BlueprintCallable)
 	void UpdateHPBar(float Current, float Max);
 	
@@ -31,13 +31,29 @@ private:
 	UFUNCTION(BlueprintCallable)
 	void UpdateThirstyBar(float Current, float Max);
 
+	void OnHealthAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnSPAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnHungerAttributeChanged(const struct FOnAttributeChangeData& Data);
+	void OnThirstyAttributeChanged(const struct FOnAttributeChangeData& Data);
+
 	UFUNCTION()
 	void RefreshQuickSlots();
+
+	virtual void NativeDestruct() override;
 	
+private:
 	// 타이머를 켜고 끌 때 필요한 리모콘(핸들)
 	FTimerHandle HPSmoothTimerHandle;
 
 	TWeakObjectPtr<class UAI_REPlayerInventoryComponent> InventoryComp;
+
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedASC;
+	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle SPChangedDelegateHandle;
+	FDelegateHandle HungerChangedDelegateHandle;
+	FDelegateHandle ThirstyChangedDelegateHandle;
+
+	void UnbindHUD();
 
 	UPROPERTY()
 	TArray<class UAI_REInventorySlotUI*> QuickSlotWidgets;
