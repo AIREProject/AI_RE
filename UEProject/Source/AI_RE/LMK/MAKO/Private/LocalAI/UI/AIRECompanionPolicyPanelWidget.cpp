@@ -3,18 +3,36 @@
 #include "Core/AIRECompanionCharacter.h"
 #include "Policy/AIRECompanionLocalBehaviorPolicyComponent.h"
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Framework/Application/SlateApplication.h"
-#include "Rendering/DrawElements.h"
-#include "Styling/CoreStyle.h"
 
 #define LOCTEXT_NAMESPACE "AIRECompanionPolicyPanel"
 
 namespace
 {
+	constexpr float MaxWheelOuterRadius = 290.0f;
+	constexpr float WheelViewportScale = 0.29f;
+	void SetPolicyStateImage(
+		UImage& Image,
+		const bool bIsActive,
+		const bool bIsHovered)
+	{
+		const FLinearColor InactiveColor(0.085f, 0.060f, 0.035f, 0.90f);
+		const FLinearColor ActiveColor(0.46f, 0.255f, 0.075f, 1.0f);
+		const FLinearColor HoveredColor(0.42f, 0.88f, 0.74f, 1.0f);
+		Image.SetColorAndOpacity(
+			bIsHovered
+				? HoveredColor
+				: bIsActive
+					? ActiveColor
+					: InactiveColor);
+		Image.SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
 	FText GetEngagementPolicyText(
 		const EAIRECompanionEngagementPolicy EngagementPolicy)
 	{
@@ -70,8 +88,9 @@ namespace
 		const FVector2D& LocalSize)
 	{
 		const float OuterRadius = FMath::Min(
-			340.0f,
-			static_cast<float>(FMath::Min(LocalSize.X, LocalSize.Y)) * 0.34f);
+			MaxWheelOuterRadius,
+			static_cast<float>(FMath::Min(LocalSize.X, LocalSize.Y))
+				* WheelViewportScale);
 		const float DeadZoneRadius = FMath::Max(96.0f, OuterRadius * 0.38f);
 		const FVector2D Delta = LocalCursorPosition - (LocalSize * 0.5);
 		if (Delta.SquaredLength() < FMath::Square(DeadZoneRadius))
@@ -107,46 +126,6 @@ namespace
 		return EAIRECompanionPolicyWheelSelection::Aggressive;
 	}
 
-	void DrawWheelArc(
-		FSlateWindowElementList& OutDrawElements,
-		const FGeometry& Geometry,
-		const int32 LayerId,
-		const FVector2D& Center,
-		const float Radius,
-		const float StartDegrees,
-		const float EndDegrees,
-		const FLinearColor& Color,
-		const float Thickness)
-	{
-		constexpr int32 SegmentCount = 24;
-		TArray<FVector2f> Points;
-		Points.Reserve(SegmentCount + 1);
-		for (int32 SegmentIndex = 0;
-			SegmentIndex <= SegmentCount;
-			++SegmentIndex)
-		{
-			const float Alpha =
-				static_cast<float>(SegmentIndex) / SegmentCount;
-			const float AngleRadians = FMath::DegreesToRadians(
-				FMath::Lerp(StartDegrees, EndDegrees, Alpha));
-			const FVector2D Point = Center + FVector2D(
-				FMath::Cos(AngleRadians) * Radius,
-				FMath::Sin(AngleRadians) * Radius);
-			Points.Add(FVector2f(
-				static_cast<float>(Point.X),
-				static_cast<float>(Point.Y)));
-		}
-
-		FSlateDrawElement::MakeLines(
-			OutDrawElements,
-			LayerId,
-			Geometry.ToPaintGeometry(),
-			Points,
-			ESlateDrawEffect::None,
-			Color,
-			true,
-			Thickness);
-	}
 }
 
 void UAIRECompanionPolicyPanelWidget::NativeConstruct()
@@ -235,124 +214,6 @@ void UAIRECompanionPolicyPanelWidget::NativeTick(
 	}
 }
 
-int32 UAIRECompanionPolicyPanelWidget::NativePaint(
-	const FPaintArgs& Args,
-	const FGeometry& AllottedGeometry,
-	const FSlateRect& MyCullingRect,
-	FSlateWindowElementList& OutDrawElements,
-	const int32 LayerId,
-	const FWidgetStyle& InWidgetStyle,
-	const bool bParentEnabled) const
-{
-	if (!bPanelOpen)
-	{
-		return Super::NativePaint(
-			Args,
-			AllottedGeometry,
-			MyCullingRect,
-			OutDrawElements,
-			LayerId,
-			InWidgetStyle,
-			bParentEnabled);
-	}
-
-	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
-	const FVector2D Center = LocalSize * 0.5;
-	const float OuterRadius = FMath::Min(
-		340.0f,
-		static_cast<float>(FMath::Min(LocalSize.X, LocalSize.Y)) * 0.34f);
-	const float InnerRadius = OuterRadius * 0.49f;
-	const float ArcRadius = (OuterRadius + InnerRadius) * 0.5f;
-	const float ArcThickness = OuterRadius - InnerRadius - 8.0f;
-	const FLinearColor BaseColor(0.015f, 0.055f, 0.085f, 0.96f);
-	const FLinearColor ActiveColor(0.01f, 0.31f, 0.43f, 0.92f);
-	const FLinearColor HoveredColor(0.01f, 0.72f, 0.92f, 0.98f);
-	FSlateDrawElement::MakeBox(
-		OutDrawElements,
-		LayerId,
-		AllottedGeometry.ToPaintGeometry(),
-		FCoreStyle::Get().GetBrush(TEXT("WhiteBrush")),
-		ESlateDrawEffect::None,
-		FLinearColor(0.004f, 0.012f, 0.024f, 0.68f));
-
-	FAIRECompanionLocalBehaviorPolicy CurrentPolicy;
-	const bool bHasCurrentPolicy = BoundPolicyComponent.IsValid();
-	if (bHasCurrentPolicy)
-	{
-		CurrentPolicy = BoundPolicyComponent->GetLocalBehaviorPolicy();
-	}
-
-	const auto IsActiveSelection =
-		[bHasCurrentPolicy, &CurrentPolicy](
-			const EAIRECompanionPolicyWheelSelection Selection)
-		{
-			if (!bHasCurrentPolicy)
-			{
-				return false;
-			}
-
-			switch (Selection)
-			{
-			case EAIRECompanionPolicyWheelSelection::Balanced:
-				return CurrentPolicy.RolePreference
-					== EAIRECompanionRolePreference::Balanced;
-			case EAIRECompanionPolicyWheelSelection::SupportPriority:
-				return CurrentPolicy.RolePreference
-					== EAIRECompanionRolePreference::SupportPriority;
-			case EAIRECompanionPolicyWheelSelection::HoldFire:
-				return CurrentPolicy.EngagementPolicy
-					== EAIRECompanionEngagementPolicy::HoldFire;
-			case EAIRECompanionPolicyWheelSelection::DefendPlayer:
-				return CurrentPolicy.EngagementPolicy
-					== EAIRECompanionEngagementPolicy::DefendPlayer;
-			case EAIRECompanionPolicyWheelSelection::Aggressive:
-				return CurrentPolicy.EngagementPolicy
-					== EAIRECompanionEngagementPolicy::Aggressive;
-			default:
-				return false;
-			}
-		};
-
-	const auto DrawSelection =
-		[&](
-			const EAIRECompanionPolicyWheelSelection Selection,
-			const float StartDegrees,
-			const float EndDegrees)
-		{
-			const FLinearColor Color =
-				WheelSelection == Selection
-					? HoveredColor
-					: IsActiveSelection(Selection)
-						? ActiveColor
-						: BaseColor;
-			DrawWheelArc(
-				OutDrawElements,
-				AllottedGeometry,
-				LayerId + 1,
-				Center,
-				ArcRadius,
-				StartDegrees,
-				EndDegrees,
-				Color,
-				ArcThickness);
-		};
-
-	DrawSelection(EAIRECompanionPolicyWheelSelection::Aggressive, 2.0f, 58.0f);
-	DrawSelection(EAIRECompanionPolicyWheelSelection::DefendPlayer, 62.0f, 118.0f);
-	DrawSelection(EAIRECompanionPolicyWheelSelection::HoldFire, 122.0f, 178.0f);
-	DrawSelection(EAIRECompanionPolicyWheelSelection::Balanced, 182.0f, 268.0f);
-	DrawSelection(EAIRECompanionPolicyWheelSelection::SupportPriority, 272.0f, 358.0f);
-
-	return Super::NativePaint(
-		Args,
-		AllottedGeometry,
-		MyCullingRect,
-		OutDrawElements,
-		LayerId + 2,
-		InWidgetStyle,
-		bParentEnabled);
-}
-
 void UAIRECompanionPolicyPanelWidget::BeginPolicySelection()
 {
 	WheelSelection = EAIRECompanionPolicyWheelSelection::None;
@@ -385,6 +246,7 @@ void UAIRECompanionPolicyPanelWidget::SetPanelOpen(const bool bOpen)
 	{
 		WheelSelection = EAIRECompanionPolicyWheelSelection::None;
 	}
+	RefreshWheelHighlight();
 	if (IsValid(PolicyPanel))
 	{
 		PolicyPanel->SetVisibility(
@@ -633,6 +495,8 @@ void UAIRECompanionPolicyPanelWidget::UnbindCompanion()
 
 void UAIRECompanionPolicyPanelWidget::RefreshPolicyDisplay()
 {
+	RefreshWheelHighlight();
+
 	if (!BoundPolicyComponent.IsValid())
 	{
 		if (IsValid(CurrentPolicyText))
@@ -659,8 +523,8 @@ void UAIRECompanionPolicyPanelWidget::RefreshPolicyDisplay()
 	{
 		CurrentPolicyText->SetText(FText::Format(
 			bHasSelection
-				? LOCTEXT("PreviewPolicyFormat", "적용 예정: {0} · {1}")
-				: LOCTEXT("CurrentPolicyFormat", "현재: {0} · {1}"),
+				? LOCTEXT("PreviewPolicyFormat", "적용 예정 · {0} / {1}")
+				: LOCTEXT("CurrentPolicyFormat", "현재 정책 · {0} / {1}"),
 			GetEngagementPolicyText(DisplayPolicy.EngagementPolicy),
 			GetRolePreferenceText(DisplayPolicy.RolePreference)));
 	}
@@ -670,13 +534,75 @@ void UAIRECompanionPolicyPanelWidget::RefreshPolicyDisplay()
 			? FText::Format(
 				LOCTEXT(
 					"SelectionReady",
-					"선택: {0} · P를 놓으면 적용"),
+					"선택: {0} · TAB을 놓으면 적용"),
 				GetWheelSelectionText(WheelSelection))
 			: LOCTEXT(
 				"PolicyReady",
-				"방향을 선택하고 P를 놓으면 적용 · 중앙에서 놓으면 취소"));
+				"방향을 선택하고 TAB을 놓으면 적용 · 중앙에서 놓으면 취소"));
 	}
 	SetPolicyButtonsEnabled(true);
+}
+
+void UAIRECompanionPolicyPanelWidget::RefreshWheelHighlight()
+{
+	bool bBalancedActive = false;
+	bool bSupportPriorityActive = false;
+	bool bHoldFireActive = false;
+	bool bDefendPlayerActive = false;
+	bool bAggressiveActive = false;
+	if (BoundPolicyComponent.IsValid())
+	{
+		const FAIRECompanionLocalBehaviorPolicy CurrentPolicy =
+			BoundPolicyComponent->GetLocalBehaviorPolicy();
+		bBalancedActive = CurrentPolicy.RolePreference
+			== EAIRECompanionRolePreference::Balanced;
+		bSupportPriorityActive = CurrentPolicy.RolePreference
+			== EAIRECompanionRolePreference::SupportPriority;
+		bHoldFireActive = CurrentPolicy.EngagementPolicy
+			== EAIRECompanionEngagementPolicy::HoldFire;
+		bDefendPlayerActive = CurrentPolicy.EngagementPolicy
+			== EAIRECompanionEngagementPolicy::DefendPlayer;
+		bAggressiveActive = CurrentPolicy.EngagementPolicy
+			== EAIRECompanionEngagementPolicy::Aggressive;
+	}
+
+	if (IsValid(PolicyWheelBalancedStateImage))
+	{
+		SetPolicyStateImage(
+			*PolicyWheelBalancedStateImage,
+			bBalancedActive,
+			WheelSelection == EAIRECompanionPolicyWheelSelection::Balanced);
+	}
+	if (IsValid(PolicyWheelSupportPriorityStateImage))
+	{
+		SetPolicyStateImage(
+			*PolicyWheelSupportPriorityStateImage,
+			bSupportPriorityActive,
+			WheelSelection
+				== EAIRECompanionPolicyWheelSelection::SupportPriority);
+	}
+	if (IsValid(PolicyWheelHoldFireStateImage))
+	{
+		SetPolicyStateImage(
+			*PolicyWheelHoldFireStateImage,
+			bHoldFireActive,
+			WheelSelection == EAIRECompanionPolicyWheelSelection::HoldFire);
+	}
+	if (IsValid(PolicyWheelDefendPlayerStateImage))
+	{
+		SetPolicyStateImage(
+			*PolicyWheelDefendPlayerStateImage,
+			bDefendPlayerActive,
+			WheelSelection
+				== EAIRECompanionPolicyWheelSelection::DefendPlayer);
+	}
+	if (IsValid(PolicyWheelAggressiveStateImage))
+	{
+		SetPolicyStateImage(
+			*PolicyWheelAggressiveStateImage,
+			bAggressiveActive,
+			WheelSelection == EAIRECompanionPolicyWheelSelection::Aggressive);
+	}
 }
 
 void UAIRECompanionPolicyPanelWidget::SetPolicyButtonsEnabled(

@@ -9,6 +9,7 @@ class AAIRECompanionCharacter;
 class AActor;
 class UAIRECompanionLocalBehaviorPolicyComponent;
 class UButton;
+class UImage;
 class UTextBlock;
 class UWidget;
 
@@ -43,14 +44,6 @@ protected:
 	virtual void NativeTick(
 		const FGeometry& MyGeometry,
 		float InDeltaTime) override;
-	virtual int32 NativePaint(
-		const FPaintArgs& Args,
-		const FGeometry& AllottedGeometry,
-		const FSlateRect& MyCullingRect,
-		FSlateWindowElementList& OutDrawElements,
-		int32 LayerId,
-		const FWidgetStyle& InWidgetStyle,
-		bool bParentEnabled) const override;
 
 private:
 	UFUNCTION()
@@ -81,6 +74,7 @@ private:
 	FAIRECompanionLocalBehaviorPolicy GetPreviewPolicy(
 		const FAIRECompanionLocalBehaviorPolicy& CurrentPolicy) const;
 	void RefreshPolicyDisplay();
+	void RefreshWheelHighlight();
 	void SetPolicyButtonsEnabled(bool bEnabled);
 
 	UPROPERTY(meta = (BindWidget))
@@ -94,6 +88,21 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusText;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> PolicyWheelBalancedStateImage;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> PolicyWheelSupportPriorityStateImage;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> PolicyWheelHoldFireStateImage;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> PolicyWheelDefendPlayerStateImage;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UImage> PolicyWheelAggressiveStateImage;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> BalancedButton;

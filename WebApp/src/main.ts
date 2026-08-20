@@ -169,7 +169,7 @@ app.innerHTML = `
         <div class="date-divider"><span>오늘</span></div>
         <article class="message companion-message">
           <div class="message-bubble">
-            <p>오, 왔네 ㅋㅋ 오늘은 뭐부터 얘기해볼까?</p>
+            <p>오, 왔네. 오늘은 뭐부터 얘기해볼까?</p>
           </div>
           <time>방금</time>
         </article>
