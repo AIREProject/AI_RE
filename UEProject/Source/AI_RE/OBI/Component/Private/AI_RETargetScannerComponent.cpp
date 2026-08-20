@@ -11,6 +11,8 @@
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 namespace
 {
@@ -41,8 +43,8 @@ namespace
 
 UAI_RETargetScannerComponent::UAI_RETargetScannerComponent()
 {
-	// 틱(Tick)을 꺼서 엔진 부하를 원천 차단합니다. (대신 FTimerManager 사용)
-	PrimaryComponentTick.bCanEverTick = false;
+	// 틱(Tick)을 활성화하여 락온 중 카메라 회전을 제어합니다.
+	PrimaryComponentTick.bCanEverTick = true;
 	
 	ScanInterval = 0.5f;
 }
@@ -183,4 +185,65 @@ AActor* UAI_RETargetScannerComponent::GetCachedInteractableTarget() const
 void UAI_RETargetScannerComponent::ResetCachedTarget()
 {
 	CachedInteractableTarget.Reset();
+}
+
+void UAI_RETargetScannerComponent::ToggleLockOn()
+{
+	if (bIsLockedOn)
+	{
+		bIsLockedOn = false;
+		CurrentLockOnTarget.Reset();
+		
+		if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+		{
+			OwnerChar->GetCharacterMovement()->bOrientRotationToMovement = true;
+			OwnerChar->bUseControllerRotationYaw = false;
+		}
+	}
+	else
+	{
+		AActor* FoundTarget = ScanForwardForPlayerTarget(500.f, 2000.f, ECC_Pawn, false);
+		if (FoundTarget)
+		{
+			CurrentLockOnTarget = FoundTarget;
+			bIsLockedOn = true;
+			
+			if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
+			{
+				OwnerChar->GetCharacterMovement()->bOrientRotationToMovement = false;
+				OwnerChar->bUseControllerRotationYaw = true;
+			}
+		}
+	}
+}
+
+void UAI_RETargetScannerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bIsLockedOn && CurrentLockOnTarget.IsValid())
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			if (AController* PC = OwnerPawn->GetController())
+			{
+				FVector TargetLocation = CurrentLockOnTarget->GetActorLocation();
+				FVector DirectionToTarget = TargetLocation - OwnerPawn->GetActorLocation();
+				DirectionToTarget.Z = 0.f;
+				
+				if (!DirectionToTarget.IsNearlyZero())
+				{
+					FRotator TargetRotation = FRotationMatrix::MakeFromX(DirectionToTarget).Rotator();
+					FRotator CurrentRotation = PC->GetControlRotation();
+					
+					FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaTime, 5.0f);
+					PC->SetControlRotation(NewRotation);
+				}
+			}
+		}
+	}
+	else if (bIsLockedOn && !CurrentLockOnTarget.IsValid())
+	{
+		ToggleLockOn(); // 타겟이 죽거나 유효하지 않으면 락온 해제
+	}
 }
