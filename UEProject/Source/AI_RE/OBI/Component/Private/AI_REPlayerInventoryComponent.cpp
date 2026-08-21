@@ -367,6 +367,39 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 						bConsumed = true; 
 						GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("[Item Usage] %s 기본 소비 동작 (이펙트 없음)"), *DA->DisplayName.ToString()));
 					}
+					else if (DA->ItemType == EAI_REItemType::Weapon)
+					{
+						AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+						UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
+						
+						if (CombatComp)
+						{
+							// Is it already equipped?
+							if (EquippedWeaponItemId == Items[Idx].ItemId)
+							{
+								CombatComp->UnequipWeapon();
+								EquippedWeaponItemId = NAME_None;
+								GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 해제!"), *DA->DisplayName.ToString()));
+								NotifyWeaponEquipResult(Items[Idx].ItemId, false); // Broadcast unequip
+							}
+							else
+							{
+								if (CombatComp->TryEquipWeapon(DA))
+								{
+									EquippedWeaponItemId = Items[Idx].ItemId;
+									GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 완료!"), *DA->DisplayName.ToString()));
+									NotifyWeaponEquipResult(Items[Idx].ItemId, true); // Broadcast equip
+								}
+							}
+							
+							// 무기는 소모되지 않으므로 bConsumed = false 유지
+							// 상태 변경을 저장하기 위해 Revision 갱신 필요
+							++Revision;
+							NotifyPersistenceMutation();
+							OnInventoryChanged.Broadcast();
+							return true; // 무기 처리가 완료되었으므로 종료
+						}
+					}
 					else
 					{
 						GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Red, FString::Printf(TEXT("[Item Usage] %s 은(는) 사용할 수 없는 아이템입니다."), *DA->DisplayName.ToString()));

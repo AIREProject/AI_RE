@@ -82,6 +82,8 @@ public:
 	/** Constructor */
 	AAI_RECharacter();	
 
+	virtual void Tick(float DeltaTime) override;
+
 protected:
 
 	/** Initialize input action bindings */
@@ -139,7 +141,14 @@ public:
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 	
-// ------------------------- 아래에서 작업 진행 ----------------------------
+	/** Gets whether the player is currently in combat (locked on). */
+	UFUNCTION(BlueprintPure, Category="AIRE|Combat")
+	bool GetIsCombatState() const { return bIsCombatState; }
+
+protected:
+	/** TargetScanner에서 전달되는 전투 상태 변경 이벤트를 처리합니다. */
+	UFUNCTION()
+	void HandleCombatStateChanged(bool bIsCombat, AActor* Target);
 	
 protected:
 	
@@ -205,6 +214,13 @@ protected:
 	// 통합 타겟 스캐너 (분리됨)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player Components")
 	TObjectPtr<class UAI_RETargetScannerComponent> TargetScannerComponent;
+
+	// 전투 상태 및 카메라 타겟
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Combat")
+	bool bIsCombatState = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Combat")
+	TWeakObjectPtr<AActor> CurrentCombatTarget;
 
 	// 무기 장착용 슬롯 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")

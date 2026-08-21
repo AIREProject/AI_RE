@@ -32,6 +32,8 @@ AAI_RECharacter::AAI_RECharacter()
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 		
+	PrimaryActorTick.bCanEverTick = true;
+
 	// Don't rotate when the controller rotates. Let that just affect the camera.
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -371,6 +373,11 @@ void AAI_RECharacter::BeginPlay()
 	{
 		CraftingComponent->SetInventoryComponent(InventoryComponent);
 	}
+
+	if (TargetScannerComponent)
+	{
+		TargetScannerComponent->OnCombatStateChanged.AddDynamic(this, &AAI_RECharacter::HandleCombatStateChanged);
+	}
 }
 
 void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
@@ -438,4 +445,46 @@ void AAI_RECharacter::DoEvade()
 			+ RightDirection * CurrentMovementInput.X;
 	}
 	CombatEvadeComponent->TryStartDirectionalDash(EvadeDirection);
+}
+
+void AAI_RECharacter::HandleCombatStateChanged(bool bIsCombat, AActor* Target)
+{
+	bIsCombatState = bIsCombat;
+	CurrentCombatTarget = Target;
+
+	if (bIsCombat)
+	{
+		GetCharacterMovement()->bOrientRotationToMovement = false;
+		bUseControllerRotationYaw = true;
+	}
+	else
+	{
+		GetCharacterMovement()->bOrientRotationToMovement = true;
+		bUseControllerRotationYaw = false;
+	}
+}
+
+void AAI_RECharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// 락온 상태일 때 카메라(컨트롤러)를 타겟 방향으로 부드럽게 회전
+	if (bIsCombatState && CurrentCombatTarget.IsValid())
+	{
+		if (AController* PC = GetController())
+		{
+			FVector TargetLocation = CurrentCombatTarget->GetActorLocation();
+			FVector DirectionToTarget = TargetLocation - GetActorLocation();
+			DirectionToTarget.Z = 0.f; 
+			
+			if (!DirectionToTarget.IsNearlyZero())
+			{
+				FRotator TargetRotation = FRotationMatrix::MakeFromX(DirectionToTarget).Rotator();
+				FRotator CurrentRotation = PC->GetControlRotation();
+				
+				FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaTime, 5.0f);
+				PC->SetControlRotation(NewRotation);
+			}
+		}
+	}
 }

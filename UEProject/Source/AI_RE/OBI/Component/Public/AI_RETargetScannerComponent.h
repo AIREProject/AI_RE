@@ -6,6 +6,8 @@
 #include "Components/ActorComponent.h"
 #include "AI_RETargetScannerComponent.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnCombatStateChangedSignature, bool, bIsCombat, AActor*, CombatTarget);
+
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class AI_RE_API UAI_RETargetScannerComponent : public UActorComponent
 {
@@ -14,7 +16,8 @@ class AI_RE_API UAI_RETargetScannerComponent : public UActorComponent
 public:	
 	UAI_RETargetScannerComponent();
 
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	UPROPERTY(BlueprintAssignable, Category = "Scanner|Combat")
+	FOnCombatStateChangedSignature OnCombatStateChanged;
 
 protected:
 	virtual void BeginPlay() override;
@@ -39,18 +42,6 @@ public:
 	/** 캐싱된 타겟 초기화 (상호작용 완료 후 등에 호출) */
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void ResetCachedTarget();
-
-	/** Toggles the lock-on state, targeting the nearest enemy in front using ScanForwardForPlayerTarget. */
-	UFUNCTION(BlueprintCallable, Category="Scanner|Combat")
-	void ToggleLockOn();
-
-	/** Gets whether the player is currently locked on to a target. */
-	UFUNCTION(BlueprintPure, Category="Scanner|Combat")
-	bool GetIsLockedOn() const { return bIsLockedOn; }
-
-	/** Gets the current lock-on target, if any. */
-	UFUNCTION(BlueprintPure, Category="Scanner|Combat")
-	AActor* GetLockOnTarget() const { return CurrentLockOnTarget.Get(); }
 
 protected:
 	AActor* ScanForward(
@@ -85,11 +76,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Scanner")
 	float ScanInterval;
 
-	// 락온 상태 변수
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Scanner|Combat")
-	bool bIsLockedOn = false;
-
-	// 현재 락온된 타겟
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Scanner|Combat")
-	TWeakObjectPtr<AActor> CurrentLockOnTarget;
+private:
+	bool bIsCombatState = false;
+	TWeakObjectPtr<AActor> CurrentCombatTarget;
 };
