@@ -44,8 +44,8 @@ namespace
 
 UAI_RETargetScannerComponent::UAI_RETargetScannerComponent()
 {
-	// 틱(Tick)을 활성화하여 락온 중 카메라 회전을 제어합니다.
-	PrimaryComponentTick.bCanEverTick = true;
+	// 틱(Tick)을 꺼서 엔진 부하를 원천 차단합니다. (대신 FTimerManager 사용)
+	PrimaryComponentTick.bCanEverTick = false;
 	
 	ScanInterval = 0.5f;
 }
@@ -180,6 +180,17 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 			// TODO: UI 띄우기 로직 연동 (나중에 UIManager에서 캐싱된 타겟을 확인하여 띄우게 됩니다)
 			if (GEngine) GEngine->AddOnScreenDebugMessage(11, 0.5f, FColor::Yellow, FString::Printf(TEXT("[상호작용 가능] %s (by Component)"), *HitActor->GetName()));
 		}
+
+		// 적일 경우 자동 락온 방송
+		if (IsPlayerTargetCandidate(HitActor))
+		{
+			if (!bIsCombatState || CurrentCombatTarget.Get() != HitActor)
+			{
+				bIsCombatState = true;
+				CurrentCombatTarget = HitActor;
+				OnCombatStateChanged.Broadcast(true, HitActor);
+			}
+		}
 	}
 	else
 	{
@@ -187,6 +198,14 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 		{
 			CachedInteractableTarget.Reset();
 			// TODO: UI 숨기기 연동
+		}
+
+		// 적이 사라졌으면 락온 해제 방송
+		if (bIsCombatState)
+		{
+			bIsCombatState = false;
+			CurrentCombatTarget.Reset();
+			OnCombatStateChanged.Broadcast(false, nullptr);
 		}
 	}
 }
@@ -275,65 +294,4 @@ AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
 void UAI_RETargetScannerComponent::ResetCachedTarget()
 {
 	CachedInteractableTarget.Reset();
-}
-
-void UAI_RETargetScannerComponent::ToggleLockOn()
-{
-	if (bIsLockedOn)
-	{
-		bIsLockedOn = false;
-		CurrentLockOnTarget.Reset();
-		
-		if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-		{
-			OwnerChar->GetCharacterMovement()->bOrientRotationToMovement = true;
-			OwnerChar->bUseControllerRotationYaw = false;
-		}
-	}
-	else
-	{
-		AActor* FoundTarget = ScanForwardForPlayerTarget(500.f, 2000.f, ECC_Pawn, false);
-		if (FoundTarget)
-		{
-			CurrentLockOnTarget = FoundTarget;
-			bIsLockedOn = true;
-			
-			if (ACharacter* OwnerChar = Cast<ACharacter>(GetOwner()))
-			{
-				OwnerChar->GetCharacterMovement()->bOrientRotationToMovement = false;
-				OwnerChar->bUseControllerRotationYaw = true;
-			}
-		}
-	}
-}
-
-void UAI_RETargetScannerComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
-{
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	if (bIsLockedOn && CurrentLockOnTarget.IsValid())
-	{
-		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
-		{
-			if (AController* PC = OwnerPawn->GetController())
-			{
-				FVector TargetLocation = CurrentLockOnTarget->GetActorLocation();
-				FVector DirectionToTarget = TargetLocation - OwnerPawn->GetActorLocation();
-				DirectionToTarget.Z = 0.f;
-				
-				if (!DirectionToTarget.IsNearlyZero())
-				{
-					FRotator TargetRotation = FRotationMatrix::MakeFromX(DirectionToTarget).Rotator();
-					FRotator CurrentRotation = PC->GetControlRotation();
-					
-					FRotator NewRotation = FMath::RInterpTo(CurrentRotation, TargetRotation, DeltaTime, 5.0f);
-					PC->SetControlRotation(NewRotation);
-				}
-			}
-		}
-	}
-	else if (bIsLockedOn && !CurrentLockOnTarget.IsValid())
-	{
-		ToggleLockOn(); // 타겟이 죽거나 유효하지 않으면 락온 해제
-	}
 }
