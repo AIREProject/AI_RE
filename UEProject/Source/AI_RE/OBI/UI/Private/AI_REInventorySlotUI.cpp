@@ -73,6 +73,10 @@ FReply UAI_REInventorySlotUI::NativeOnMouseButtonDown(const FGeometry& InGeometr
 {
 	if (bIsEquipmentSlot)
 	{
+		if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
+		{
+			return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+		}
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
@@ -91,6 +95,19 @@ FReply UAI_REInventorySlotUI::NativeOnMouseButtonDown(const FGeometry& InGeometr
 	}
 	
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply UAI_REInventorySlotUI::NativeOnMouseButtonDoubleClick(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
+	{
+		if (InventoryComp)
+		{
+			InventoryComp->UseItem(SlotIndex);
+			return FReply::Handled();
+		}
+	}
+	return Super::NativeOnMouseButtonDoubleClick(InGeometry, InMouseEvent);
 }
 
 void UAI_REInventorySlotUI::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
