@@ -32,6 +32,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeDestruct() override;
 
 	// Automatically bound widgets from blueprint
 	UPROPERTY(meta = (BindWidget))
@@ -99,4 +100,5 @@ private:
 	FName CurrentSelectedRecipe;
 	
 	void PopulateRecipeList();
+	void ResetRecipeDetails();
 };

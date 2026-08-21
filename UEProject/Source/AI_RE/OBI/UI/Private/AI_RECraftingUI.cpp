@@ -24,11 +24,20 @@ void UAI_RECraftingUI::NativeOnInitialized()
 	}
 }
 
+void UAI_RECraftingUI::NativeDestruct()
+{
+	ResetRecipeDetails();
+	CraftingComp = nullptr;
+	CurrentFilterType = EWorkbenchType::None;
+
+	Super::NativeDestruct();
+}
+
 void UAI_RECraftingUI::InitializeCrafting(UAI_REPlayerCraftingComponent* InCraftingComp, EWorkbenchType InFilterType)
 {
 	CraftingComp = InCraftingComp;
 	CurrentFilterType = InFilterType;
-	CurrentSelectedRecipe = NAME_None;
+	ResetRecipeDetails();
 
 	if (WorkbenchNameText)
 	{
@@ -46,17 +55,59 @@ void UAI_RECraftingUI::InitializeCrafting(UAI_REPlayerCraftingComponent* InCraft
 		WorkbenchNameText->SetText(FText::FromString(TypeString));
 	}
 
-	if (WeaponStatsPanel)
-	{
-		WeaponStatsPanel->SetVisibility(
-			CurrentFilterType == EWorkbenchType::Blacksmith
-				? ESlateVisibility::Visible
-				: ESlateVisibility::Collapsed);
-	}
-
 	BP_UpdateWorkbenchContext(CurrentFilterType);
 
 	PopulateRecipeList();
+}
+
+void UAI_RECraftingUI::ResetRecipeDetails()
+{
+	CurrentSelectedRecipe = NAME_None;
+
+	if (RecipeIMG)
+	{
+		RecipeIMG->SetBrushFromTexture(nullptr);
+		RecipeIMG->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (RecipeText)
+	{
+		RecipeText->SetText(NSLOCTEXT("CraftingUI", "SelectRecipePrompt", "레시피를 선택하세요"));
+	}
+
+	if (RecipeDescriptionText)
+	{
+		RecipeDescriptionText->SetText(NSLOCTEXT(
+			"CraftingUI",
+			"RecipeDescriptionPrompt",
+			"레시피를 선택하면 상세 설명이 표시됩니다."));
+	}
+
+	if (IngredientSummaryText)
+	{
+		IngredientSummaryText->SetText(NSLOCTEXT(
+			"CraftingUI",
+			"IngredientSummaryPrompt",
+			"재료 정보 대기 중"));
+	}
+
+	if (CraftingTimeText)
+	{
+		CraftingTimeText->SetText(NSLOCTEXT("CraftingUI", "CraftingTimePrompt", "제작 시간  --"));
+	}
+
+	if (WeaponStatsPanel)
+	{
+		WeaponStatsPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (WeaponStatsText)
+	{
+		WeaponStatsText->SetText(NSLOCTEXT(
+			"CraftingUI",
+			"WeaponStatsPrompt",
+			"공격력 --   |   경직 --   |   사거리 --"));
+	}
 }
 
 void UAI_RECraftingUI::PopulateRecipeList()
@@ -121,16 +172,19 @@ void UAI_RECraftingUI::OnRecipeSelected(FName SelectedRecipeName)
 	}
 
 	// Automate setting the detail image.
-	if (RecipeIMG && ResultItemData)
+	if (RecipeIMG)
 	{
-		if (ResultItemData->CraftingImage)
+		UTexture2D* PreviewTexture = nullptr;
+		if (ResultItemData)
 		{
-			RecipeIMG->SetBrushFromTexture(ResultItemData->CraftingImage);
+			PreviewTexture = ResultItemData->CraftingImage
+				? ResultItemData->CraftingImage.Get()
+				: ResultItemData->ItemIcon.Get();
 		}
-		else if (ResultItemData->ItemIcon)
-		{
-			RecipeIMG->SetBrushFromTexture(ResultItemData->ItemIcon);
-		}
+
+		RecipeIMG->SetBrushFromTexture(PreviewTexture);
+		RecipeIMG->SetVisibility(
+			PreviewTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 
 	if (RecipeText)
