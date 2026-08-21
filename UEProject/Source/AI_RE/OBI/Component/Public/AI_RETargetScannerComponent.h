@@ -58,6 +58,12 @@ protected:
 	 */
 	AActor* FindBestInteractableInFront(float MaxDistance) const;
 
+	/** Updates the cached interaction target and its custom-depth outline. */
+	void SetCachedInteractableTarget(AActor* NewTarget);
+
+	/** Enables or disables the interaction outline on every mesh owned by the target. */
+	static void SetInteractionOutlineEnabled(AActor* Target, bool bEnabled);
+
 	/** 상호작용 프리체크 타이머 루프 */
 	void PerformInteractionPrecheck();
 

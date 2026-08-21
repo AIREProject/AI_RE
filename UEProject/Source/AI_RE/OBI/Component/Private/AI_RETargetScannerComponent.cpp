@@ -10,6 +10,7 @@
 #include "AIRECombatDamageTargetInterface.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
+#include "Components/MeshComponent.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -17,6 +18,8 @@
 
 namespace
 {
+	constexpr int32 InteractionStencilValue = 1;
+
 	bool IsPlayerTargetCandidate(const AActor* Candidate)
 	{
 		if (!IsValid(Candidate))
@@ -67,6 +70,7 @@ void UAI_RETargetScannerComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	{
 		World->GetTimerManager().ClearTimer(InteractionScanTimerHandle);
 	}
+	SetCachedInteractableTarget(nullptr);
 	
 	Super::EndPlay(EndPlayReason);
 }
@@ -176,7 +180,7 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 	{
 		if (CachedInteractableTarget.Get() != HitActor)
 		{
-			CachedInteractableTarget = HitActor;
+			SetCachedInteractableTarget(HitActor);
 			// TODO: UI 띄우기 로직 연동 (나중에 UIManager에서 캐싱된 타겟을 확인하여 띄우게 됩니다)
 			if (GEngine) GEngine->AddOnScreenDebugMessage(11, 0.5f, FColor::Yellow, FString::Printf(TEXT("[상호작용 가능] %s (by Component)"), *HitActor->GetName()));
 		}
@@ -207,6 +211,8 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 			CurrentCombatTarget.Reset();
 			OnCombatStateChanged.Broadcast(false, nullptr);
 		}
+		SetCachedInteractableTarget(nullptr);
+		// TODO: UI 숨기기 연동
 	}
 }
 
@@ -220,7 +226,7 @@ void UAI_RETargetScannerComponent::RefreshInteractableTarget()
 	PerformInteractionPrecheck();
 	if (!CachedInteractableTarget.IsValid())
 	{
-		CachedInteractableTarget = FindBestInteractableInFront(300.0f);
+		SetCachedInteractableTarget(FindBestInteractableInFront(300.0f));
 	}
 }
 
@@ -291,7 +297,48 @@ AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
 	return BestTarget.Get();
 }
 
+void UAI_RETargetScannerComponent::SetCachedInteractableTarget(
+	AActor* NewTarget)
+{
+	AActor* PreviousTarget = CachedInteractableTarget.Get();
+	if (PreviousTarget == NewTarget)
+	{
+		return;
+	}
+
+	SetInteractionOutlineEnabled(PreviousTarget, false);
+	CachedInteractableTarget = NewTarget;
+	SetInteractionOutlineEnabled(NewTarget, true);
+}
+
+void UAI_RETargetScannerComponent::SetInteractionOutlineEnabled(
+	AActor* Target,
+	const bool bEnabled)
+{
+	if (!IsValid(Target))
+	{
+		return;
+	}
+
+	TArray<UMeshComponent*> MeshComponents;
+	Target->GetComponents<UMeshComponent>(MeshComponents);
+	for (UMeshComponent* MeshComponent : MeshComponents)
+	{
+		if (!IsValid(MeshComponent))
+		{
+			continue;
+		}
+
+		if (bEnabled)
+		{
+			MeshComponent->SetCustomDepthStencilValue(
+				InteractionStencilValue);
+		}
+		MeshComponent->SetRenderCustomDepth(bEnabled);
+	}
+}
+
 void UAI_RETargetScannerComponent::ResetCachedTarget()
 {
-	CachedInteractableTarget.Reset();
+	SetCachedInteractableTarget(nullptr);
 }
