@@ -337,6 +337,30 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 	{
 		return false;
 	}
+	
+	// 장착 슬롯(EquipmentSlot)에서 직접 해제를 시도한 경우 (SlotIndex가 INDEX_NONE)
+	if (SlotIndex == INDEX_NONE)
+	{
+		if (!EquippedWeaponItemId.IsNone())
+		{
+			AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+			UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
+			if (CombatComp)
+			{
+				CombatComp->UnequipWeapon();
+				FName UnequippedId = EquippedWeaponItemId;
+				EquippedWeaponItemId = NAME_None;
+				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("[Item Usage] 장착 해제!"));
+				NotifyWeaponEquipResult(UnequippedId, false);
+				++Revision;
+				NotifyPersistenceMutation();
+				OnInventoryChanged.Broadcast();
+				return true;
+			}
+		}
+		return false;
+	}
+
 	int32 Idx = FindStackIndexBySlot(SlotIndex);
 	if (Idx == INDEX_NONE || Items[Idx].Count <= 0 || Items[Idx].ItemId.IsNone())
 	{
