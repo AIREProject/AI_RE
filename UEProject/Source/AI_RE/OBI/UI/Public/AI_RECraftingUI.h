@@ -8,8 +8,11 @@
 #include "AI_RECraftingUI.generated.h"
 
 class UAI_REPlayerCraftingComponent;
+class UAI_REItemDataAsset;
 class UScrollBox;
 class UButton;
+class UTextBlock;
+class UWidget;
 class UAI_RECraftingRecipeRowUI;
 
 /**
@@ -47,7 +50,24 @@ protected:
 
 	// Top panel Workbench Name
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UTextBlock> WorkbenchNameText;
+	TObjectPtr<UTextBlock> WorkbenchNameText;
+
+	// Common recipe detail widgets shared by every workbench type.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RecipeDescriptionText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> IngredientSummaryText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> CraftingTimeText;
+
+	// Blacksmith-only detail widgets. Hidden for all other workbench types.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> WeaponStatsPanel;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> WeaponStatsText;
 
 	// Blueprint class to use for spawning row buttons
 	UPROPERTY(EditDefaultsOnly, Category = "Crafting UI")
@@ -56,6 +76,17 @@ protected:
 	// Allow Blueprint to update detail panel visuals (Icon, Ingredients list) when selected
 	UFUNCTION(BlueprintImplementableEvent, Category = "Crafting UI")
 	void BP_UpdateRecipeDetails(FName SelectedRecipeName);
+
+	// Supplies the active workbench context so Blueprint can toggle station-specific panels.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Crafting UI")
+	void BP_UpdateWorkbenchContext(EWorkbenchType WorkbenchType);
+
+	// Supplies data-driven recipe details without exposing the crafting component to Blueprint.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Crafting UI")
+	void BP_UpdateRecipeData(
+		FName SelectedRecipeName,
+		const FAI_RECraftingRecipe& RecipeData,
+		UAI_REItemDataAsset* ResultItemData);
 
 	UFUNCTION()
 	void OnCraftButtonClicked();
