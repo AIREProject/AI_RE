@@ -18,8 +18,11 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "InputMappingContext.h"
+#include "Inventory/UI/AIRECompanionInventoryPanelWidget.h"
+#include "Inventory/UI/AIREStorageInventoryPanelWidget.h"
 #include "LocalAI/UI/AIRECompanionPolicyPanelWidget.h"
 #include "UI/AIRECompanionStatusWidget.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
 namespace
@@ -35,11 +38,39 @@ AAI_REPlayerController::AAI_REPlayerController()
 {
 	AggroSwapComponent =
 		CreateDefaultSubobject<UAIREAggroSwapComponent>(TEXT("AggroSwap"));
+
+	static ConstructorHelpers::FClassFinder<UAIREStorageInventoryPanelWidget>
+		StorageInventoryPanelFinder(
+			TEXT("/Game/Work/LMK/UI/Inventory/WBP_AIREStorageInventoryPanel"));
+	if (StorageInventoryPanelFinder.Succeeded())
+	{
+		StorageInventoryPanelClass = StorageInventoryPanelFinder.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<UAIRECompanionInventoryPanelWidget>
+		CompanionInventoryPanelFinder(
+			TEXT("/Game/Work/LMK/UI/Inventory/WBP_AIRECompanionInventoryPanel"));
+	if (CompanionInventoryPanelFinder.Succeeded())
+	{
+		CompanionInventoryPanelClass = CompanionInventoryPanelFinder.Class;
+	}
 }
 
 UAIREAggroSwapComponent* AAI_REPlayerController::GetAggroSwapComponent() const
 {
 	return AggroSwapComponent;
+}
+
+TSubclassOf<UAIREStorageInventoryPanelWidget>
+AAI_REPlayerController::GetStorageInventoryPanelClass() const
+{
+	return StorageInventoryPanelClass;
+}
+
+TSubclassOf<UAIRECompanionInventoryPanelWidget>
+AAI_REPlayerController::GetCompanionInventoryPanelClass() const
+{
+	return CompanionInventoryPanelClass;
 }
 
 void AAI_REPlayerController::BeginPlay()

@@ -33,6 +33,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	AActor* GetCachedInteractableTarget() const;
 
+	/** Refreshes the interaction target immediately instead of waiting for the precheck timer. */
+	void RefreshInteractableTarget();
+
 	/** 캐싱된 타겟 초기화 (상호작용 완료 후 등에 호출) */
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void ResetCachedTarget();
@@ -55,7 +58,14 @@ protected:
 		float Distance,
 		ECollisionChannel TraceChannel,
 		bool bDrawDebug,
-		bool bRequirePlayerTarget);
+		bool bRequirePlayerTarget,
+		bool bRequireInteractable);
+
+	/**
+	 * Finds an interactable without relying on a specific collision trace channel.
+	 * Used only as an explicit interaction fallback when the normal precheck misses.
+	 */
+	AActor* FindBestInteractableInFront(float MaxDistance) const;
 
 	/** 상호작용 프리체크 타이머 루프 */
 	void PerformInteractionPrecheck();

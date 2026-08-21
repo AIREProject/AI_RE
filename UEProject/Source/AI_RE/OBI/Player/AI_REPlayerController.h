@@ -16,6 +16,8 @@ class UAIREChatHUDWidget;
 class UAIREChatLogWidget;
 class UAIRECompanionPolicyPanelWidget;
 class UAIRECompanionStatusWidget;
+class UAIRECompanionInventoryPanelWidget;
+class UAIREStorageInventoryPanelWidget;
 class AAIRECompanionCharacter;
 class AActor;
 class APawn;
@@ -42,6 +44,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Aggro Swap")
 	UAIREAggroSwapComponent* GetAggroSwapComponent() const;
+
+	TSubclassOf<UAIREStorageInventoryPanelWidget>
+		GetStorageInventoryPanelClass() const;
+	TSubclassOf<UAIRECompanionInventoryPanelWidget>
+		GetCompanionInventoryPanelClass() const;
 	
 protected:
 
@@ -129,6 +136,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
 	TSubclassOf<UAIRECompanionPolicyPanelWidget> CompanionPolicyWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIREStorageInventoryPanelWidget> StorageInventoryPanelClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIRECompanionInventoryPanelWidget> CompanionInventoryPanelClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAI_REMainUI> MainHUD;

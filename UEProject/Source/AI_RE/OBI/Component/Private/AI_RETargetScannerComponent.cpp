@@ -13,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "EngineUtils.h"
 
 namespace
 {
@@ -72,7 +73,7 @@ void UAI_RETargetScannerComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 
 AActor* UAI_RETargetScannerComponent::ScanForwardForTarget(float Radius, float Distance, ECollisionChannel TraceChannel, bool bDrawDebug)
 {
-	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, false);
+	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, false, false);
 }
 
 AActor* UAI_RETargetScannerComponent::ScanForwardForPlayerTarget(
@@ -81,7 +82,7 @@ AActor* UAI_RETargetScannerComponent::ScanForwardForPlayerTarget(
 	const ECollisionChannel TraceChannel,
 	const bool bDrawDebug)
 {
-	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, true);
+	return ScanForward(Radius, Distance, TraceChannel, bDrawDebug, true, false);
 }
 
 AActor* UAI_RETargetScannerComponent::ScanForward(
@@ -89,7 +90,8 @@ AActor* UAI_RETargetScannerComponent::ScanForward(
 	const float Distance,
 	const ECollisionChannel TraceChannel,
 	const bool bDrawDebug,
-	const bool bRequirePlayerTarget)
+	const bool bRequirePlayerTarget,
+	const bool bRequireInteractable)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return nullptr;
@@ -130,6 +132,12 @@ AActor* UAI_RETargetScannerComponent::ScanForward(
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
+			if (bRequireInteractable
+				&& !HitActor->Implements<UAI_REInteractableInterface>())
+			{
+				continue;
+			}
+
 			if (bRequirePlayerTarget && !IsPlayerTargetCandidate(HitActor))
 			{
 				continue;
@@ -156,7 +164,13 @@ AActor* UAI_RETargetScannerComponent::ScanForward(
 void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 {
 	// 거리 3m(300)로 상시 스캔 (UI 프리체크용)
-	AActor* HitActor = ScanForwardForTarget(45.0f, 300.0f, ECC_Visibility, false); 
+	AActor* HitActor = ScanForward(
+		45.0f,
+		300.0f,
+		ECC_Visibility,
+		false,
+		false,
+		true);
 	
 	if (HitActor && HitActor->Implements<UAI_REInteractableInterface>())
 	{
@@ -180,6 +194,82 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 AActor* UAI_RETargetScannerComponent::GetCachedInteractableTarget() const
 {
 	return CachedInteractableTarget.Get();
+}
+
+void UAI_RETargetScannerComponent::RefreshInteractableTarget()
+{
+	PerformInteractionPrecheck();
+	if (!CachedInteractableTarget.IsValid())
+	{
+		CachedInteractableTarget = FindBestInteractableInFront(300.0f);
+	}
+}
+
+AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
+	const float MaxDistance) const
+{
+	const AActor* OwnerActor = GetOwner();
+	const UWorld* World = GetWorld();
+	if (!IsValid(OwnerActor) || !IsValid(World) || MaxDistance <= 0.0f)
+	{
+		return nullptr;
+	}
+
+	FVector ForwardDirection = OwnerActor->GetActorForwardVector();
+	if (const APawn* OwnerPawn = Cast<APawn>(OwnerActor))
+	{
+		ForwardDirection = OwnerPawn->GetControlRotation().Vector();
+	}
+	ForwardDirection = ForwardDirection.GetSafeNormal();
+
+	const FVector OwnerLocation = OwnerActor->GetActorLocation();
+	const float MaxDistanceSquared = FMath::Square(MaxDistance);
+	float BestScore = -1.0f;
+	TWeakObjectPtr<AActor> BestTarget;
+
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Candidate = *It;
+		if (!IsValid(Candidate)
+			|| Candidate == OwnerActor
+			|| !Candidate->Implements<UAI_REInteractableInterface>())
+		{
+			continue;
+		}
+
+		const FBox CandidateBounds = Candidate->GetComponentsBoundingBox(true);
+		const FVector CandidatePoint = CandidateBounds.IsValid
+			? CandidateBounds.GetClosestPointTo(OwnerLocation)
+			: Candidate->GetActorLocation();
+		const FVector ToCandidate = CandidatePoint - OwnerLocation;
+		const float DistanceSquared = ToCandidate.SizeSquared();
+		if (DistanceSquared > MaxDistanceSquared)
+		{
+			continue;
+		}
+
+		const float Distance = FMath::Sqrt(DistanceSquared);
+		const FVector Direction = Distance > UE_KINDA_SMALL_NUMBER
+			? ToCandidate / Distance
+			: ForwardDirection;
+		const float ViewAlignment = FVector::DotProduct(
+			ForwardDirection,
+			Direction);
+		if (ViewAlignment < 0.0f)
+		{
+			continue;
+		}
+
+		const float DistanceScore = 1.0f - (Distance / MaxDistance);
+		const float Score = ViewAlignment * 0.75f + DistanceScore * 0.25f;
+		if (Score > BestScore)
+		{
+			BestScore = Score;
+			BestTarget = Candidate;
+		}
+	}
+
+	return BestTarget.Get();
 }
 
 void UAI_RETargetScannerComponent::ResetCachedTarget()

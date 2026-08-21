@@ -3272,7 +3272,16 @@ void UAIREGameplayInventorySubsystem::FinalizeFreshPersistenceStateIfPossible()
 	if (PendingCompanionConfig.IsValid())
 	{
 		EnsureMakoInventoryInitialized(PendingCompanionConfig.Get());
+		return;
 	}
+
+	// Shipping can finish its asynchronous save-slot checks before MAKO
+	// supplies its configuration. Do not leave every inventory operation
+	// blocked on actor BeginPlay ordering. MAKO will seed its inventory and
+	// fresh shared-storage contents when it registers later.
+	CompletePersistenceStartup(MakePersistenceResult(
+		EAIREInventoryPersistenceOperation::Load,
+		EAIREInventoryPersistenceResultCode::SafeEmptyNoValidSave));
 }
 
 void UAIREGameplayInventorySubsystem::CompletePersistenceStartup(

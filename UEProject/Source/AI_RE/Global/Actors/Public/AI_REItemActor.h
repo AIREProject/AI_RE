@@ -81,6 +81,7 @@ protected:
 	float CompanionPickupTargetHeight = 80.0f;
 
 private:
+	void TickWorldDropSettling(float DeltaSeconds);
 	void PollHarvestAutoPickup();
 	bool IsPreferredReceiverWithinRange() const;
 	void StartCompanionPickupPresentation(AActor& ReceiverActor);
@@ -97,7 +98,10 @@ private:
 	FTimerHandle HarvestAutoPickupTimerHandle;
 	FVector PickupPresentationStartLocation = FVector::ZeroVector;
 	FVector PickupPresentationStartScale = FVector::OneVector;
+	FRotator WorldDropAngularVelocity = FRotator::ZeroRotator;
+	float WorldDropVerticalVelocity = 0.0f;
 	float PickupPresentationElapsedTime = 0.0f;
+	bool bWorldDropSettling = false;
 	bool bHarvestAutoPickupEnabled = false;
 	bool bPickupClaimed = false;
 };
