@@ -86,6 +86,18 @@ void AAI_REHarvestableResourceActor::HandleHarvested(
 		return;
 	}
 
+	if (IsValid(InstigatorActor)
+		&& InstigatorActor->Implements<UAIREHarvestRewardReceiver>()
+		&& IAIREHarvestRewardReceiver::Execute_TryReceiveHarvestReward(
+			InstigatorActor,
+			DeliveryId,
+			RewardItemAsset->ItemId,
+			GrantedRewardAmount))
+	{
+		SpawnedRewardDeliveries.Add(DeliveryId);
+		return;
+	}
+
 	if (SpawnHarvestReward(
 			InstigatorActor,
 			RewardItemAsset,
