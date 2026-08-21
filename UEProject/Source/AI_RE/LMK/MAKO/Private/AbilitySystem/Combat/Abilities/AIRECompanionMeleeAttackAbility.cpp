@@ -75,6 +75,7 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 	bUsingFallback = false;
 	bSuspendedForCombatSkill = false;
 	bSkillCancelWindowTagApplied = false;
+	bHarvestWeaponVisibilityApplied = false;
 	CurrentStepIndex = 0;
 	ResumeStepIndex = INDEX_NONE;
 	ActiveWeaponDefinition = GetWeaponDefinition(Handle, ActorInfo);
@@ -128,6 +129,7 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 	GetEventTarget()->OnDestroyed.AddUniqueDynamic(
 		this,
 		&UAIRECompanionMeleeAttackAbility::HandleTargetDestroyed);
+	ApplyHarvestWeaponVisibility();
 
 	StartHitEventWait();
 	if (bIsEnding)
@@ -175,6 +177,7 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 {
 	bIsEnding = true;
 	SetSkillCancelWindowTag(false);
+	RestoreHarvestWeaponVisibility();
 	if (AActor* TargetActor = GetEventTarget())
 	{
 		TargetActor->OnDestroyed.RemoveDynamic(
@@ -551,6 +554,93 @@ bool UAIRECompanionMeleeAttackAbility::TryStartNextStep()
 	return true;
 }
 
+void UAIRECompanionMeleeAttackAbility::PrepareHarvestComboLoopStep(
+	const int32 PayloadStepIndex)
+{
+	const int32 LastStepIndex = GetAttackStepCount() - 1;
+	if (ActiveExecutionMode != EExecutionMode::Harvest
+		|| PayloadStepIndex != 0
+		|| CurrentStepIndex != LastStepIndex)
+	{
+		return;
+	}
+
+	AActor* TargetActor = GetEventTarget();
+	if (!IsActiveExecutionValid()
+		|| !IsTargetInRange(TargetActor))
+	{
+		FinishAbility(false);
+		return;
+	}
+
+	CurrentStepIndex = 0;
+	ResetCurrentStepState();
+	FaceTarget(TargetActor);
+	UE_LOG(
+		LogAIRECompanionMeleeAttack,
+		Verbose,
+		TEXT("Companion harvest combo looped without returning to locomotion. Target=%s"),
+		*GetNameSafe(TargetActor));
+}
+
+void UAIRECompanionMeleeAttackAbility::ApplyHarvestWeaponVisibility()
+{
+	if (ActiveExecutionMode != EExecutionMode::Harvest)
+	{
+		return;
+	}
+
+	AAIRECompanionCharacter* CompanionCharacter =
+		Cast<AAIRECompanionCharacter>(GetAvatarActorFromActorInfo());
+	if (!IsValid(CompanionCharacter))
+	{
+		return;
+	}
+
+	bPreviousBackWeaponsVisible =
+		CompanionCharacter->AreBackWeaponsVisible();
+	bPreviousHandWeaponsVisible =
+		CompanionCharacter->AreHandWeaponsVisible();
+	CompanionCharacter->SetBackWeaponsVisible(false);
+	CompanionCharacter->SetHandWeaponsVisible(true);
+	bHarvestWeaponVisibilityApplied = true;
+}
+
+void UAIRECompanionMeleeAttackAbility::RestoreHarvestWeaponVisibility()
+{
+	if (!bHarvestWeaponVisibilityApplied)
+	{
+		return;
+	}
+
+	bHarvestWeaponVisibilityApplied = false;
+	AAIRECompanionCharacter* CompanionCharacter =
+		Cast<AAIRECompanionCharacter>(GetAvatarActorFromActorInfo());
+	if (!IsValid(CompanionCharacter))
+	{
+		return;
+	}
+
+	const AAIRECompanionAIController* CompanionController =
+		Cast<AAIRECompanionAIController>(CompanionCharacter->GetController());
+	const UAIRECompanionThreatComponent* ThreatComponent =
+		IsValid(CompanionController)
+			? CompanionController->GetThreatComponent()
+			: nullptr;
+	if (IsValid(ThreatComponent)
+		&& ThreatComponent->IsCombatRequested()
+		&& IsValid(ThreatComponent->GetSelectedThreatTarget()))
+	{
+		CompanionCharacter->SetCombatEquipmentActive(true);
+		return;
+	}
+
+	CompanionCharacter->SetBackWeaponsVisible(
+		bPreviousBackWeaponsVisible);
+	CompanionCharacter->SetHandWeaponsVisible(
+		bPreviousHandWeaponsVisible);
+}
+
 bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
 {
 	if (!IsActiveExecutionValid() || bSuspendedForCombatSkill)
@@ -611,6 +701,13 @@ bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
 			MontageSetNextSectionName(
 				ComboStep.MontageSection,
 				NAME_None);
+		}
+
+		if (ActiveExecutionMode == EExecutionMode::Harvest)
+		{
+			MontageSetNextSectionName(
+				GetAttackStepMontageSection(GetAttackStepCount() - 1),
+				GetAttackStepMontageSection(0));
 		}
 
 		if (CurrentStepIndex + 1 < GetAttackStepCount())
@@ -1312,9 +1409,15 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 	int32 PayloadStepIndex = INDEX_NONE;
 	if (bIsEnding
 		|| bSuspendedForCombatSkill
+		|| !TryGetEventStepIndex(Payload, PayloadStepIndex))
+	{
+		return;
+	}
+
+	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	if (bIsEnding
 		|| bCurrentStepHitConsumed
 		|| bCurrentStepPointSampleConsumed
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;
@@ -1331,6 +1434,10 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 	{
 		bCurrentStepHitConsumed = true;
 		ResolveCurrentStepHit();
+		if (!IsTargetValidForAttack(TargetActor))
+		{
+			FinishAbility(false);
+		}
 		return;
 	}
 
@@ -1419,8 +1526,14 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 	int32 PayloadStepIndex = INDEX_NONE;
 	if (bIsEnding
 		|| bUsingFallback
+		|| !TryGetEventStepIndex(Payload, PayloadStepIndex))
+	{
+		return;
+	}
+
+	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	if (bIsEnding
 		|| !IsActiveExecutionValid()
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;

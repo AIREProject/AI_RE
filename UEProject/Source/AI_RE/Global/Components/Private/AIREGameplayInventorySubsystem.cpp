@@ -2269,10 +2269,7 @@ bool UAIREGameplayInventorySubsystem::EnsureMakoInventoryInitialized(
 			EAIREInventoryPersistenceOperation::Load,
 			EAIREInventoryPersistenceResultCode::FreshStateSeeded));
 	}
-	if (!bPersistenceSaveInFlight)
-	{
-		MarkPersistenceDirty();
-	}
+	MarkPersistenceDirty();
 	return true;
 }
 

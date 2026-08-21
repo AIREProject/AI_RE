@@ -31,6 +31,6 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAIRETitleScreenWidget> TitleScreen;
 
-	FName GameplayLevelName = TEXT("/Game/Levels/MainLevel_Top1");
+	FName GameplayLevelName = TEXT("/Game/Levels/MainLevel_Top");
 	bool bTransitionRequested = false;
 };
