@@ -198,12 +198,6 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 	}
 	else
 	{
-		if (CachedInteractableTarget.IsValid())
-		{
-			CachedInteractableTarget.Reset();
-			// TODO: UI 숨기기 연동
-		}
-
 		// 적이 사라졌으면 락온 해제 방송
 		if (bIsCombatState)
 		{
