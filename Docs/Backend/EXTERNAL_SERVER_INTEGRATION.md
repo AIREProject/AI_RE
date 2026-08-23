@@ -50,6 +50,26 @@ Web은 `Message + GameWorld`를 인게임에서 직접 공유한 기억으로 �
 `/openapi.json`에서 Memory 전체 경로가 확인되었습니다. 따라서 Web production build는
 `VITE_MEMORY_ENABLED=true`로 활성화합니다.
 
+## 2026-08-23 Memory 후보 검토 목표 계약
+
+채택 Backend source에는 기존 Memory API의 additive `last_used_at`, `use_count`와 다음 후보
+검토 경로가 구현되어 있습니다.
+
+```text
+GET   /api/v1/memory-candidates?save_slot_id={id}&companion_id={id}
+GET   /api/v1/memory-candidates/{candidate_id}?save_slot_id={id}&companion_id={id}
+PATCH /api/v1/memory-candidates/{candidate_id}?save_slot_id={id}&companion_id={id}
+```
+
+후보 공개 응답은 type, 원문, source mode, 발생 시점, 검토 사유만 제공하며 confidence,
+Provider, 내부 source ID는 제공하지 않습니다. PATCH는 `Approve|Reject`와 reason을 요구하고,
+Approve에서만 type·importance·pinned·corrected text를 선택적으로 받습니다. 같은 결정은
+멱등이고 다른 결정은 409입니다.
+
+이 계약은 아직 배포 `/openapi.json` 확인 전 목표 계약입니다. Web 구현은
+`VITE_MEMORY_REVIEW_ENABLED=false`를 기본으로 유지하고, Backend migration 0017 배포와 공개
+OpenAPI 확인 후에만 활성화합니다. 기존 Chat request/response 계약은 변경하지 않습니다.
+
 ## 2026-07-27 과거 확인 결과
 
 로컬 `ai_companion_server` Build 1은 다음 API를 구현합니다.

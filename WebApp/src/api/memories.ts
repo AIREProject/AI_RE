@@ -3,6 +3,13 @@ import { apiRequestTimeoutMs, webBearer } from "../config";
 const stableIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const memorySourceTypes = new Set(["Message", "Event", "Legacy"]);
 const memorySourceModes = new Set(["RealWorld", "GameWorld", "LegacyUnknown"]);
+const memoryTypes = new Set([
+  "ProfileFact",
+  "Preference",
+  "Episode",
+  "Promise",
+  "RelationshipEvidence",
+]);
 
 export type MemorySourceType = "Message" | "Event" | "Legacy";
 export type MemorySourceMode = "RealWorld" | "GameWorld" | "LegacyUnknown";
@@ -24,6 +31,8 @@ export interface MemoryView {
   pinned: boolean;
   corrected: boolean;
   created_at: string;
+  last_used_at?: string | null;
+  use_count?: number;
   sources: MemorySourceView[];
 }
 
@@ -54,6 +63,66 @@ export interface MemoryResetRequest {
 export interface MemoryResetResponse {
   request_id: string;
   archived_count: number;
+}
+
+export type MemoryCandidateDecision = "Approve" | "Reject";
+
+export interface MemoryCandidateView {
+  candidate_id: string;
+  save_slot_id: string;
+  companion_id: string;
+  memory_type: MemoryType;
+  text: string;
+  source_mode: MemorySourceMode;
+  occurred_at: string;
+  review_reason: string;
+  created_at: string;
+}
+
+export type MemoryType =
+  | "ProfileFact"
+  | "Preference"
+  | "Episode"
+  | "Promise"
+  | "RelationshipEvidence";
+
+export interface MemoryCandidateListResponse {
+  request_id: string;
+  candidates: MemoryCandidateView[];
+}
+
+export interface ApproveMemoryCandidateRequest {
+  decision: "Approve";
+  memory_type: MemoryType;
+  importance: number;
+  pinned: boolean;
+  corrected_text: string | null;
+  reason: string;
+}
+
+export interface RejectMemoryCandidateRequest {
+  decision: "Reject";
+  reason: string;
+}
+
+export type DecideMemoryCandidateRequest =
+  | ApproveMemoryCandidateRequest
+  | RejectMemoryCandidateRequest;
+
+interface LegacyDecideMemoryCandidateRequest {
+  decision: MemoryCandidateDecision;
+  memory_type?: MemoryType;
+  importance?: number;
+  pinned?: boolean;
+  corrected_text?: string | null;
+  reason?: string | null;
+}
+
+export interface DecideMemoryCandidateResponse {
+  request_id: string;
+  candidate_id: string;
+  decision: MemoryCandidateDecision;
+  memory: MemoryView | null;
 }
 
 export type MemoryApiFailureKind =
@@ -123,7 +192,8 @@ function isMemoryView(
     (expectedSaveSlotId === undefined || value.save_slot_id === expectedSaveSlotId) &&
     isStableId(value.companion_id) &&
     (expectedCompanionId === undefined || value.companion_id === expectedCompanionId) &&
-    isNonEmptyString(value.memory_type, 32) &&
+    typeof value.memory_type === "string" &&
+    memoryTypes.has(value.memory_type) &&
     isNonEmptyString(value.text, 4000) &&
     typeof value.importance === "number" &&
     Number.isSafeInteger(value.importance) &&
@@ -132,6 +202,13 @@ function isMemoryView(
     typeof value.pinned === "boolean" &&
     typeof value.corrected === "boolean" &&
     isIsoDateString(value.created_at) &&
+    (value.last_used_at === undefined ||
+      value.last_used_at === null ||
+      isIsoDateString(value.last_used_at)) &&
+    (value.use_count === undefined ||
+      (typeof value.use_count === "number" &&
+        Number.isSafeInteger(value.use_count) &&
+        value.use_count >= 0)) &&
     (sources === undefined || (Array.isArray(sources) && sources.every(isMemorySource)))
   );
 }
@@ -142,7 +219,55 @@ function normalizeMemory(value: MemoryView): MemoryView {
     // Older deployed responses omit the additive sources field. Treating that as
     // an empty list keeps the client backwards-compatible without exposing IDs.
     sources: value.sources ?? [],
+    last_used_at: value.last_used_at ?? null,
+    use_count: value.use_count ?? 0,
   };
+}
+
+function isMemoryCandidateView(
+  value: unknown,
+  expectedSaveSlotId?: string,
+  expectedCompanionId?: string,
+): value is MemoryCandidateView {
+  return (
+    isRecord(value) &&
+    isStableId(value.candidate_id) &&
+    isStableId(value.save_slot_id) &&
+    (expectedSaveSlotId === undefined || value.save_slot_id === expectedSaveSlotId) &&
+    isStableId(value.companion_id) &&
+    (expectedCompanionId === undefined || value.companion_id === expectedCompanionId) &&
+    typeof value.memory_type === "string" &&
+    memoryTypes.has(value.memory_type) &&
+    isNonEmptyString(value.text, 4000) &&
+    typeof value.source_mode === "string" &&
+    memorySourceModes.has(value.source_mode) &&
+    isIsoDateString(value.occurred_at) &&
+    isStableId(value.review_reason) &&
+    isIsoDateString(value.created_at)
+  );
+}
+
+function isDecideMemoryCandidateRequest(
+  value: LegacyDecideMemoryCandidateRequest,
+): value is DecideMemoryCandidateRequest {
+  if (!isNonEmptyString(value.reason, 512)) {
+    return false;
+  }
+  if (value.decision === "Reject") {
+    return true;
+  }
+  return (
+    value.decision === "Approve" &&
+    typeof value.memory_type === "string" &&
+    memoryTypes.has(value.memory_type) &&
+    typeof value.importance === "number" &&
+    Number.isSafeInteger(value.importance) &&
+    value.importance >= 1 &&
+    value.importance <= 10 &&
+    typeof value.pinned === "boolean" &&
+    (value.corrected_text === null ||
+      (typeof value.corrected_text === "string" && value.corrected_text.length <= 4000))
+  );
 }
 
 function isMemoryListResponse(
@@ -166,6 +291,37 @@ function isMemoryResetResponse(value: unknown, requestId: string): value is Memo
     typeof value.archived_count === "number" &&
     Number.isSafeInteger(value.archived_count) &&
     value.archived_count >= 0
+  );
+}
+
+function isMemoryCandidateListResponse(
+  value: unknown,
+  requestId: string,
+  expectedSaveSlotId: string,
+  expectedCompanionId: string,
+): value is MemoryCandidateListResponse {
+  return (
+    isRecord(value) &&
+    value.request_id === requestId &&
+    Array.isArray(value.candidates) &&
+    value.candidates.every((candidate) =>
+      isMemoryCandidateView(candidate, expectedSaveSlotId, expectedCompanionId),
+    )
+  );
+}
+
+function isDecideMemoryCandidateResponse(
+  value: unknown,
+  requestId: string,
+  candidateId: string,
+  decision: MemoryCandidateDecision,
+): value is DecideMemoryCandidateResponse {
+  return (
+    isRecord(value) &&
+    value.request_id === requestId &&
+    value.candidate_id === candidateId &&
+    value.decision === decision &&
+    (value.memory === null || isMemoryView(value.memory))
   );
 }
 
@@ -445,4 +601,81 @@ export async function resetMemories(
     },
     (body): body is MemoryResetResponse => isMemoryResetResponse(body, requestId),
   );
+}
+
+export async function listMemoryCandidates(
+  apiBaseUrl: string,
+  saveSlotId: string,
+  companionId: string,
+  requestId: string,
+): Promise<MemoryCandidateListResponse> {
+  const query = new URLSearchParams({
+    save_slot_id: saveSlotId,
+    companion_id: companionId,
+  });
+  return requestJson<MemoryCandidateListResponse>(
+    apiBaseUrl,
+    `/api/v1/memory-candidates?${query.toString()}`,
+    requestId,
+    { method: "GET" },
+    (body): body is MemoryCandidateListResponse =>
+      isMemoryCandidateListResponse(body, requestId, saveSlotId, companionId),
+  );
+}
+
+export async function getMemoryCandidate(
+  apiBaseUrl: string,
+  candidateId: string,
+  expectedSaveSlotId: string,
+  expectedCompanionId: string,
+  requestId: string,
+): Promise<MemoryCandidateView> {
+  const query = new URLSearchParams({
+    save_slot_id: expectedSaveSlotId,
+    companion_id: expectedCompanionId,
+  });
+  return requestJson<MemoryCandidateView>(
+    apiBaseUrl,
+    `/api/v1/memory-candidates/${encodeURIComponent(candidateId)}?${query.toString()}`,
+    requestId,
+    { method: "GET" },
+    (body): body is MemoryCandidateView =>
+      isMemoryCandidateView(body, expectedSaveSlotId, expectedCompanionId),
+  );
+}
+
+export async function decideMemoryCandidate(
+  apiBaseUrl: string,
+  candidateId: string,
+  saveSlotId: string,
+  companionId: string,
+  request: DecideMemoryCandidateRequest,
+  requestId: string,
+): Promise<DecideMemoryCandidateResponse> {
+  if (!isDecideMemoryCandidateRequest(request)) {
+    throw new MemoryApiError(
+      "invalid-success-response",
+      "InvalidMemoryCandidateDecision",
+      false,
+    );
+  }
+  const query = new URLSearchParams({
+    save_slot_id: saveSlotId,
+    companion_id: companionId,
+  });
+  return requestJson<DecideMemoryCandidateResponse>(
+    apiBaseUrl,
+    `/api/v1/memory-candidates/${encodeURIComponent(candidateId)}?${query.toString()}`,
+    requestId,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    (body): body is DecideMemoryCandidateResponse =>
+      isDecideMemoryCandidateResponse(body, requestId, candidateId, request.decision),
+  ).then((response) => ({
+    ...response,
+    memory: response.memory === null ? null : normalizeMemory(response.memory),
+  }));
 }

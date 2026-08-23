@@ -57,14 +57,24 @@ updating the UI. Loading, empty, no-result, and error states are explicit. Error
 states expose a manual retry action only; the WebApp never retries a failed or
 timed-out Memory request automatically.
 
+Memory cards also show how many accepted responses have used the memory and the
+last accepted-use time when available. The values are additive server fields;
+older deployed responses render them as `0회` and no last-use date.
+
 Mobile Chat advertises only `Command.GatherResource`. The Backend converts a
 validated request such as `나무30개 캐줘` into a server-owned Offline Task and
 returns no UE command candidate. When `offline_task_id` is present, the WebApp
 keeps the companion reply visible and immediately reconciles that exact ID with
 the Task list. A malformed response containing a UE command candidate is rejected.
 
-The Memory tab is deployment-gated with `VITE_MEMORY_ENABLED`. The deployed
-OpenAPI now exposes every Memory endpoint, so production builds use `true`.
+The Memory tab is deployment-gated with `VITE_MEMORY_ENABLED`. Candidate review
+is separately deployment-gated with `VITE_MEMORY_REVIEW_ENABLED=false` by
+default. When enabled, the Memory tab loads pending candidates through
+`/api/v1/memory-candidates`; users can inspect the safe review reason, change
+type/importance, optionally provide corrected text, then approve or reject with
+a required reason. Candidate API responses are strictly scope- and
+request-ID-validated. Confidence, provider details, source IDs, and internal
+memory IDs are never rendered.
 
 While a Chat request is waiting, the user can cancel the browser-side wait. The
 already displayed user message remains, no companion response is appended for

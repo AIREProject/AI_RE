@@ -16,17 +16,28 @@ import {
   type OfflineTaskView,
 } from "./api/offlineTasks";
 import {
+  decideMemoryCandidate,
   deleteMemory,
+  getMemoryCandidate,
   getMemory,
+  listMemoryCandidates,
   listMemories,
   MemoryApiError,
   resetMemories,
   searchMemories,
   updateMemory,
+  type MemoryCandidateView,
+  type MemoryType,
   type MemorySourceView,
   type MemoryView,
 } from "./api/memories";
-import { apiBaseUrl, companionId, memoryEnabled, saveSlotId } from "./config";
+import {
+  apiBaseUrl,
+  companionId,
+  memoryEnabled,
+  memoryReviewEnabled,
+  saveSlotId,
+} from "./config";
 
 type ChatUiState = "idle" | "sending" | "success" | "cancelled" | "error";
 type TaskUiState = "idle" | "loading" | "success" | "warning" | "error";
@@ -309,6 +320,33 @@ app.innerHTML = `
         </section>
 
         <p id="memory-notice" class="memory-notice" data-state="idle" aria-live="polite" hidden></p>
+        <section id="memory-candidate-section" class="memory-candidate-section" aria-labelledby="memory-candidate-heading" hidden>
+          <div class="memory-candidate-heading">
+            <div>
+              <p class="memory-section-label">검토할 기억</p>
+              <h3 id="memory-candidate-heading">저장 전에 한 번 확인해 주세요</h3>
+            </div>
+            <button id="memory-candidate-refresh-button" class="memory-secondary-button" type="button">새로고침</button>
+          </div>
+          <p>비슷하거나 확인이 필요한 이야기예요. 승인하면 MAKO가 다음 대화부터 참고할 수 있어요.</p>
+          <p id="memory-candidate-notice" class="memory-notice memory-candidate-notice" data-state="idle" aria-live="polite" hidden></p>
+          <div id="memory-candidate-list" class="memory-candidate-list" data-state="idle" aria-live="polite" aria-busy="false">
+            <section class="memory-state-card">
+              <div class="empty-icon" aria-hidden="true">✧</div>
+              <h3>검토할 기억을 불러오는 중이에요</h3>
+            </section>
+          </div>
+          <section id="memory-candidate-detail" class="memory-detail memory-candidate-detail" aria-labelledby="memory-candidate-detail-title" hidden>
+            <div class="memory-detail-heading">
+              <div>
+                <p class="memory-section-label">검토할 기억</p>
+                <h3 id="memory-candidate-detail-title">후보 상세</h3>
+              </div>
+              <button id="memory-candidate-detail-close" class="memory-close-button" type="button">닫기</button>
+            </div>
+            <div id="memory-candidate-detail-content"></div>
+          </section>
+        </section>
         <div id="memory-list" class="memory-list" data-state="idle" aria-live="polite" aria-busy="false">
           <section class="memory-state-card">
             <div class="empty-icon" aria-hidden="true">✧</div>
@@ -357,6 +395,14 @@ const memorySearchButton = requireElement<HTMLButtonElement>("#memory-search-but
 const memoryRefreshButton = requireElement<HTMLButtonElement>("#memory-refresh-button");
 const memoryResetButton = requireElement<HTMLButtonElement>("#memory-reset-button");
 const memoryNotice = requireElement<HTMLElement>("#memory-notice");
+const memoryCandidateSection = requireElement<HTMLElement>("#memory-candidate-section");
+const memoryCandidateRefreshButton = requireElement<HTMLButtonElement>("#memory-candidate-refresh-button");
+const memoryCandidateNotice = requireElement<HTMLElement>("#memory-candidate-notice");
+const memoryCandidateList = requireElement<HTMLElement>("#memory-candidate-list");
+const memoryCandidateDetail = requireElement<HTMLElement>("#memory-candidate-detail");
+const memoryCandidateDetailTitle = requireElement<HTMLElement>("#memory-candidate-detail-title");
+const memoryCandidateDetailClose = requireElement<HTMLButtonElement>("#memory-candidate-detail-close");
+const memoryCandidateDetailContent = requireElement<HTMLElement>("#memory-candidate-detail-content");
 const memoryList = requireElement<HTMLElement>("#memory-list");
 const memoryDetail = requireElement<HTMLElement>("#memory-detail");
 const memoryDetailTitle = requireElement<HTMLElement>("#memory-detail-title");
@@ -365,6 +411,7 @@ const memoryDetailContent = requireElement<HTMLElement>("#memory-detail-content"
 
 memoryTab.hidden = !memoryEnabled;
 memoryTab.disabled = !memoryEnabled;
+memoryCandidateSection.hidden = !memoryReviewEnabled;
 
 const sessionId = createStableId("session");
 let activeChatRequest: ActiveChatRequest | null = null;
@@ -377,10 +424,15 @@ let suppressSuggestionClick = false;
 let suggestionDragStartX = 0;
 let suggestionDragStartScrollLeft = 0;
 let memoryItems: MemoryView[] = [];
+let memoryCandidateItems: MemoryCandidateView[] = [];
 let selectedMemory: MemoryView | null = null;
+let selectedMemoryCandidate: MemoryCandidateView | null = null;
 let isMemoryLoaded = false;
+let isMemoryCandidatesLoaded = false;
 let isListingMemories = false;
-let memoryMutation: "update" | "delete" | "reset" | null = null;
+let isListingMemoryCandidates = false;
+let isLoadingMemoryCandidateDetail = false;
+let memoryMutation: "update" | "delete" | "reset" | "candidate" | null = null;
 let memoryLastAction: "list" | "search" = "list";
 
 function setChatState(state: ChatUiState, message?: string): void {
@@ -925,7 +977,16 @@ function memorySourceLabel(source: MemorySourceView): string {
 
 function memoryFailureMessage(
   error: MemoryApiError,
-  operation: "list" | "search" | "detail" | "update" | "delete" | "reset",
+  operation:
+    | "list"
+    | "search"
+    | "detail"
+    | "update"
+    | "delete"
+    | "reset"
+    | "candidate-list"
+    | "candidate-detail"
+    | "candidate-decision",
 ): string {
   const subject: Record<typeof operation, string> = {
     list: "기억 목록 조회",
@@ -934,6 +995,9 @@ function memoryFailureMessage(
     update: "기억 수정",
     delete: "기억 삭제",
     reset: "기억 초기화",
+    "candidate-list": "검토할 기억 조회",
+    "candidate-detail": "후보 기억 상세 조회",
+    "candidate-decision": "후보 기억 처리",
   };
   switch (error.kind) {
     case "timeout":
@@ -1022,6 +1086,42 @@ function setMemoryListMessage(
   memoryList.replaceChildren(createMemoryStateCard(title, description, retry));
 }
 
+function setMemoryCandidateNotice(
+  state: "idle" | "success" | "error",
+  message?: string,
+  retry?: () => void,
+): void {
+  memoryCandidateNotice.dataset.state = state;
+  memoryCandidateNotice.replaceChildren();
+  if (message === undefined) {
+    memoryCandidateNotice.hidden = true;
+    return;
+  }
+  const text = document.createElement("span");
+  text.textContent = message;
+  memoryCandidateNotice.append(text);
+  if (retry !== undefined) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "memory-inline-retry";
+    button.textContent = "다시 시도";
+    button.addEventListener("click", retry);
+    memoryCandidateNotice.append(button);
+  }
+  memoryCandidateNotice.hidden = false;
+}
+
+function setMemoryCandidateListMessage(
+  state: MemoryListState,
+  title: string,
+  description: string,
+  retry?: () => void,
+): void {
+  memoryCandidateList.dataset.state = state;
+  memoryCandidateList.setAttribute("aria-busy", String(state === "loading"));
+  memoryCandidateList.replaceChildren(createMemoryStateCard(title, description, retry));
+}
+
 function appendMemorySourceSummary(container: HTMLElement, sources: MemorySourceView[]): void {
   const sourceList = document.createElement("ul");
   sourceList.className = "memory-source-list";
@@ -1063,16 +1163,29 @@ function appendMemoryMeta(container: HTMLElement, memory: MemoryView): void {
     corrected.textContent = "내용을 바로잡음";
     meta.append(corrected);
   }
+  const usage = document.createElement("span");
+  usage.textContent = `대화에서 ${memory.use_count ?? 0}회 참고`;
+  meta.append(usage);
+  if (memory.last_used_at !== null && memory.last_used_at !== undefined) {
+    const lastUsed = document.createElement("time");
+    lastUsed.dateTime = memory.last_used_at;
+    lastUsed.textContent = `마지막 참고 ${formatMemoryDate(memory.last_used_at)}`;
+    meta.append(lastUsed);
+  }
   container.append(meta);
 }
 
 function syncMemoryControls(): void {
-  const disabled = isListingMemories || memoryMutation !== null;
+  const disabled =
+    isListingMemories || isListingMemoryCandidates || memoryMutation !== null;
   memorySearchInput.disabled = disabled;
   memorySearchButton.disabled = disabled;
   memoryRefreshButton.disabled = disabled;
   memoryResetButton.disabled = disabled;
   memoryDetailClose.disabled = isLoadingMemoryDetail || memoryMutation !== null;
+  memoryCandidateRefreshButton.disabled = disabled;
+  memoryCandidateDetailClose.disabled =
+    isLoadingMemoryCandidateDetail || memoryMutation !== null;
 }
 
 function updateMemoryItem(updated: MemoryView): void {
@@ -1080,6 +1193,90 @@ function updateMemoryItem(updated: MemoryView): void {
     memory.memory_id === updated.memory_id ? updated : memory,
   );
   selectedMemory = updated;
+}
+
+function candidateReviewReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    LowConfidence: "내용을 정확히 기억할지 확인이 필요해요.",
+    TextSimilarity: "이미 저장된 기억과 문장이 비슷해요.",
+    SemanticSimilarity: "이미 저장된 기억과 의미가 비슷해요.",
+    PossibleConflict: "기존 기억과 내용이 다를 수 있어요.",
+  };
+  return labels[reason] ?? "저장하기 전에 내용을 확인해 주세요.";
+}
+
+function candidateSourceModeLabel(sourceMode: MemoryCandidateView["source_mode"]): string {
+  if (sourceMode === "RealWorld") {
+    return "모바일에서 직접 공유한 이야기";
+  }
+  if (sourceMode === "GameWorld") {
+    return "게임에서 직접 공유하거나 함께 겪은 일";
+  }
+  return "이전 대화에서 가져온 이야기";
+}
+
+function appendMemoryCandidateMeta(
+  container: HTMLElement | DocumentFragment,
+  candidate: MemoryCandidateView,
+): void {
+  const meta = document.createElement("div");
+  meta.className = "memory-card-meta";
+  const occurred = document.createElement("time");
+  occurred.dateTime = candidate.occurred_at;
+  occurred.textContent = `이야기한 때 ${formatMemoryDate(candidate.occurred_at)}`;
+  const source = document.createElement("span");
+  source.textContent = candidateSourceModeLabel(candidate.source_mode);
+  meta.append(occurred, source);
+  container.append(meta);
+}
+
+function renderMemoryCandidateList(items: MemoryCandidateView[]): void {
+  if (items.length === 0) {
+    setMemoryCandidateListMessage(
+      "empty",
+      "검토할 기억이 없어요",
+      "확인이 필요한 이야기가 생기면 여기에 보여드릴게요.",
+    );
+    return;
+  }
+
+  memoryCandidateList.dataset.state = "success";
+  memoryCandidateList.setAttribute("aria-busy", "false");
+  const cards = items.map((candidate) => {
+    const card = document.createElement("article");
+    card.className = "memory-card memory-candidate-card";
+    const header = document.createElement("div");
+    header.className = "memory-card-header";
+    const titleGroup = document.createElement("div");
+    const type = document.createElement("p");
+    type.className = "memory-card-type";
+    type.textContent = memoryTypeLabel(candidate.memory_type);
+    const title = document.createElement("h3");
+    title.textContent = "저장 전 확인이 필요한 이야기";
+    titleGroup.append(type, title);
+    header.append(titleGroup);
+    const text = document.createElement("p");
+    text.className = "memory-card-text";
+    text.textContent = candidate.text;
+    const reason = document.createElement("p");
+    reason.className = "memory-candidate-reason";
+    reason.textContent = candidateReviewReasonLabel(candidate.review_reason);
+    const actions = document.createElement("div");
+    actions.className = "memory-card-actions";
+    const detailButton = document.createElement("button");
+    detailButton.className = "memory-primary-button";
+    detailButton.type = "button";
+    detailButton.textContent = "검토하기";
+    detailButton.addEventListener("click", () => {
+      void openMemoryCandidateDetail(candidate.candidate_id);
+    });
+    actions.append(detailButton);
+    card.append(header, text);
+    appendMemoryCandidateMeta(card, candidate);
+    card.append(reason, actions);
+    return card;
+  });
+  memoryCandidateList.replaceChildren(...cards);
 }
 
 function renderMemoryList(items: MemoryView[], action: "list" | "search"): void {
@@ -1266,6 +1463,305 @@ function renderMemoryDetail(memory: MemoryView): void {
   actions.append(pinButton, forgetButton);
   content.append(actions);
   memoryDetailContent.replaceChildren(content);
+}
+
+function setMemoryCandidateDetailMessage(
+  title: string,
+  description: string,
+  retry?: () => void,
+): void {
+  memoryCandidateDetailContent.replaceChildren(
+    createMemoryStateCard(title, description, retry),
+  );
+}
+
+function renderMemoryCandidateDetail(candidate: MemoryCandidateView): void {
+  memoryCandidateDetailTitle.textContent = memoryTypeLabel(candidate.memory_type);
+  const content = document.createDocumentFragment();
+  const text = document.createElement("p");
+  text.className = "memory-detail-text";
+  text.textContent = candidate.text;
+  content.append(text);
+  appendMemoryCandidateMeta(content, candidate);
+
+  const reviewReason = document.createElement("p");
+  reviewReason.className = "memory-candidate-reason";
+  reviewReason.textContent = candidateReviewReasonLabel(candidate.review_reason);
+  content.append(reviewReason);
+
+  const form = document.createElement("form");
+  form.className = "memory-correction-form";
+  form.noValidate = true;
+  const heading = document.createElement("h4");
+  heading.className = "memory-detail-subtitle";
+  heading.textContent = "저장할 내용 확인";
+
+  const typeLabel = document.createElement("label");
+  typeLabel.textContent = "기억 종류";
+  const typeInput = document.createElement("select");
+  const memoryTypes: readonly MemoryType[] = [
+    "ProfileFact",
+    "Preference",
+    "Episode",
+    "Promise",
+    "RelationshipEvidence",
+  ];
+  memoryTypes.forEach((memoryType) => {
+    const option = document.createElement("option");
+    option.value = memoryType;
+    option.textContent = memoryTypeLabel(memoryType);
+    option.selected = memoryType === candidate.memory_type;
+    typeInput.append(option);
+  });
+  typeLabel.append(typeInput);
+
+  const importanceLabel = document.createElement("label");
+  importanceLabel.textContent = "중요도 (1~10)";
+  const importanceInput = document.createElement("input");
+  importanceInput.type = "number";
+  importanceInput.min = "1";
+  importanceInput.max = "10";
+  importanceInput.step = "1";
+  importanceInput.value = "6";
+  importanceInput.required = true;
+  importanceLabel.append(importanceInput);
+
+  const correctedLabel = document.createElement("label");
+  correctedLabel.textContent = "다르게 기억할 내용 (선택)";
+  const correctedInput = document.createElement("textarea");
+  correctedInput.rows = 3;
+  correctedInput.maxLength = 4000;
+  correctedInput.placeholder = "비워 두면 위의 직접 공유한 내용을 그대로 저장해요.";
+  correctedLabel.append(correctedInput);
+
+  const pinnedLabel = document.createElement("label");
+  pinnedLabel.className = "memory-checkbox-label";
+  const pinnedInput = document.createElement("input");
+  pinnedInput.type = "checkbox";
+  pinnedLabel.append(pinnedInput, document.createTextNode("오래 기억하기"));
+
+  const reasonLabel = document.createElement("label");
+  reasonLabel.textContent = "처리 이유 (필수)";
+  const reasonInput = document.createElement("input");
+  reasonInput.type = "text";
+  reasonInput.maxLength = 512;
+  reasonInput.required = true;
+  reasonInput.placeholder = "예: 내용을 확인하고 저장함";
+  reasonLabel.append(reasonInput);
+
+  const actions = document.createElement("div");
+  actions.className = "memory-form-actions";
+  const approveButton = document.createElement("button");
+  approveButton.className = "memory-primary-button";
+  approveButton.type = "button";
+  approveButton.textContent = "승인하고 저장";
+  const rejectButton = document.createElement("button");
+  rejectButton.className = "memory-delete-button";
+  rejectButton.type = "button";
+  rejectButton.textContent = "저장하지 않기";
+  const notice = document.createElement("p");
+  notice.className = "memory-form-notice";
+  notice.hidden = true;
+  actions.append(approveButton, rejectButton);
+  form.append(
+    heading,
+    typeLabel,
+    importanceLabel,
+    correctedLabel,
+    pinnedLabel,
+    reasonLabel,
+    actions,
+    notice,
+  );
+
+  const submitDecision = (decision: "Approve" | "Reject"): void => {
+    const reason = reasonInput.value.trim();
+    if (reason.length === 0) {
+      setMemoryInlineError(notice, "처리 이유를 입력해 주세요.");
+      return;
+    }
+    const importance = Number(importanceInput.value);
+    if (
+      decision === "Approve" &&
+      (!Number.isInteger(importance) || importance < 1 || importance > 10)
+    ) {
+      setMemoryInlineError(notice, "중요도는 1부터 10 사이의 정수여야 해요.");
+      return;
+    }
+    void submitMemoryCandidateDecision(
+      candidate,
+      decision,
+      {
+        memoryType: typeInput.value as MemoryType,
+        importance,
+        pinned: pinnedInput.checked,
+        correctedText: correctedInput.value.trim(),
+        reason,
+      },
+      approveButton,
+      rejectButton,
+      notice,
+    );
+  };
+  approveButton.addEventListener("click", () => submitDecision("Approve"));
+  rejectButton.addEventListener("click", () => submitDecision("Reject"));
+  content.append(form);
+  memoryCandidateDetailContent.replaceChildren(content);
+}
+
+interface MemoryCandidateDecisionInput {
+  memoryType: MemoryType;
+  importance: number;
+  pinned: boolean;
+  correctedText: string;
+  reason: string;
+}
+
+async function openMemoryCandidateDetail(candidateId: string): Promise<void> {
+  if (isLoadingMemoryCandidateDetail || memoryMutation !== null) {
+    return;
+  }
+  isLoadingMemoryCandidateDetail = true;
+  syncMemoryControls();
+  memoryCandidateDetail.hidden = false;
+  setMemoryCandidateDetailMessage("후보 기억을 불러오는 중…", "최신 내용을 확인하고 있어요.");
+  try {
+    const candidate = await getMemoryCandidate(
+      apiBaseUrl,
+      candidateId,
+      saveSlotId,
+      companionId,
+      createStableId("memory-candidate-detail"),
+    );
+    memoryCandidateItems = memoryCandidateItems.map((item) =>
+      item.candidate_id === candidate.candidate_id ? candidate : item,
+    );
+    selectedMemoryCandidate = candidate;
+    renderMemoryCandidateDetail(candidate);
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "candidate-detail")
+        : "후보 기억 상세 조회 중 알 수 없는 오류가 발생했어요.";
+    setMemoryCandidateDetailMessage(
+      "후보 기억을 불러오지 못했어요",
+      message,
+      () => void openMemoryCandidateDetail(candidateId),
+    );
+  } finally {
+    isLoadingMemoryCandidateDetail = false;
+    syncMemoryControls();
+  }
+}
+
+async function loadMemoryCandidates(): Promise<void> {
+  if (!memoryReviewEnabled || isListingMemoryCandidates || memoryMutation !== null) {
+    return;
+  }
+  isListingMemoryCandidates = true;
+  isMemoryCandidatesLoaded = true;
+  syncMemoryControls();
+  setMemoryCandidateNotice("idle");
+  setMemoryCandidateListMessage(
+    "loading",
+    "검토할 기억을 불러오는 중…",
+    "확인이 필요한 기억 후보를 확인하고 있어요.",
+  );
+  try {
+    const response = await listMemoryCandidates(
+      apiBaseUrl,
+      saveSlotId,
+      companionId,
+      createStableId("memory-candidate-list"),
+    );
+    memoryCandidateItems = response.candidates;
+    renderMemoryCandidateList(memoryCandidateItems);
+  } catch (error: unknown) {
+    const message =
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "candidate-list")
+        : "검토할 기억을 불러오는 중 알 수 없는 오류가 발생했어요.";
+    setMemoryCandidateNotice("error", message, () => void loadMemoryCandidates());
+    setMemoryCandidateListMessage(
+      "error",
+      "검토할 기억을 불러오지 못했어요",
+      message,
+      () => void loadMemoryCandidates(),
+    );
+  } finally {
+    isListingMemoryCandidates = false;
+    syncMemoryControls();
+  }
+}
+
+async function submitMemoryCandidateDecision(
+  candidate: MemoryCandidateView,
+  decision: "Approve" | "Reject",
+  input: MemoryCandidateDecisionInput,
+  approveButton: HTMLButtonElement,
+  rejectButton: HTMLButtonElement,
+  notice: HTMLElement,
+): Promise<void> {
+  if (memoryMutation !== null) {
+    return;
+  }
+  memoryMutation = "candidate";
+  approveButton.disabled = true;
+  rejectButton.disabled = true;
+  approveButton.textContent = decision === "Approve" ? "저장 중…" : "승인하고 저장";
+  rejectButton.textContent = decision === "Reject" ? "처리 중…" : "저장하지 않기";
+  notice.hidden = true;
+  syncMemoryControls();
+  try {
+    const response = await decideMemoryCandidate(
+      apiBaseUrl,
+      candidate.candidate_id,
+      saveSlotId,
+      companionId,
+      decision === "Approve"
+        ? {
+            decision,
+            memory_type: input.memoryType,
+            importance: input.importance,
+            pinned: input.pinned,
+            corrected_text: input.correctedText.length === 0 ? null : input.correctedText,
+            reason: input.reason,
+          }
+        : { decision, reason: input.reason },
+      createStableId("memory-candidate-decision"),
+    );
+    memoryCandidateItems = memoryCandidateItems.filter(
+      (item) => item.candidate_id !== candidate.candidate_id,
+    );
+    selectedMemoryCandidate = null;
+    memoryCandidateDetail.hidden = true;
+    renderMemoryCandidateList(memoryCandidateItems);
+    if (response.memory !== null && isMemoryLoaded && memoryLastAction === "list") {
+      memoryItems = [
+        response.memory,
+        ...memoryItems.filter((item) => item.memory_id !== response.memory?.memory_id),
+      ];
+      renderMemoryList(memoryItems, "list");
+    }
+    setMemoryCandidateNotice(
+      "success",
+      decision === "Approve" ? "기억을 저장했어요." : "이 이야기는 저장하지 않았어요.",
+    );
+  } catch (error: unknown) {
+    setMemoryInlineError(
+      notice,
+      error instanceof MemoryApiError
+        ? memoryFailureMessage(error, "candidate-decision")
+        : "후보 기억 처리 중 알 수 없는 오류가 발생했어요.",
+    );
+    approveButton.disabled = false;
+    rejectButton.disabled = false;
+    approveButton.textContent = "승인하고 저장";
+    rejectButton.textContent = "저장하지 않기";
+  } finally {
+    memoryMutation = null;
+    syncMemoryControls();
+  }
 }
 
 let isLoadingMemoryDetail = false;
@@ -1541,6 +2037,9 @@ document.querySelectorAll<HTMLButtonElement>(".tab-button").forEach((button) => 
     if (target === "memory" && !isMemoryLoaded) {
       void loadMemories("list");
     }
+    if (target === "memory" && memoryReviewEnabled && !isMemoryCandidatesLoaded) {
+      void loadMemoryCandidates();
+    }
   });
 });
 
@@ -1660,6 +2159,10 @@ memoryRefreshButton.addEventListener("click", () => {
   void loadMemories(memorySearchInput.value.trim().length > 0 ? "search" : "list");
 });
 
+memoryCandidateRefreshButton.addEventListener("click", () => {
+  void loadMemoryCandidates();
+});
+
 memoryResetButton.addEventListener("click", () => {
   void resetMemoryDataAfterConfirmation();
 });
@@ -1668,6 +2171,13 @@ memoryDetailClose.addEventListener("click", () => {
   if (!isLoadingMemoryDetail && memoryMutation === null) {
     memoryDetail.hidden = true;
     selectedMemory = null;
+  }
+});
+
+memoryCandidateDetailClose.addEventListener("click", () => {
+  if (!isLoadingMemoryCandidateDetail && memoryMutation === null) {
+    memoryCandidateDetail.hidden = true;
+    selectedMemoryCandidate = null;
   }
 });
 
