@@ -83,6 +83,7 @@ void UAIREEnemyReactionComponent::ShutdownReaction()
 	ReactionState = EAIREEnemyReactionState::None;
 	bPendingFlinchEvaluation = false;
 	OnReactionStateChanged.Clear();
+	OnGroggyChanged.Clear();
 }
 
 void UAIREEnemyReactionComponent::ConfigureThresholds(
@@ -107,6 +108,7 @@ void UAIREEnemyReactionComponent::ConfigureThresholds(
 	{
 		StunDuration = InStunDuration;
 	}
+	BroadcastGroggyChanged();
 }
 
 FAIREEnemyReactionSnapshot
@@ -186,7 +188,11 @@ void UAIREEnemyReactionComponent::EndPlay(
 void UAIREEnemyReactionComponent::HandleGaugeChanged(
 	const FOnAttributeChangeData& ChangeData)
 {
-	(void)ChangeData;
+	if (ChangeData.Attribute
+		== UAIREEnemyReactionAttributeSet::GetStunGaugeAttribute())
+	{
+		BroadcastGroggyChanged();
+	}
 	if (!bResettingGauges && IsAcceptingStagger())
 	{
 		if (ReactionState == EAIREEnemyReactionState::Flinching)
@@ -342,6 +348,14 @@ void UAIREEnemyReactionComponent::ResetGauges()
 		0.0f);
 	bResettingGauges = false;
 	bPendingFlinchEvaluation = false;
+}
+
+void UAIREEnemyReactionComponent::BroadcastGroggyChanged()
+{
+	const FAIREEnemyReactionSnapshot Snapshot = GetReactionSnapshot();
+	OnGroggyChanged.Broadcast(
+		Snapshot.StunGauge,
+		Snapshot.StunThreshold);
 }
 
 void UAIREEnemyReactionComponent::SetReactionState(

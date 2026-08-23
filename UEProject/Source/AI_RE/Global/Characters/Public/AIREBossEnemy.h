@@ -12,4 +12,11 @@ class AI_RE_API AAIREBossEnemy : public AAIREEnemyBase
 
 public:
 	AAIREBossEnemy();
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Enemy|Boss")
+	FText GetBossDisplayName() const;
+
+protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Enemy|Boss")
+	FText BossDisplayName;
 };

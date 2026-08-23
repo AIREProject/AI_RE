@@ -4,8 +4,10 @@
 
 #include "AI_RE.h"
 #include "AIREAggroSwapComponent.h"
+#include "AIREBossEnemy.h"
 #include "AI_RECharacter.h"
 #include "AI_REMainUI.h"
+#include "AIREBossHUDWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Chat/UI/AIREChatHUDWidget.h"
@@ -21,6 +23,7 @@
 #include "Inventory/UI/AIRECompanionInventoryPanelWidget.h"
 #include "Inventory/UI/AIREStorageInventoryPanelWidget.h"
 #include "LocalAI/UI/AIRECompanionPolicyPanelWidget.h"
+#include "TimerManager.h"
 #include "UI/AIRECompanionStatusWidget.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Widgets/Input/SVirtualJoystick.h"
@@ -29,6 +32,7 @@ namespace
 {
 constexpr int32 MainHUDZOrder = 0;
 constexpr int32 CompanionStatusZOrder = 10;
+constexpr int32 BossHUDZOrder = 20;
 constexpr int32 ChatHUDZOrder = 100;
 constexpr int32 ChatLogZOrder = 110;
 constexpr int32 PolicyHUDZOrder = 120;
@@ -53,6 +57,14 @@ AAI_REPlayerController::AAI_REPlayerController()
 	if (CompanionInventoryPanelFinder.Succeeded())
 	{
 		CompanionInventoryPanelClass = CompanionInventoryPanelFinder.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<UAIREBossHUDWidget>
+		BossHUDWidgetFinder(
+			TEXT("/Game/Work/LMK/UI/Boss/WBP_AIREBossHUD"));
+	if (BossHUDWidgetFinder.Succeeded())
+	{
+		BossHUDClass = BossHUDWidgetFinder.Class;
 	}
 }
 
@@ -98,6 +110,7 @@ void AAI_REPlayerController::BeginPlay()
 	CreateLocalHUD();
 	RefreshPlayerHUD();
 	FindAndBindCompanion();
+	FindAndBindBoss();
 
 	if (UWorld* World = GetWorld())
 	{
@@ -105,6 +118,10 @@ void AAI_REPlayerController::BeginPlay()
 			FOnActorSpawned::FDelegate::CreateUObject(
 				this,
 				&AAI_REPlayerController::HandleActorSpawned));
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(
+				this,
+				&AAI_REPlayerController::FindAndBindBoss));
 	}
 }
 
@@ -377,6 +394,19 @@ void AAI_REPlayerController::CreateLocalHUD()
 		}
 	}
 
+	if (!IsValid(BossHUD) && BossHUDClass)
+	{
+		BossHUD = CreateWidget<UAIREBossHUDWidget>(this, BossHUDClass);
+		if (IsValid(BossHUD))
+		{
+			BossHUD->AddToPlayerScreen(BossHUDZOrder);
+			if (AAIREBossEnemy* Boss = BoundBoss.Get())
+			{
+				BossHUD->BindBoss(Boss);
+			}
+		}
+	}
+
 	if (!IsValid(ChatHUD) && ChatHUDClass)
 	{
 		ChatHUD = CreateWidget<UAIREChatHUDWidget>(this, ChatHUDClass);
@@ -541,6 +571,70 @@ void AAI_REPlayerController::UnbindCompanion()
 	BoundCompanion.Reset();
 }
 
+void AAI_REPlayerController::FindAndBindBoss()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	for (TActorIterator<AAIREBossEnemy> It(GetWorld()); It; ++It)
+	{
+		if (IsValid(*It)
+			&& It->HasActorBegunPlay()
+			&& It->IsCombatTargetAlive())
+		{
+			BindBoss(*It);
+			return;
+		}
+	}
+
+	UnbindBoss();
+}
+
+void AAI_REPlayerController::BindBoss(AAIREBossEnemy* Boss)
+{
+	if (!IsValid(Boss) || !Boss->IsCombatTargetAlive())
+	{
+		return;
+	}
+
+	if (BoundBoss.Get() == Boss)
+	{
+		if (IsValid(BossHUD))
+		{
+			BossHUD->BindBoss(Boss);
+		}
+		return;
+	}
+
+	UnbindBoss();
+	BoundBoss = Boss;
+	Boss->OnDestroyed.AddUniqueDynamic(
+		this,
+		&AAI_REPlayerController::HandleBossDestroyed);
+	if (IsValid(BossHUD))
+	{
+		BossHUD->BindBoss(Boss);
+	}
+}
+
+void AAI_REPlayerController::UnbindBoss()
+{
+	if (AAIREBossEnemy* Boss = BoundBoss.Get())
+	{
+		Boss->OnDestroyed.RemoveDynamic(
+			this,
+			&AAI_REPlayerController::HandleBossDestroyed);
+	}
+
+	if (IsValid(BossHUD))
+	{
+		BossHUD->UnbindBoss();
+	}
+	BoundBoss.Reset();
+}
+
 void AAI_REPlayerController::HandleActorSpawned(AActor* SpawnedActor)
 {
 	AAIRECompanionCharacter* Companion = Cast<AAIRECompanionCharacter>(SpawnedActor);
@@ -548,6 +642,22 @@ void AAI_REPlayerController::HandleActorSpawned(AActor* SpawnedActor)
 		Companion->GetCompanionId() == TEXT("MAKO"))
 	{
 		BindCompanion(Companion);
+	}
+
+	AAIREBossEnemy* Boss = Cast<AAIREBossEnemy>(SpawnedActor);
+	if (!BoundBoss.IsValid() && IsValid(Boss))
+	{
+		if (Boss->HasActorBegunPlay() && Boss->IsCombatTargetAlive())
+		{
+			BindBoss(Boss);
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimerForNextTick(
+				FTimerDelegate::CreateUObject(
+					this,
+					&AAI_REPlayerController::FindAndBindBoss));
+		}
 	}
 }
 
@@ -559,10 +669,20 @@ void AAI_REPlayerController::HandleCompanionDestroyed(AActor* DestroyedActor)
 	}
 }
 
+void AAI_REPlayerController::HandleBossDestroyed(AActor* DestroyedActor)
+{
+	if (!BoundBoss.IsValid() || DestroyedActor == BoundBoss.Get())
+	{
+		UnbindBoss();
+		FindAndBindBoss();
+	}
+}
+
 void AAI_REPlayerController::ShutdownLocalHUD()
 {
 	ApplyLocalUIInputMode(EAIRELocalUIInputMode::Gameplay);
 	UnbindCompanion();
+	UnbindBoss();
 
 	if (IsValid(ChatHUD))
 	{
@@ -588,6 +708,12 @@ void AAI_REPlayerController::ShutdownLocalHUD()
 	{
 		CompanionStatusWidget->RemoveFromParent();
 		CompanionStatusWidget = nullptr;
+	}
+
+	if (IsValid(BossHUD))
+	{
+		BossHUD->RemoveFromParent();
+		BossHUD = nullptr;
 	}
 
 	if (IsValid(MainHUD))
