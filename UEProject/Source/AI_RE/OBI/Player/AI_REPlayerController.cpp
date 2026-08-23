@@ -513,30 +513,6 @@ void AAI_REPlayerController::BindCompanion(AAIRECompanionCharacter* Companion)
 			{
 				FAIREInGameChatContext Context;
 				Context.SaveSlotId = TEXT("demo-slot-1");
-				const FDateTime Now = FDateTime::Now();
-				Context.Day = Now.GetDay();
-				Context.Hour = static_cast<float>(Now.GetHour()) + static_cast<float>(Now.GetMinute()) / 60.0f;
-				const int32 HourInt = Now.GetHour();
-				if (HourInt >= 5 && HourInt < 8)
-				{
-					Context.Period = EAIREGameWorldPeriod::Dawn;
-				}
-				else if (HourInt >= 8 && HourInt < 12)
-				{
-					Context.Period = EAIREGameWorldPeriod::Morning;
-				}
-				else if (HourInt >= 12 && HourInt < 18)
-				{
-					Context.Period = EAIREGameWorldPeriod::Afternoon;
-				}
-				else if (HourInt >= 18 && HourInt < 22)
-				{
-					Context.Period = EAIREGameWorldPeriod::Evening;
-				}
-				else
-				{
-					Context.Period = EAIREGameWorldPeriod::Night;
-				}
 				ChatComponent->ConfigureInGameContext(Context);
 			}
 			ChatHUD->InitializeChatRuntime(ChatComponent);

@@ -173,6 +173,7 @@ typed `ChatRequest.game_context`를 같은 방식으로 검증한다.
   gameplay를 실행하지 않는다. Command allowlist와 실행 통합은 AX-I06 범위다.
 - `location_id=null`일 때만 개발용 `COMPANION_DEFAULT_LOCATION_ID` fallback을 사용하며,
   GameWorld 시간은 최상위 `time_context`가 단일 권위다.
+- UE Game 요청의 `time_context`는 요청 직전 PC의 현실 로컬 날짜와 시간을 사용한다.
 - 현재 일반 플레이맵의 stable location ID와 개발 fallback 예시는 `forest_camp`다. lore는 숲
   캠프 사실만 제공하며 향후 보스맵 ID를 추측하거나 예약하지 않는다.
 - AX-I04 생산 payload는 권위 센서가 없으면 `threat.nearest_kind=null`, resource/workstation

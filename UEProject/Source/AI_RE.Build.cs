@@ -60,6 +60,7 @@ public class AI_RE : ModuleRules
 			"AI_RE/Global/Tags/Public",
 			"AI_RE/Global/Data",
 			"AI_RE/Global/UI/Public",
+			"AI_RE/Global/World/Public",
 			"AI_RE/LMK/MAKO/Public",
 			"AI_RE/LMK/MAKO/Components/Public"
 
