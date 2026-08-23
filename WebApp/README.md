@@ -1,201 +1,202 @@
-# AI_RE WebApp
+<div align="center">
 
-Framework-free Vite + strict TypeScript Mobile Chat and Offline Task UI for MAKO.
+# AI:RE Mobile Web
 
-The product path uses the fixed public Web identity `AIRE_WEB` with the canonical
-scope `AIRE_OPEN / demo-slot-1 / mako`. It does not use pairing links, browser
-device credentials, login, token refresh, revoke, or account/save/companion
-selectors.
+**게임 밖에서도 MAKO와 대화하고 기억과 오프라인 작업을 관리하는 Mobile WebClient**
 
-## Local run
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)
+![Mobile](https://img.shields.io/badge/UI-Mobile%20First-00B894)
+
+[Web Demo](https://aire-mako-chat.lunau1f320.chatgpt.site) · [전체 프로젝트](https://github.com/AIREProject/AI_RE) · [Backend](https://github.com/AIREProject/AIRE_SERVER)
+
+</div>
+
+## 프로젝트 소개
+
+AI:RE Mobile Web은 Unreal을 실행하지 않은 상태에서도 같은 MAKO와 관계를 이어가기 위한 반응형 WebClient입니다. Chat, 장기기억 관리, Offline Task를 제공하며 `AIRE_OPEN / demo-slot-1 / mako` Scope를 Unreal·Discord와 공유합니다.
+
+Framework 없이 Vite와 strict TypeScript로 구현했으며, 외부 API 응답은 모두 `unknown`에서 시작해 Runtime Validator를 통과한 값만 UI 상태에 반영합니다.
+
+| 영역 | 제공 기능 |
+| --- | --- |
+| Chat | RealWorld 대화, 요청 취소, MAKO 응답과 Offline Task 연결 |
+| Memory | 목록·검색·상세·정정·고정·삭제·전체 초기화 |
+| Memory Review | 후보 상세, Type·Importance 수정, Approve·Reject |
+| Offline Task | 채집·제작 생성, 상태 필터, 진행량 조회, 활성 예약 취소 |
+| Hosting | Vite 개발 Proxy, GPT Sites 정적 배포와 Same-origin API Worker |
+
+## 전체 구조
+
+```mermaid
+flowchart TB
+    UI[Mobile UI<br/>Chat · Memory · Task]
+    State[Explicit UI State<br/>idle · loading · success · cancelled · error]
+    Client[API Client<br/>Timeout · Abort · Request ID]
+    Validator[Runtime Validator<br/>unknown → typed data]
+    Proxy[Same-origin /api Proxy]
+    Backend[AIRE FastAPI Backend]
+
+    UI --> State
+    State --> Client
+    Client --> Proxy
+    Proxy --> Backend
+    Backend --> Validator
+    Validator -->|valid| State
+    Validator -->|invalid| Error[Safe Error UI]
+```
+
+## 1. 외부 응답 Runtime Validation
+
+TypeScript Type은 Runtime 응답을 보장하지 않으므로 API Boundary에서 JSON Shape를 직접 검사합니다.
+
+- HTTP Status와 Content-Type을 확인한 뒤 JSON을 파싱합니다.
+- 응답 Body의 `request_id`와 Header `X-Request-ID` 상관관계를 검증합니다.
+- Chat, Memory, Candidate와 Offline Task DTO를 기능별 Validator로 분리합니다.
+- Malformed Data는 일부 필드만 추측해 표시하지 않고 전체 요청을 실패 처리합니다.
+- Token, Provider, 내부 Source ID와 Error Detail 같은 운영 정보는 UI와 Console에 노출하지 않습니다.
+
+관련 코드: [client.ts](src/api/client.ts), [memories.ts](src/api/memories.ts), [offlineTasks.ts](src/api/offlineTasks.ts)
+
+## 2. 명시적인 비동기 상태와 취소
+
+요청 상태를 `idle`, `sending/loading`, `success`, `cancelled`, `error`로 나눠 중복 제출과 늦은 응답이 UI를 덮어쓰는 문제를 막았습니다.
+
+```text
+사용자 제출
+  -> 새 Request ID · AbortController 생성
+  -> 입력 잠금과 Loading 표시
+  -> 성공: 검증된 응답만 UI 반영
+  -> 취소: 사용자 Message는 유지, MAKO 응답은 추가하지 않음
+  -> 실패: 자동 재전송 없이 안전한 오류 표시
+  -> 완료: 현재 요청과 일치할 때만 입력 복구
+```
+
+Browser 취소는 대기만 중단할 뿐 Backend 처리의 Rollback을 의미하지 않습니다. Timeout·취소 뒤 같은 Body를 자동 재전송하지 않고, 사용자가 목록 새로고침으로 서버 상태를 먼저 확인하도록 구성했습니다.
+
+## 3. 출처가 보이는 장기기억 관리
+
+Memory Card에는 사용자에게 필요한 정보만 표시합니다.
+
+| 표시 | 숨김 |
+| --- | --- |
+| 기억 Type, 현재 Text, 생성 시각, 정정 여부 | Provider, Confidence, 내부 Source ID |
+| 안전한 출처 설명, 고정 상태, 사용 횟수 | Numeric Importance, Archived 원문 |
+| 마지막 사용 시각 | 인증 정보와 Error Detail |
+
+정정에는 수정문과 사유를 함께 보내고, 삭제·전체 초기화에는 확인 단계를 둡니다. 후보 검토는 별도 Feature Flag로 제어하며, 배포 Backend 계약이 준비된 경우에만 화면을 활성화합니다.
+
+## 4. 서버 권위 Offline Task
+
+Web은 작업을 요청하고 진행 상태를 보여주지만 Gameplay 결과를 직접 Inventory에 지급하지 않습니다.
+
+```mermaid
+flowchart LR
+    Create[Web 작업 생성] --> Server[Backend Transaction]
+    Server --> Progress[서버 시간 진행량]
+    Progress --> UE[UE 실행 시 Complete]
+    UE --> Inventory[Local Inventory 적용]
+    Inventory --> Save[SaveGame 성공]
+    Save --> Claim[Backend Claim]
+```
+
+- Gathering은 `PlantStem`, Crafting은 `ShoddyBandage` 수직 흐름을 제공합니다.
+- Crafting 생성 시 최신 Game State를 기준으로 Backend가 재료를 예약합니다.
+- 진행량은 Browser Timer로 예측하지 않고 명시적 목록 갱신에서 서버 값을 표시합니다.
+- Pending·InProgress 예약만 취소할 수 있으며, 제작 예약 취소 시 Backend가 재료를 환불합니다.
+- WebClient는 GameClient 전용 Start·Complete·Claim Endpoint를 호출하지 않습니다.
+
+## 5. Same-origin 개발·배포 경계
+
+Local Vite와 배포 Worker 모두 Browser에서는 `/health`, `/api/*` Same-origin 경계를 사용합니다.
+
+```text
+Local Development
+Browser /api/* -> Vite Proxy -> AIRE Backend
+
+GPT Sites
+Browser /api/* -> Worker Proxy -> AIRE Backend
+Browser /*      -> Static Assets -> SPA Fallback
+```
+
+`VITE_API_BASE_URL`을 지정한 경우에만 Browser가 명시적 API Origin을 직접 호출합니다. 기본 경로는 CORS와 배포 환경 차이를 줄이기 위해 Same-origin Proxy를 사용합니다.
+
+## 빠른 시작
 
 ```powershell
+git clone https://github.com/AIREProject/AI_RE.git
+Set-Location AI_RE\WebApp
 npm.cmd install
 npm.cmd run dev
 ```
 
-The development server listens on the LAN and proxies `/health` and `/api` to
-`https://traip.mtvs2026.work` when `VITE_DEV_API_PROXY_TARGET` is unset or empty.
-To use a local Backend instead, start it on port 8000 and run:
+기본 개발 Proxy는 배포 Backend를 사용합니다. Local Backend로 전환하려면 다음과 같이 실행합니다.
 
 ```powershell
-$env:VITE_DEV_API_PROXY_TARGET = "http://127.0.0.1:8000"
+$env:VITE_DEV_API_PROXY_TARGET = "http://127.0.0.1:8010"
 npm.cmd run dev
 ```
 
-The development proxy target is trimmed and trailing slashes are removed before
-the same target is applied to both routes. `VITE_API_BASE_URL` has a different
-purpose: when set, the browser calls that explicit API origin instead of the
-same-origin Vite proxy. Save slot, companion, and Web bearer values are fixed in
-the application.
+## 환경변수
 
-A successful `/health` response confirms HTTP connectivity and server
-configuration only. It does not verify database migrations or queries, or an
-actual LLM request.
+| 변수 | 기본 동작 | 용도 |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | 빈 값 | Browser가 호출할 명시적 API Origin. 비우면 Same-origin 사용 |
+| `VITE_DEV_API_PROXY_TARGET` | 배포 Backend | Vite 개발 Proxy Target |
+| `VITE_MEMORY_ENABLED` | `true` | Memory Tab 활성화 |
+| `VITE_MEMORY_REVIEW_ENABLED` | `false` | Memory Candidate Review 활성화 |
 
-Opening or refreshing the page enters Chat immediately and creates a new
-browser-session `session_id`. Each submit creates new request and message IDs.
-Chat failures are displayed without automatic retry. The Memory tab uses the
-same-origin `/api/v1/memories` boundary with the fixed `demo-slot-1` / `mako`
-scope. It lists and searches active memories, loads a selected memory detail,
-allows a user correction (`corrected_text` plus a required `correction_reason`),
-toggles the server-side pinned flag, forgets one memory after confirmation, and
-resets the complete scope after two confirmations. It never creates memories or
-changes UE gameplay state.
+Bearer, Save Slot과 Companion ID는 현재 Demo 제품 Scope에 맞춰 `AIRE_WEB / demo-slot-1 / mako`로 고정되어 있습니다.
 
-Memory cards show only the memory type, current text, created time, correction
-state, and safe source descriptions. Internal memory IDs, source IDs, numeric
-importance, archived memories, and provider details are not rendered. Additive
-`sources[]` entries are mapped to user-facing descriptions:
-
-- `Message + RealWorld`: “모바일에서 직접 공유한 기억”
-- `Event + GameWorld`: “게임에서 함께 겪은 기억”
-- `Legacy + LegacyUnknown`: “이전 대화에서 가져온 기억”
-
-Memory requests validate response shape and `X-Request-ID` correlation before
-updating the UI. Loading, empty, no-result, and error states are explicit. Error
-states expose a manual retry action only; the WebApp never retries a failed or
-timed-out Memory request automatically.
-
-Memory cards also show how many accepted responses have used the memory and the
-last accepted-use time when available. The values are additive server fields;
-older deployed responses render them as `0회` and no last-use date.
-
-Mobile Chat advertises only `Command.GatherResource`. The Backend converts a
-validated request such as `나무30개 캐줘` into a server-owned Offline Task and
-returns no UE command candidate. When `offline_task_id` is present, the WebApp
-keeps the companion reply visible and immediately reconciles that exact ID with
-the Task list. A malformed response containing a UE command candidate is rejected.
-
-The Memory tab is deployment-gated with `VITE_MEMORY_ENABLED`. Candidate review
-is separately deployment-gated with `VITE_MEMORY_REVIEW_ENABLED=false` by
-default. When enabled, the Memory tab loads pending candidates through
-`/api/v1/memory-candidates`; users can inspect the safe review reason, change
-type/importance, optionally provide corrected text, then approve or reject with
-a required reason. Candidate API responses are strictly scope- and
-request-ID-validated. Confidence, provider details, source IDs, and internal
-memory IDs are never rendered.
-
-While a Chat request is waiting, the user can cancel the browser-side wait. The
-already displayed user message remains, no companion response is appended for
-that cancelled request, and the input controls become available immediately.
-Cancellation does not guarantee that Backend processing or persistence was
-rolled back because the server may already have received the request. Cancelled
-or timed-out Chat requests are never retried automatically; a later explicit
-submit creates new request and message IDs.
-
-## Offline Tasks
-
-The Task tab uses `POST /api/v1/tasks` and
-`GET /api/v1/tasks?save_slot_id=demo-slot-1`. It creates only the following
-seed-backed demo requests:
-
-- Gathering: `PlantStem` (`나무`), quantity 1 through 50
-- Crafting: `ShoddyBandage`, quantity 1 through 50
-
-`PlantStem` is the only canonical wood item ID. The WebApp neither creates nor
-displays the retired `Branch` ID.
-
-Crafting uses the latest server Game State as its inventory authority. Creating
-one `ShoddyBandage` reserves two `PlantStem` from MAKO first and Shared Storage
-second in the same Backend transaction. A missing snapshot or insufficient
-materials is shown as a specific user-facing error; the browser never pretends
-that the Task was created. Deleting an active Crafting reservation refunds the
-server-reserved materials.
-
-Mobile Chat advertises both `Command.GatherResource` and `Command.CraftItem`.
-Validated bandage requests such as `엉성한붕대 3개 만들어놔줘` are converted to
-the same Offline Task API path. Recipe questions remain facts-only and do not
-create a Task.
-
-Scouting cannot be selected for creation. Existing Scouting tasks are still
-validated and displayed when returned by the list API.
-
-The list refreshes when the Task tab is opened, the status filter changes, the
-refresh button is pressed, a create request succeeds, or Chat returns an
-`offline_task_id`. There is no polling or automatic retry. Create and list
-responses are accepted only after runtime validation from `unknown`, including
-request-ID correlation and canonical save slot scope.
-
-Quantity tasks start InProgress immediately. Each explicit list refresh displays
-the server-calculated integer `progress_quantity`; the browser does not estimate
-time locally or poll. If at least one unit is ready, launching UE finalizes that
-displayed-at-sync quantity and closes the uncompleted remainder.
-
-The default active view hides Claimed history. Selecting the full-history or
-Claimed filter exposes terminal records. A Claimed task with result quantity
-zero is labeled explicitly and is not presented as an Inventory reward.
-
-Pending and InProgress cards expose an explicit reservation delete action using
-`DELETE /api/v1/tasks/{task_id}`. The action asks for confirmation and refreshes
-the list after a 204 response. Completed and Claimed cards cannot be deleted.
-Delete timeout does not retry automatically because the server may already have
-applied it; refresh the list to reconcile the result.
-
-After UE has no unfinished Crafting reservation, its Offline Task synchronization
-reads the current server Game State version and uploads the saved Player, MAKO,
-and Shared Storage inventory with `X-Base-State-Version`. It does not upload a
-pre-deduction local snapshot while Crafting is still in progress.
-
-The WebApp does not present a client-owned duration. The deployed Backend owns
-the elapsed-time policy. `Pending` waits for UE synchronization, `Completed`
-waits for UE Inventory application, and `Claimed` is the existing server Task
-state reached after UE confirms its SaveGame write. It is not a separate
-settlement receipt. The WebApp never calls GameClient-only start, complete, or
-claim routes and does not poll.
-
-If synchronization happens before the first unit is complete, the target
-Backend keeps the task InProgress with no result quantity. UE does not mutate
-Inventory or claim it and a later launch or explicit synchronization evaluates
-the elapsed time again.
-
-The deployed Backend snapshots its current Admin policy into each new Task. The
-default policies are 5 seconds per `PlantStem` Gathering unit and 10 seconds per
-`ShoddyBandage` Crafting unit. Policy changes affect only subsequently created
-Tasks. The browser does not invent or cache a replacement duration.
-
-## Verification
+## 검증과 빌드
 
 ```powershell
 npm.cmd run typecheck
 npm.cmd run build
+npm.cmd run preview
 ```
 
-On an actual mobile browser, verify one successful MAKO response, immediate Chat
-entry after refresh, duplicate-submit blocking, and visible errors for 401, 403,
-timeout, network failure, invalid JSON, and malformed response data. A failure
-must never append a companion message or automatically resend the user message.
+`build`는 strict TypeScript 검사와 Vite Build를 실행하고, GPT Sites용 Worker와 Hosting 산출물을 `dist/`에 준비합니다.
 
-For Offline Tasks, verify both Gathering and Crafting creation, then confirm the
-returned Task ID appears in the unfiltered list. Send the same create body and
-`X-Request-ID` twice with a controlled HTTP client and confirm both responses use
-the same Task ID and only one list entry exists. Also verify empty lists, all four
-status filters, duplicate-submit blocking, and rejection of blank, zero,
-negative, fractional, and quantities above 50 for both task types.
+## 독립 저장소로 분리
 
-Verify that Pending and InProgress reservations can be deleted, while Completed
-and Claimed cards have no delete button. Confirm cancellation can remove the old
-blocking reservation and that a delete timeout directs the user to refresh
-instead of automatically resending the request.
+`WebApp/`은 상위 Unreal Source를 Import하지 않으며 다음 파일을 함께 이동하면 독립 저장소로 사용할 수 있습니다.
 
-Exercise create and list failures separately for 401, 403, timeout, network
-failure, invalid JSON, and malformed response data. Error-envelope `details` and
-authentication values must never appear in the UI or console. A create timeout
-must not retry automatically; refresh the list before deciding whether to submit
-a new request.
+```text
+WebApp/
+├─ .openai/hosting.json
+├─ scripts/prepare-sites-dist.mjs
+├─ sites/worker.js
+├─ src/
+├─ index.html
+├─ package.json
+├─ package-lock.json
+├─ tsconfig.json
+├─ vite.config.ts
+└─ README.md
+```
 
-## GPT Sites hosting
+분리 후에는 README의 Clone 경로와 GitHub 링크만 새 저장소 주소로 변경하면 됩니다. Backend 계약은 AIRE Server의 OpenAPI를 계속 기준으로 사용합니다.
 
-The production build emits static assets under `dist/client` and adds the
-Cloudflare Worker entry point required by GPT Sites. The Worker serves the
-Vite application and proxies same-origin `/health` and `/api/*` requests to
-`https://traip.mtvs2026.work`, so the hosted client keeps the same relative API
-boundary as local development. `VITE_DEV_API_PROXY_TARGET` configures only the
-Vite development server; it is not injected as a production API origin and does
-not change the Sites Worker target.
+## 디렉터리 구조
 
-The current public deployment is available at
-`https://aire-mako-chat.lunau1f320.chatgpt.site`. Public access was explicitly
-approved for the fixed-identity single-player demo on 2026-08-11. Access policy
-and future versions are managed through GPT Sites; secrets and runtime
-credentials must not be added to `.openai/hosting.json`.
+```text
+src/
+├─ api/
+│  ├─ client.ts          # 공용 HTTP, Timeout, Error Normalization
+│  ├─ memories.ts        # Memory · Candidate 계약과 Validator
+│  └─ offlineTasks.ts    # Offline Task 계약과 Validator
+├─ config.ts             # Client Scope와 Feature Flag
+├─ main.ts               # 화면 상태와 Event 연결
+└─ style.css             # Mobile-first Layout
+```
+
+## 사용 기술
+
+- **TypeScript 5.8 strict**: 외부 응답 Validation과 명시적인 UI 상태
+- **Vite 7**: 개발 Server, Proxy와 Static Build
+- **HTML / CSS**: Framework 없는 Mobile-first UI
+- **AbortController**: Chat·Memory·Task 요청 취소
+- **GPT Sites Worker**: Static Asset과 Same-origin Backend Proxy
+
+> 공개 AIRE Backend와 Gemma 서버는 교육과정 종료에 따라 2026년 9월부터 운영이 종료될 예정입니다. 이후에는 `VITE_DEV_API_PROXY_TARGET`, `VITE_API_BASE_URL` 또는 배포 Worker의 Backend Origin을 별도 AIRE Server 주소로 변경해야 합니다.
