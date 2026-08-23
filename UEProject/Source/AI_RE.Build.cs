@@ -19,6 +19,7 @@ public class AI_RE : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"Niagara",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
 			"HTTP",
