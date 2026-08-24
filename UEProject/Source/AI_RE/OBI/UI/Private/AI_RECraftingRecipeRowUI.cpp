@@ -35,16 +35,15 @@ void UAI_RECraftingRecipeRowUI::InitializeRow(FName InRecipeName, FAI_RECrafting
 		}
 	}
 
-	if (RecipeIMG && ResultItemDA)
+	if (RecipeIMG)
 	{
-		if (ResultItemDA->CraftingImage)
-		{
-			RecipeIMG->SetBrushFromTexture(ResultItemDA->CraftingImage);
-		}
-		else if (ResultItemDA->ItemIcon)
-		{
-			RecipeIMG->SetBrushFromTexture(ResultItemDA->ItemIcon);
-		}
+		UTexture2D* CraftingImage = ResultItemDA
+			? ResultItemDA->CraftingImage.Get()
+			: nullptr;
+
+		RecipeIMG->SetBrushFromTexture(CraftingImage);
+		RecipeIMG->SetVisibility(
+			CraftingImage ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
 }
 
