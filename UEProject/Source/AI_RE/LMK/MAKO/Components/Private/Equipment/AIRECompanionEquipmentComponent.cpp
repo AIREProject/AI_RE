@@ -495,7 +495,7 @@ void UAIRECompanionEquipmentComponent::StartAttackTrail(
 {
 	StopAttackTrail();
 	UNiagaraSystem* TrailEffect = IsValid(CurrentWeaponDefinition)
-		? CurrentWeaponDefinition->AttackTrailEffect.Get()
+		? CurrentWeaponDefinition->AttackTrailEffect.LoadSynchronous()
 		: nullptr;
 	if (!IsValid(TrailEffect)
 		|| !IsValid(MeshComponent)

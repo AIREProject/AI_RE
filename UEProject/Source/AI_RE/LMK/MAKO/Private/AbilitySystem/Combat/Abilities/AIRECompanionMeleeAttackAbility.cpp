@@ -15,7 +15,7 @@
 #include "Core/AIRECompanionCharacter.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Threat/AIRECompanionThreatComponent.h"
-#include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "LocalAI/Threat/AIREThreatTargetInterface.h" 
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AI_REHarvestDamageTarget.h"
 #include "AI_REHarvestableResourceActor.h"

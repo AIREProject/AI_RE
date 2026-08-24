@@ -15,6 +15,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "AbilitySystem/Combat/AIRECompanionCombatVFX.h"
 
 UAI_REPlayerMeleeAttackAbility::UAI_REPlayerMeleeAttackAbility()
 {
@@ -330,7 +331,7 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 	{
 		// [대검 등 무기] 광역 판정 (다수 적 긁기)
 		TArray<FHitResult> HitResults;
-		if (GetWorld()->SweepMultiByChannel(HitResults, TraceStart, TraceEnd, FQuat::Identity, ECC_Visibility, Sphere, QueryParams))
+		if (GetWorld()->SweepMultiByChannel(HitResults, TraceStart, TraceEnd, FQuat::Identity, ECC_Pawn, Sphere, QueryParams))
 		{
 			for (const FHitResult& HitResult : HitResults)
 			{
@@ -339,7 +340,7 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 				{
 					// 이번 스윙에 처음 맞은 놈이라면 기록
 					HitActorsThisSwing.Add(HitActor);
-					ProcessHit(HitActor, Dmg, Character);
+					ProcessHit(HitResult, Dmg, Character);
 				}
 			}
 		}
@@ -348,7 +349,7 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 	{
 		// [주먹 등 맨손] 단일 판정 (가장 먼저 닿은 1명만)
 		FHitResult HitResult;
-		if (GetWorld()->SweepSingleByChannel(HitResult, TraceStart, TraceEnd, FQuat::Identity, ECC_Visibility, Sphere, QueryParams))
+		if (GetWorld()->SweepSingleByChannel(HitResult, TraceStart, TraceEnd, FQuat::Identity, ECC_Pawn, Sphere, QueryParams))
 		{
 			AActor* HitActor = HitResult.GetActor();
 			
@@ -359,7 +360,7 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 			if (HitActor && !HitActorsThisSwing.Contains(HitActor))
 			{
 				HitActorsThisSwing.Add(HitActor);
-				ProcessHit(HitActor, Dmg, Character);
+				ProcessHit(HitResult, Dmg, Character);
 			}
 		}
 		else
@@ -370,10 +371,11 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 	}
 }
 
-void UAI_REPlayerMeleeAttackAbility::ProcessHit(AActor* HitActor, float Dmg, ACharacter* Character)
+void UAI_REPlayerMeleeAttackAbility::ProcessHit(const FHitResult& HitResult, float Dmg, ACharacter* Character)
 {
+	AActor* HitActor = HitResult.GetActor();
 	if (GEngine && HitActor) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("[Debug] ProcessHit applied to: %s"), *HitActor->GetName()));
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, FString::Printf(TEXT("💥 [Debug] 타격 성공! 대상: %s, 데미지: %.1f"), *HitActor->GetName(), Dmg));
+	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, FString::Printf(TEXT( "[Debug] 타격 성공! 대상: %s, 데미지: %.1f"), *HitActor->GetName(), Dmg));
 
 	// 하이브리드 최적화 분기: ASC가 있는 대상 vs 단순 자원(나무/돌)
 	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitActor, true);
@@ -396,5 +398,17 @@ void UAI_REPlayerMeleeAttackAbility::ProcessHit(AActor* HitActor, float Dmg, ACh
 	else if (HitActor->Implements<UAI_REHarvestDamageTarget>())
 	{
 		IAI_REHarvestDamageTarget::Execute_ApplyHarvestDamage(HitActor, Dmg, Character);
+	}
+
+	// [추가된 로직] 무기 데이터에서 이펙트(BossHitSlashEffect) 읽어와서 스폰하기
+	if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
+	{
+		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(CombatComp->EquippedWeapon))
+		{
+			if (WeaponItem->WeaponDefinition)
+			{
+				AIRECompanionCombatVFX::SpawnBossHitSlash(WeaponItem->WeaponDefinition, Character, HitActor, HitResult);
+			}
+		}
 	}
 }

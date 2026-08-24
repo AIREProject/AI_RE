@@ -68,7 +68,7 @@ private:
 	void HandleComboInput(FGameplayEventData Payload);
 
 	void PerformTraceHit();
-	void ProcessHit(AActor* HitActor, float Dmg, ACharacter* Character);
+	void ProcessHit(const FHitResult& HitResult, float Dmg, ACharacter* Character);
 	void TryComboTransition();
 
 	int32 CurrentComboIndex = 1;

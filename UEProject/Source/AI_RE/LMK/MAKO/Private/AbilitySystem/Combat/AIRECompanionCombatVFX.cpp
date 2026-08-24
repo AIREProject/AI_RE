@@ -71,7 +71,7 @@ void AIRECompanionCombatVFX::SpawnBossHitSlash(
 {
 	const AAIREBossEnemy* Boss = Cast<AAIREBossEnemy>(TargetActor);
 	UNiagaraSystem* SlashEffect = IsValid(WeaponDefinition)
-		? WeaponDefinition->BossHitSlashEffect.Get()
+		? WeaponDefinition->BossHitSlashEffect.LoadSynchronous()
 		: nullptr;
 	UWorld* World = IsValid(SourceActor) ? SourceActor->GetWorld() : nullptr;
 	if (!IsValid(Boss) || !IsValid(SlashEffect) || !IsValid(World))

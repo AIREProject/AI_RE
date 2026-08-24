@@ -67,7 +67,11 @@ protected:
 	/** 상호작용 프리체크 타이머 루프 */
 	void PerformInteractionPrecheck();
 
+	/** 전투 락온 타겟 체크 타이머 루프 */
+	void PerformCombatTargetCheck();
+
 	FTimerHandle InteractionScanTimerHandle;
+	FTimerHandle CombatScanTimerHandle;
 
 	/** 캐싱된 상호작용 대상 (UI에 띄우고 즉시 상호작용하기 위함) */
 	TWeakObjectPtr<AActor> CachedInteractableTarget;
@@ -75,6 +79,10 @@ protected:
 	/** 상시 스캔 주기 (초) */
 	UPROPERTY(EditDefaultsOnly, Category = "Scanner")
 	float ScanInterval;
+
+	/** 전투 락온 최대 유지 거리 */
+	UPROPERTY(EditDefaultsOnly, Category = "Scanner|Combat")
+	float MaxCombatLockDistance = 1000.0f;
 
 private:
 	bool bIsCombatState = false;
