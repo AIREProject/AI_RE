@@ -12,3 +12,4 @@ class AI_RE_API AAIRETitleGameMode : public AGameModeBase
 public:
 	AAIRETitleGameMode();
 };
+	

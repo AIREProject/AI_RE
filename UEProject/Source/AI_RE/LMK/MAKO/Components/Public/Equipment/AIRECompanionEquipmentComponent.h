@@ -9,6 +9,8 @@
 class UAIRECompanionWeaponDefinitionDataAsset;
 class UAbilitySystemComponent;
 class UAnimInstance;
+class UNiagaraComponent;
+class USkeletalMeshComponent;
 struct FStreamableHandle;
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(
@@ -45,6 +47,10 @@ public:
 
 	bool IsCurrentWeaponInCategory(FGameplayTag WeaponCategory) const;
 	FGameplayAbilitySpecHandle FindGrantedAbilityHandle(FGameplayTag AbilityTag) const;
+	void StartAttackTrail(
+		USkeletalMeshComponent* MeshComponent,
+		FName AttachSocket);
+	void StopAttackTrail();
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -75,6 +81,9 @@ private:
 
 	UPROPERTY(Transient)
 	TSubclassOf<UAnimInstance> CurrentLinkedAnimLayerClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ActiveAttackTrailComponent;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
