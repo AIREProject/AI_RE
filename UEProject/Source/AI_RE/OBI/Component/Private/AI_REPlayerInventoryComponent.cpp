@@ -337,6 +337,30 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 	{
 		return false;
 	}
+	
+	// 장착 슬롯(EquipmentSlot)에서 직접 해제를 시도한 경우 (SlotIndex가 INDEX_NONE)
+	if (SlotIndex == INDEX_NONE)
+	{
+		if (!EquippedWeaponItemId.IsNone())
+		{
+			AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+			UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
+			if (CombatComp)
+			{
+				CombatComp->UnequipWeapon();
+				FName UnequippedId = EquippedWeaponItemId;
+				EquippedWeaponItemId = NAME_None;
+				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("[Item Usage] 장착 해제!"));
+				NotifyWeaponEquipResult(UnequippedId, false);
+				++Revision;
+				NotifyPersistenceMutation();
+				OnInventoryChanged.Broadcast();
+				return true;
+			}
+		}
+		return false;
+	}
+
 	int32 Idx = FindStackIndexBySlot(SlotIndex);
 	if (Idx == INDEX_NONE || Items[Idx].Count <= 0 || Items[Idx].ItemId.IsNone())
 	{
@@ -366,6 +390,39 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 						// Default consumable behavior if no effect defined
 						bConsumed = true; 
 						GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Yellow, FString::Printf(TEXT("[Item Usage] %s 기본 소비 동작 (이펙트 없음)"), *DA->DisplayName.ToString()));
+					}
+					else if (DA->ItemType == EAI_REItemType::Weapon)
+					{
+						AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
+						UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
+						
+						if (CombatComp)
+						{
+							// Is it already equipped?
+							if (EquippedWeaponItemId == Items[Idx].ItemId)
+							{
+								CombatComp->UnequipWeapon();
+								EquippedWeaponItemId = NAME_None;
+								GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 해제!"), *DA->DisplayName.ToString()));
+								NotifyWeaponEquipResult(Items[Idx].ItemId, false); // Broadcast unequip
+							}
+							else
+							{
+								if (CombatComp->TryEquipWeapon(DA))
+								{
+									EquippedWeaponItemId = Items[Idx].ItemId;
+									GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 완료!"), *DA->DisplayName.ToString()));
+									NotifyWeaponEquipResult(Items[Idx].ItemId, true); // Broadcast equip
+								}
+							}
+							
+							// 무기는 소모되지 않으므로 bConsumed = false 유지
+							// 상태 변경을 저장하기 위해 Revision 갱신 필요
+							++Revision;
+							NotifyPersistenceMutation();
+							OnInventoryChanged.Broadcast();
+							return true; // 무기 처리가 완료되었으므로 종료
+						}
 					}
 					else
 					{

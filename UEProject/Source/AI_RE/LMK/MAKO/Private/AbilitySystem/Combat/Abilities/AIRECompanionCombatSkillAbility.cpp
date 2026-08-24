@@ -1,5 +1,7 @@
 #include "AbilitySystem/Combat/Abilities/AIRECompanionCombatSkillAbility.h"
 
+#include "AbilitySystem/Combat/AIRECompanionCombatVFX.h"
+
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
@@ -605,6 +607,14 @@ bool UAIRECompanionCombatSkillAbility::CommitSkillHit(
 	DamageRequest.HitResult = TargetHit;
 	const EAIRECombatDamageResult DamageResult =
 		DamageSubsystem->ApplyDamageRequest(DamageRequest);
+	if (DamageResult == EAIRECombatDamageResult::Applied)
+	{
+		AIRECompanionCombatVFX::SpawnBossHitSlash(
+			ActiveWeaponDefinition,
+			GetAvatarActorFromActorInfo(),
+			TargetActor,
+			TargetHit);
+	}
 	UE_LOG(
 		LogAIRECompanionCombatSkill,
 		Log,

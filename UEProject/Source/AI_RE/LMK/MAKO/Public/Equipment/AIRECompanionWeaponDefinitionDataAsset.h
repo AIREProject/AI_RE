@@ -9,6 +9,7 @@
 class UAI_REAbilitySetDataAsset;
 class UAnimInstance;
 class UAnimMontage;
+class UNiagaraSystem;
 
 UENUM(BlueprintType)
 enum class EAIRECompanionWeaponTraceSide : uint8
@@ -204,6 +205,25 @@ public:
 	/** Half of MAKO's full capsule length, including its rounded caps. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace", meta = (ClampMin = "0.01", UIMin = "0.01", Units = "cm"))
 	float TraceCapsuleHalfHeight = 160.0f;
+
+	/** Optional trail attached to the active blade tip during melee trace windows. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX|Attack Trail")
+	TSoftObjectPtr<UNiagaraSystem> AttackTrailEffect;
+
+	/** Optional one-shot slash spawned only after MAKO damage is applied to a Boss. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX|Boss Hit")
+	TSoftObjectPtr<UNiagaraSystem> BossHitSlashEffect;
+
+	/** Local rotation adjustment applied after aligning the effect to the strike and impact normal. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX|Boss Hit")
+	FRotator BossHitSlashRotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX|Boss Hit")
+	FVector BossHitSlashScale = FVector::OneVector;
+
+	/** Moves the effect away from the surface to avoid clipping. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX|Boss Hit", meta = (Units = "cm"))
+	float BossHitSlashSurfaceOffset = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Trace")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Pawn;

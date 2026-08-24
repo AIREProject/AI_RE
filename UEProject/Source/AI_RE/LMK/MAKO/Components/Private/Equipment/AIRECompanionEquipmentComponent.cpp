@@ -11,6 +11,9 @@
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
 #include "GameFramework/Character.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionEquipment, Log, All);
 
@@ -191,6 +194,16 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 		AssetsToLoad.AddUnique(
 			WeaponDefinition->CombatSkill.SkillMontage.ToSoftObjectPath());
 	}
+	if (!WeaponDefinition->BossHitSlashEffect.IsNull())
+	{
+		AssetsToLoad.AddUnique(
+			WeaponDefinition->BossHitSlashEffect.ToSoftObjectPath());
+	}
+	if (!WeaponDefinition->AttackTrailEffect.IsNull())
+	{
+		AssetsToLoad.AddUnique(
+			WeaponDefinition->AttackTrailEffect.ToSoftObjectPath());
+	}
 
 	const uint32 RequestId = ++EquipmentRequestId;
 	PendingEquipmentLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
@@ -366,6 +379,24 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 			TEXT("Weapon Definition %s could not load its Combat Skill Montage. The Combat Skill fallback remains available."),
 			*GetNameSafe(WeaponDefinition));
 	}
+	if (!WeaponDefinition->BossHitSlashEffect.IsNull()
+		&& !IsValid(WeaponDefinition->BossHitSlashEffect.Get()))
+	{
+		UE_LOG(
+			LogAIRECompanionEquipment,
+			Warning,
+			TEXT("Weapon Definition %s could not load its optional Boss Hit Slash Effect. Combat remains available without the effect."),
+			*GetNameSafe(WeaponDefinition));
+	}
+	if (!WeaponDefinition->AttackTrailEffect.IsNull()
+		&& !IsValid(WeaponDefinition->AttackTrailEffect.Get()))
+	{
+		UE_LOG(
+			LogAIRECompanionEquipment,
+			Warning,
+			TEXT("Weapon Definition %s could not load its optional Attack Trail Effect. Combat remains available without the effect."),
+			*GetNameSafe(WeaponDefinition));
+	}
 
 	UE_LOG(
 		LogAIRECompanionEquipment,
@@ -458,6 +489,41 @@ UAnimInstance* UAIRECompanionEquipmentComponent::GetOwnerAnimInstance() const
 	return IsValid(Mesh) ? Mesh->GetAnimInstance() : nullptr;
 }
 
+void UAIRECompanionEquipmentComponent::StartAttackTrail(
+	USkeletalMeshComponent* MeshComponent,
+	const FName AttachSocket)
+{
+	StopAttackTrail();
+	UNiagaraSystem* TrailEffect = IsValid(CurrentWeaponDefinition)
+		? CurrentWeaponDefinition->AttackTrailEffect.Get()
+		: nullptr;
+	if (!IsValid(TrailEffect)
+		|| !IsValid(MeshComponent)
+		|| AttachSocket.IsNone()
+		|| !MeshComponent->DoesSocketExist(AttachSocket))
+	{
+		return;
+	}
+
+	FFXSystemSpawnParameters SpawnParams;
+	SpawnParams.SystemTemplate = TrailEffect;
+	SpawnParams.AttachToComponent = MeshComponent;
+	SpawnParams.AttachPointName = AttachSocket;
+	SpawnParams.LocationType = EAttachLocation::KeepRelativeOffset;
+	SpawnParams.bAutoDestroy = true;
+	ActiveAttackTrailComponent =
+		UNiagaraFunctionLibrary::SpawnSystemAttachedWithParams(SpawnParams);
+}
+
+void UAIRECompanionEquipmentComponent::StopAttackTrail()
+{
+	if (IsValid(ActiveAttackTrailComponent))
+	{
+		ActiveAttackTrailComponent->Deactivate();
+	}
+	ActiveAttackTrailComponent = nullptr;
+}
+
 void UAIRECompanionEquipmentComponent::UnequipCurrentWeapon()
 {
 	DesiredWeaponDefinition = nullptr;
@@ -466,6 +532,7 @@ void UAIRECompanionEquipmentComponent::UnequipCurrentWeapon()
 
 void UAIRECompanionEquipmentComponent::ReleaseCurrentWeaponState()
 {
+	StopAttackTrail();
 	const bool bHadRuntimeState =
 		IsValid(CurrentWeaponDefinition)
 		|| IsValid(PendingWeaponDefinition)

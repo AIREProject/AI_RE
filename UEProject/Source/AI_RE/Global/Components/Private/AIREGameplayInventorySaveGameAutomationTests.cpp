@@ -193,6 +193,18 @@ public:
 		return Inventory.EnsureMakoInventoryInitialized(&CompanionConfig);
 	}
 
+	static void FinalizeFreshStateBeforeCompanion(
+		UAIREGameplayInventorySubsystem& Inventory)
+	{
+		PrepareTransientSession(Inventory);
+		Inventory.bPersistenceReady = false;
+		Inventory.bPersistenceLoadComplete = true;
+		Inventory.bMakoInventoryInitialized = false;
+		Inventory.bShouldSeedFreshSharedStorage = true;
+		Inventory.PendingCompanionConfig.Reset();
+		Inventory.FinalizeFreshPersistenceStateIfPossible();
+	}
+
 	static uint64 PrimeSaveCompletion(
 		UAIREGameplayInventorySubsystem& Inventory,
 		const int64 LatestGeneration,
@@ -298,6 +310,57 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAIREGameplayInventoryFreshSharedStorageSeedTest,
 	"AIRE.Inventory.SaveGame.FreshSharedStorageSeed",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAIREGameplayInventoryFreshStateActorOrderTest,
+	"AIRE.Inventory.SaveGame.FreshStateActorOrder",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAIREGameplayInventoryFreshStateActorOrderTest::RunTest(
+	const FString& Parameters)
+{
+	(void)Parameters;
+	TStrongObjectPtr<UAIREGameplayInventorySubsystem> Inventory = MakeInventory();
+	FAIREGameplayInventoryPersistenceTestAccess::
+		FinalizeFreshStateBeforeCompanion(*Inventory);
+
+	TestTrue(
+		TEXT("Fresh persistence becomes ready before MAKO BeginPlay"),
+		Inventory->IsPersistenceReady());
+
+	FAIREInventoryContainerSnapshot StorageBeforeCompanion;
+	TestTrue(
+		TEXT("Shared storage is accessible before MAKO BeginPlay"),
+		Inventory->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			StorageBeforeCompanion));
+	TestEqual(
+		TEXT("Shared storage remains unseeded until MAKO supplies its config"),
+		StorageBeforeCompanion.ItemStacks.Num(),
+		0);
+
+	TStrongObjectPtr<UAIRECompanionConfigDataAsset> CompanionConfig(
+		NewObject<UAIRECompanionConfigDataAsset>());
+	TestTrue(
+		TEXT("MAKO can initialize after persistence became ready"),
+		Inventory->EnsureMakoInventoryInitialized(CompanionConfig.Get()));
+
+	FAIREInventoryContainerSnapshot StorageAfterCompanion;
+	TestTrue(
+		TEXT("Shared storage remains accessible after MAKO initialization"),
+		Inventory->GetContainerSnapshot(
+			UAIREGameplayInventorySubsystem::GetSharedStorageContainerId(),
+			StorageAfterCompanion));
+	TestEqual(
+		TEXT("Delayed MAKO initialization seeds three iron ingots"),
+		GetItemCount(StorageAfterCompanion, FName(TEXT("IronIngot"))),
+		3);
+	TestEqual(
+		TEXT("Delayed MAKO initialization seeds one wood handle"),
+		GetItemCount(StorageAfterCompanion, FName(TEXT("WoodHandle"))),
+		1);
+	return true;
+}
 
 bool FAIREGameplayInventoryFreshSharedStorageSeedTest::RunTest(
 	const FString& Parameters)

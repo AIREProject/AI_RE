@@ -8,6 +8,13 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+namespace
+{
+	constexpr float WorldDropGravityAcceleration = 980.0f;
+	constexpr float WorldDropMaximumFallSpeed = 2000.0f;
+	constexpr float WorldDropSweepRadius = 12.0f;
+}
+
 AAI_REItemActor::AAI_REItemActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -26,6 +33,18 @@ AAI_REItemActor::AAI_REItemActor()
 void AAI_REItemActor::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Only runtime-spawned drops settle. Level-authored item actors keep their
+	// exact authored transform and existing collision setup.
+	if (!HasAnyFlags(RF_WasLoaded))
+	{
+		bWorldDropSettling = true;
+		WorldDropAngularVelocity = FRotator(
+			FMath::FRandRange(-90.0f, 90.0f),
+			FMath::FRandRange(-90.0f, 90.0f),
+			FMath::FRandRange(-180.0f, 180.0f));
+		SetActorTickEnabled(true);
+	}
 
 	if (!bHarvestAutoPickupEnabled)
 	{
@@ -53,6 +72,15 @@ void AAI_REItemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AAI_REItemActor::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	if (bWorldDropSettling)
+	{
+		TickWorldDropSettling(DeltaSeconds);
+		if (bWorldDropSettling && !bPickupClaimed)
+		{
+			return;
+		}
+	}
 
 	if (!bPickupClaimed)
 	{
@@ -90,6 +118,54 @@ void AAI_REItemActor::Tick(const float DeltaSeconds)
 	{
 		Destroy();
 	}
+}
+
+void AAI_REItemActor::TickWorldDropSettling(const float DeltaSeconds)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		bWorldDropSettling = false;
+		return;
+	}
+
+	const float SafeDeltaSeconds = FMath::Clamp(DeltaSeconds, 0.0f, 0.05f);
+	WorldDropVerticalVelocity = FMath::Max(
+		WorldDropVerticalVelocity
+			- WorldDropGravityAcceleration * SafeDeltaSeconds,
+		-WorldDropMaximumFallSpeed);
+
+	const FVector StartLocation = GetActorLocation();
+	const FVector EndLocation = StartLocation
+		+ FVector(0.0f, 0.0f, WorldDropVerticalVelocity * SafeDeltaSeconds);
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldStatic);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(AIREWorldDropSettling));
+	QueryParams.AddIgnoredActor(this);
+
+	FHitResult HitResult;
+	const bool bHitGround = World->SweepSingleByObjectType(
+		HitResult,
+		StartLocation,
+		EndLocation,
+		FQuat::Identity,
+		ObjectQueryParams,
+		FCollisionShape::MakeSphere(WorldDropSweepRadius),
+		QueryParams);
+	if (bHitGround)
+	{
+		SetActorLocation(HitResult.Location, false, nullptr, ETeleportType::TeleportPhysics);
+		WorldDropVerticalVelocity = 0.0f;
+		bWorldDropSettling = false;
+		if (!bPickupClaimed)
+		{
+			SetActorTickEnabled(false);
+		}
+		return;
+	}
+
+	SetActorLocation(EndLocation, false, nullptr, ETeleportType::TeleportPhysics);
+	AddActorLocalRotation(WorldDropAngularVelocity * SafeDeltaSeconds);
 }
 
 bool AAI_REItemActor::InitializeHarvestAutoPickup(
@@ -211,6 +287,8 @@ bool AAI_REItemActor::IsPreferredReceiverWithinRange() const
 void AAI_REItemActor::StartCompanionPickupPresentation(AActor& ReceiverActor)
 {
 	GetWorldTimerManager().ClearTimer(HarvestAutoPickupTimerHandle);
+	bWorldDropSettling = false;
+	WorldDropVerticalVelocity = 0.0f;
 	PickupPresentationTarget = &ReceiverActor;
 	PickupPresentationStartLocation = GetActorLocation();
 	PickupPresentationStartScale = GetActorScale3D();

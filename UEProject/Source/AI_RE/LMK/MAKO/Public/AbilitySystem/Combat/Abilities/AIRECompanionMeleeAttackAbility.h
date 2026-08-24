@@ -58,6 +58,9 @@ private:
 	bool IsActiveExecutionValid() const;
 	bool AreComboMontageSectionsValid(const UAnimMontage* AttackMontage) const;
 	bool TryStartNextStep();
+	void PrepareHarvestComboLoopStep(int32 PayloadStepIndex);
+	void ApplyHarvestWeaponVisibility();
+	void RestoreHarvestWeaponVisibility();
 	bool StartAttackMontage();
 	bool ResumeAfterCombatSkill();
 	bool TryGetEventStepIndex(const FGameplayEventData& Payload, int32& OutStepIndex) const;
@@ -150,5 +153,8 @@ private:
 	bool bUsingFallback = false;
 	bool bSuspendedForCombatSkill = false;
 	bool bSkillCancelWindowTagApplied = false;
+	bool bHarvestWeaponVisibilityApplied = false;
+	bool bPreviousBackWeaponsVisible = true;
+	bool bPreviousHandWeaponsVisible = false;
 	bool bIsEnding = false;
 };

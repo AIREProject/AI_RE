@@ -3,6 +3,7 @@
 #include "AIREGameplayInventorySubsystem.h"
 #include "AIRESharedStorageActor.h"
 #include "AI_RECharacter.h"
+#include "AI_REPlayerController.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
 #include "Components/InputComponent.h"
@@ -14,17 +15,8 @@
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Inventory/UI/AIRECompanionInventoryPanelWidget.h"
 #include "Inventory/UI/AIREStorageInventoryPanelWidget.h"
-#include "UObject/SoftObjectPath.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIREInventoryUI, Log, All);
-
-namespace
-{
-	const FSoftClassPath StoragePanelClassPath(
-		TEXT("/Game/Work/LMK/UI/Inventory/WBP_AIREStorageInventoryPanel.WBP_AIREStorageInventoryPanel_C"));
-	const FSoftClassPath CompanionPanelClassPath(
-		TEXT("/Game/Work/LMK/UI/Inventory/WBP_AIRECompanionInventoryPanel.WBP_AIRECompanionInventoryPanel_C"));
-}
 
 void UAIREInventoryUIWorldSubsystem::Deinitialize()
 {
@@ -42,8 +34,9 @@ void UAIREInventoryUIWorldSubsystem::OpenStorageInventory(
 	}
 
 	UWorld* World = GetWorld();
-	APlayerController* PlayerController =
-		IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	AAI_REPlayerController* PlayerController = IsValid(World)
+		? Cast<AAI_REPlayerController>(World->GetFirstPlayerController())
+		: nullptr;
 	const AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(Interactor);
 	UAI_REPlayerInventoryComponent* PlayerInventory =
 		IsValid(PlayerCharacter)
@@ -63,14 +56,15 @@ void UAIREInventoryUIWorldSubsystem::OpenStorageInventory(
 	}
 
 	CloseInventoryUI();
-	UClass* PanelClass = StoragePanelClassPath
-		.TryLoadClass<UAIREStorageInventoryPanelWidget>();
+	UClass* PanelClass = IsValid(PlayerController)
+		? PlayerController->GetStorageInventoryPanelClass().Get()
+		: nullptr;
 	if (!IsValid(PanelClass))
 	{
 		UE_LOG(
 			LogAIREInventoryUI,
 			Warning,
-			TEXT("Storage inventory panel WBP could not be loaded."));
+			TEXT("Storage inventory panel class is not configured on the PlayerController."));
 		return;
 	}
 
@@ -111,8 +105,9 @@ void UAIREInventoryUIWorldSubsystem::OpenCompanionInventory(
 	}
 
 	UWorld* World = GetWorld();
-	APlayerController* PlayerController =
-		IsValid(World) ? World->GetFirstPlayerController() : nullptr;
+	AAI_REPlayerController* PlayerController = IsValid(World)
+		? Cast<AAI_REPlayerController>(World->GetFirstPlayerController())
+		: nullptr;
 	const AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(Interactor);
 	UAIRECompanionInventoryComponent* MakoInventory =
 		Companion->GetInventoryComponent();
@@ -140,14 +135,15 @@ void UAIREInventoryUIWorldSubsystem::OpenCompanionInventory(
 	}
 
 	CloseInventoryUI();
-	UClass* PanelClass = CompanionPanelClassPath
-		.TryLoadClass<UAIRECompanionInventoryPanelWidget>();
+	UClass* PanelClass = IsValid(PlayerController)
+		? PlayerController->GetCompanionInventoryPanelClass().Get()
+		: nullptr;
 	if (!IsValid(PanelClass))
 	{
 		UE_LOG(
 			LogAIREInventoryUI,
 			Warning,
-			TEXT("Companion inventory panel WBP could not be loaded."));
+			TEXT("Companion inventory panel class is not configured on the PlayerController."));
 		return;
 	}
 

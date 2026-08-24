@@ -45,6 +45,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	PreviousState,
 	EAIREEnemyReactionState,
 	CurrentState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FAIREEnemyGroggyChangedSignature,
+	float,
+	CurrentGroggy,
+	float,
+	MaxGroggy);
 
 UCLASS(ClassGroup = (AIRE), meta = (BlueprintSpawnableComponent))
 class AI_RE_API UAIREEnemyReactionComponent : public UActorComponent
@@ -78,6 +84,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "AIRE|Enemy|Reaction")
 	FAIREEnemyReactionStateChangedSignature OnReactionStateChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "AIRE|Enemy|Reaction")
+	FAIREEnemyGroggyChangedSignature OnGroggyChanged;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -89,6 +98,7 @@ private:
 	void StartStun();
 	void FinishReaction();
 	void ResetGauges();
+	void BroadcastGroggyChanged();
 	void SetReactionState(EAIREEnemyReactionState NewState);
 	void PlayReactionMontage(UAnimMontage* Montage);
 	void StopActiveReactionMontage();

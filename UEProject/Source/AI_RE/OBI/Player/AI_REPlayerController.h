@@ -16,7 +16,11 @@ class UAIREChatHUDWidget;
 class UAIREChatLogWidget;
 class UAIRECompanionPolicyPanelWidget;
 class UAIRECompanionStatusWidget;
+class UAIRECompanionInventoryPanelWidget;
+class UAIREStorageInventoryPanelWidget;
+class UAIREBossHUDWidget;
 class AAIRECompanionCharacter;
+class AAIREBossEnemy;
 class AActor;
 class APawn;
 
@@ -42,6 +46,11 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Aggro Swap")
 	UAIREAggroSwapComponent* GetAggroSwapComponent() const;
+
+	TSubclassOf<UAIREStorageInventoryPanelWidget>
+		GetStorageInventoryPanelClass() const;
+	TSubclassOf<UAIRECompanionInventoryPanelWidget>
+		GetCompanionInventoryPanelClass() const;
 	
 protected:
 
@@ -93,6 +102,9 @@ protected:
 	void FindAndBindCompanion();
 	void BindCompanion(AAIRECompanionCharacter* Companion);
 	void UnbindCompanion();
+	void FindAndBindBoss();
+	void BindBoss(AAIREBossEnemy* Boss);
+	void UnbindBoss();
 	void HandleActorSpawned(AActor* SpawnedActor);
 	void ShutdownLocalHUD();
 	void ApplyLocalUIInputMode(
@@ -102,6 +114,9 @@ protected:
 
 	UFUNCTION()
 	void HandleCompanionDestroyed(AActor* DestroyedActor);
+
+	UFUNCTION()
+	void HandleBossDestroyed(AActor* DestroyedActor);
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Input")
 	TObjectPtr<UInputMappingContext> UserInterfaceMappingContext;
@@ -122,6 +137,9 @@ protected:
 	TSubclassOf<UAIRECompanionStatusWidget> CompanionStatusWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIREBossHUDWidget> BossHUDClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
 	TSubclassOf<UAIREChatHUDWidget> ChatHUDClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
@@ -130,11 +148,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
 	TSubclassOf<UAIRECompanionPolicyPanelWidget> CompanionPolicyWidgetClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIREStorageInventoryPanelWidget> StorageInventoryPanelClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIRECompanionInventoryPanelWidget> CompanionInventoryPanelClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UAI_REMainUI> MainHUD;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAIRECompanionStatusWidget> CompanionStatusWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREBossHUDWidget> BossHUD;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAIREChatHUDWidget> ChatHUD;
@@ -146,6 +173,7 @@ protected:
 	TObjectPtr<UAIRECompanionPolicyPanelWidget> CompanionPolicyWidget;
 
 	TWeakObjectPtr<AAIRECompanionCharacter> BoundCompanion;
+	TWeakObjectPtr<AAIREBossEnemy> BoundBoss;
 	FDelegateHandle ActorSpawnedDelegateHandle;
 	EAIRELocalUIInputMode LocalUIInputMode =
 		EAIRELocalUIInputMode::Gameplay;
