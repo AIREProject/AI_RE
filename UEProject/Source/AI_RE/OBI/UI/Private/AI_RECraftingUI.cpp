@@ -174,13 +174,9 @@ void UAI_RECraftingUI::OnRecipeSelected(FName SelectedRecipeName)
 	// Automate setting the detail image.
 	if (RecipeIMG)
 	{
-		UTexture2D* PreviewTexture = nullptr;
-		if (ResultItemData)
-		{
-			PreviewTexture = ResultItemData->CraftingImage
-				? ResultItemData->CraftingImage.Get()
-				: ResultItemData->ItemIcon.Get();
-		}
+		UTexture2D* PreviewTexture = ResultItemData
+			? ResultItemData->ItemIcon.Get()
+			: nullptr;
 
 		RecipeIMG->SetBrushFromTexture(PreviewTexture);
 		RecipeIMG->SetVisibility(
