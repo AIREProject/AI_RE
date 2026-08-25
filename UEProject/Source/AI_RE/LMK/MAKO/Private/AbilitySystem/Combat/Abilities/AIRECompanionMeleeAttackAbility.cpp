@@ -556,20 +556,36 @@ bool UAIRECompanionMeleeAttackAbility::TryStartNextStep()
 	return true;
 }
 
-void UAIRECompanionMeleeAttackAbility::PrepareHarvestComboLoopStep(
+void UAIRECompanionMeleeAttackAbility::PrepareComboLoopStep(
 	const int32 PayloadStepIndex)
 {
 	const int32 LastStepIndex = GetAttackStepCount() - 1;
-	if (ActiveExecutionMode != EExecutionMode::Harvest
-		|| PayloadStepIndex != 0
+	if (PayloadStepIndex != 0
 		|| CurrentStepIndex != LastStepIndex)
 	{
 		return;
 	}
 
 	AActor* TargetActor = GetEventTarget();
-	if (!IsActiveExecutionValid()
-		|| !IsTargetInRange(TargetActor))
+	bool bCanContinueLoop = IsActiveExecutionValid()
+		&& IsTargetInRange(TargetActor);
+	if (bCanContinueLoop && ActiveExecutionMode == EExecutionMode::Combat)
+	{
+		const APawn* AvatarPawn = Cast<APawn>(GetAvatarActorFromActorInfo());
+		const AAIRECompanionAIController* CompanionController =
+			IsValid(AvatarPawn)
+				? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
+				: nullptr;
+		const UAIRECompanionThreatComponent* ThreatComponent =
+			IsValid(CompanionController)
+				? CompanionController->GetThreatComponent()
+				: nullptr;
+		bCanContinueLoop = IsValid(ThreatComponent)
+			&& ThreatComponent->IsCombatRequested()
+			&& ThreatComponent->GetSelectedThreatTarget() == TargetActor;
+	}
+
+	if (!bCanContinueLoop)
 	{
 		FinishAbility(false);
 		return;
@@ -581,7 +597,10 @@ void UAIRECompanionMeleeAttackAbility::PrepareHarvestComboLoopStep(
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Verbose,
-		TEXT("Companion harvest combo looped without returning to locomotion. Target=%s"),
+		TEXT("Companion combo looped without returning to locomotion. Mode=%s Target=%s"),
+		ActiveExecutionMode == EExecutionMode::Harvest
+			? TEXT("Harvest")
+			: TEXT("Combat"),
 		*GetNameSafe(TargetActor));
 }
 
@@ -705,12 +724,9 @@ bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
 				NAME_None);
 		}
 
-		if (ActiveExecutionMode == EExecutionMode::Harvest)
-		{
-			MontageSetNextSectionName(
-				GetAttackStepMontageSection(GetAttackStepCount() - 1),
-				GetAttackStepMontageSection(0));
-		}
+		MontageSetNextSectionName(
+			GetAttackStepMontageSection(GetAttackStepCount() - 1),
+			GetAttackStepMontageSection(0));
 
 		if (CurrentStepIndex + 1 < GetAttackStepCount())
 		{
@@ -1424,7 +1440,7 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 		return;
 	}
 
-	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	PrepareComboLoopStep(PayloadStepIndex);
 	if (bIsEnding
 		|| bCurrentStepHitConsumed
 		|| bCurrentStepPointSampleConsumed
@@ -1461,8 +1477,14 @@ void UAIRECompanionMeleeAttackAbility::HandleTraceEvent(
 	if (bIsEnding
 		|| bSuspendedForCombatSkill
 		|| ActiveExecutionMode != EExecutionMode::Combat
+		|| !TryGetEventStepIndex(Payload, PayloadStepIndex))
+	{
+		return;
+	}
+
+	PrepareComboLoopStep(PayloadStepIndex);
+	if (bIsEnding
 		|| bCurrentStepHitConsumed
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;
@@ -1541,7 +1563,7 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 		return;
 	}
 
-	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	PrepareComboLoopStep(PayloadStepIndex);
 	if (bIsEnding
 		|| !IsActiveExecutionValid()
 		|| PayloadStepIndex != CurrentStepIndex)
