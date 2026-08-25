@@ -43,6 +43,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void ResetCachedTarget();
 
+	/** 현재 캐싱된 상호작용 타겟의 아웃라인 표시를 토글합니다. */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void ToggleInteractionOutlineVisibility();
+
 	/** 모든 스캔을 정지하고 락온을 풉니다 (플레이어 사망 시 호출) */
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void StopScanning();
@@ -89,6 +93,9 @@ protected:
 	float MaxCombatLockDistance = 1000.0f;
 
 private:
+	/** Whether interaction target outlines are currently visible for this player. */
+	bool bInteractionOutlineVisible = true;
+
 	bool bIsCombatState = false;
 	TWeakObjectPtr<AActor> CurrentCombatTarget;
 };

@@ -145,6 +145,11 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoInteract);
 		}
 
+		if (InteractionOutlineToggleAction)
+		{
+			EnhancedInputComponent->BindAction(InteractionOutlineToggleAction, ETriggerEvent::Started, this, &AAI_RECharacter::ToggleInteractionOutline);
+		}
+
 		if (CraftAction)
 		{
 			EnhancedInputComponent->BindAction(CraftAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoCraft);
@@ -450,6 +455,16 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 			IAI_REInteractableInterface::Execute_Interact(Target, this);
 			return;
 		}
+	}
+}
+
+void AAI_RECharacter::ToggleInteractionOutline(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (TargetScannerComponent)
+	{
+		TargetScannerComponent->ToggleInteractionOutlineVisibility();
 	}
 }
 

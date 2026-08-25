@@ -330,7 +330,7 @@ void UAI_RETargetScannerComponent::SetCachedInteractableTarget(
 
 	SetInteractionOutlineEnabled(PreviousTarget, false);
 	CachedInteractableTarget = NewTarget;
-	SetInteractionOutlineEnabled(NewTarget, true);
+	SetInteractionOutlineEnabled(NewTarget, bInteractionOutlineVisible);
 }
 
 void UAI_RETargetScannerComponent::SetInteractionOutlineEnabled(
@@ -363,4 +363,12 @@ void UAI_RETargetScannerComponent::SetInteractionOutlineEnabled(
 void UAI_RETargetScannerComponent::ResetCachedTarget()
 {
 	SetCachedInteractableTarget(nullptr);
+}
+
+void UAI_RETargetScannerComponent::ToggleInteractionOutlineVisibility()
+{
+	bInteractionOutlineVisible = !bInteractionOutlineVisible;
+	SetInteractionOutlineEnabled(
+		CachedInteractableTarget.Get(),
+		bInteractionOutlineVisible);
 }

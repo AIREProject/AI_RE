@@ -61,6 +61,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class UInputAction> InteractAction;
 
+	/** Toggles the interaction target outline. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UInputAction> InteractionOutlineToggleAction;
+
 	/** Craft Input Action (Bound to C) */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class UInputAction> CraftAction;
@@ -100,6 +104,9 @@ protected:
 
 	/** Called for interaction input */
 	void DoInteract(const FInputActionValue& Value);
+
+	/** Called for interaction outline toggle input. */
+	void ToggleInteractionOutline(const FInputActionValue& Value);
 
 	/** Called for craft input */
 	void DoCraft(const FInputActionValue& Value);
