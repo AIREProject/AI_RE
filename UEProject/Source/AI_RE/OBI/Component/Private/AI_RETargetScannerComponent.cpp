@@ -234,6 +234,24 @@ void UAI_RETargetScannerComponent::RefreshInteractableTarget()
 	}
 }
 
+void UAI_RETargetScannerComponent::StopScanning()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InteractionScanTimerHandle);
+		World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
+	}
+	
+	if (bIsCombatState)
+	{
+		bIsCombatState = false;
+		CurrentCombatTarget.Reset();
+		OnCombatStateChanged.Broadcast(false, nullptr);
+	}
+	
+	SetCachedInteractableTarget(nullptr);
+}
+
 AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
 	const float MaxDistance) const
 {
