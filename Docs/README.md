@@ -8,18 +8,19 @@
 
 - 2026-07-27 재시작 저장소에는 Backend 구현 디렉터리가 없으며, `Docs/Backend/`에는 외부 서버 연동 기준만 둡니다.
 - 현행 Backend 구현 권위는 워크스페이스의 별도 Git 저장소 `AIRE_SERVER/`와 배포
-  OpenAPI입니다.
+  OpenAPI입니다. 2026-08-25 확인에서 두 OpenAPI는 구조적으로 완전히 일치합니다.
 - 배포 Backend는 [https://traip.mtvs2026.work](https://traip.mtvs2026.work)를 사용합니다.
 - 2026-08-11 사용자 결정으로 별도 Backend 작업자는 없으며, 필요한 Backend·LLM 변경과
   UE/Web 통합을 파트너가 직접 수행합니다.
-- 기존 [`Contracts/`](../Contracts/README.md)는 새 서버와 대조가 끝날 때까지 레거시 참고 자료입니다.
+- [`Contracts/`](../Contracts/README.md)는 현행 계약의 권위 위치와 검증 결과를 안내합니다.
+  그 안의 기존 `openapi.yaml`, `schemas/`, `fixtures/`는 명시적인 레거시 참고 자료입니다.
 
 ## 문서 목록
 
 ### Contracts
 
-- [External Server Integration](Backend/EXTERNAL_SERVER_INTEGRATION.md) — 채택 서버, 계약 우선순위, 현재 배포 불일치와 책임 경계
-- [Legacy Contracts](../Contracts/README.md) — 이전 Backend용 OpenAPI, JSON Schema, Fixture
+- [External Server Integration](Backend/EXTERNAL_SERVER_INTEGRATION.md) — 채택 서버, 계약 우선순위, 현재 배포 정합성과 책임 경계
+- [Contract Registry](../Contracts/README.md) — 현행 런타임 권위, 정합성 결과와 레거시 산출물 경계
 
 ### Development / Test
 

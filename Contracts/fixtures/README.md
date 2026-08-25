@@ -1,5 +1,9 @@
 # Contract Fixtures
 
+> **Legacy reference:** 이 fixture는 2026-07-27 이전 Backend 계약용입니다. 현재 배포
+> DTO의 검증 근거로 사용하지 않습니다. 현행 권위와 갱신 절차는
+> [`../README.md`](../README.md)를 따릅니다.
+
 | Fixture | Expected result |
 |---|---|
 | `chat/offline-request.valid.json` | Valid Offline Chat request using RealWorld time |
