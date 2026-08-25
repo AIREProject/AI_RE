@@ -22,6 +22,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UAIRECompanionWeaponDefinitionDataAsset> WeaponDefinition;
 
+	// [종속성 제거] 플레이어 무기 전용 트레이스 소켓 (MAKO 세팅과 분리)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Trace")
+	FName TraceStartSocket = FName("TraceStart");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Trace")
+	FName TraceEndSocket = FName("TraceEnd");
+
 	// 무기의 실제 외형 메시 (캐릭터 손에 들려질 모델링)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visuals")
 	TObjectPtr<class UStaticMesh> WeaponMesh;

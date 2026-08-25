@@ -54,6 +54,8 @@ UAIRECompanionCombatSkillAbility::UAIRECompanionCombatSkillAbility()
 		AIRECompanionGameplayTags::StateActionAttackingSkill);
 	ActivationBlockedTags.AddTag(
 		AIRECompanionGameplayTags::StateActionAttackingSkill);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionEquipping);
 	CooldownGameplayEffectClass =
 		UAIRECompanionCombatSkillCooldownGameplayEffect::StaticClass();
 }

@@ -4,9 +4,11 @@
 #include "Abilities/GameplayAbility.h"
 #include "AIRECombatEvadeComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "AI_REAbilitySetDataAsset.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
+#include "Core/AIRECompanionCharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/AssetManager.h"
 #include "Engine/StreamableManager.h"
@@ -14,6 +16,12 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+
+namespace
+{
+	const TSoftObjectPtr<UAnimMontage> KatanaEvadeMontage(
+		FSoftObjectPath(TEXT("/Game/Work/LMK/Animations/Montages/MK_AM_Katana_Evade.MK_AM_Katana_Evade")));
+}
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionEquipment, Log, All);
 
@@ -161,6 +169,16 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 		return false;
 	}
 
+	if (PendingWeaponDefinition == WeaponDefinition)
+	{
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, false);
+		return false;
+	}
+	if (CurrentWeaponDefinition == WeaponDefinition)
+	{
+		WeaponEquipCompleted.Broadcast(WeaponDefinition, true);
+		return true;
+	}
 	DesiredWeaponDefinition = WeaponDefinition;
 	ReleaseCurrentWeaponState();
 	if (AbilitySystem->HasMatchingGameplayTag(
@@ -203,6 +221,11 @@ bool UAIRECompanionEquipmentComponent::EquipWeapon(
 	{
 		AssetsToLoad.AddUnique(
 			WeaponDefinition->AttackTrailEffect.ToSoftObjectPath());
+	}
+
+	if (IsKatanaWeapon(WeaponDefinition))
+	{
+		AssetsToLoad.AddUnique(KatanaEvadeMontage.ToSoftObjectPath());
 	}
 
 	const uint32 RequestId = ++EquipmentRequestId;
@@ -412,6 +435,12 @@ void UAIRECompanionEquipmentComponent::CompleteEquipWeapon(const uint32 RequestI
 		IsValid(CurrentWeaponDefinition->AttackMontage.Get())
 			? TEXT("true")
 			: TEXT("false"));
+	if (IsKatanaWeapon(CurrentWeaponDefinition))
+	{
+		SetDualWeaponVisualsVisible(false);
+		SetKatanaEvadePresentation(true);
+		SetKatanaBladeDrawn(true);
+	}
 	WeaponEquipCompleted.Broadcast(CurrentWeaponDefinition, true);
 }
 
@@ -524,6 +553,82 @@ void UAIRECompanionEquipmentComponent::StopAttackTrail()
 	ActiveAttackTrailComponent = nullptr;
 }
 
+bool UAIRECompanionEquipmentComponent::IsKatanaWeapon(
+	const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition) const
+{
+	return IsValid(WeaponDefinition)
+		&& WeaponDefinition->WeaponTag.MatchesTagExact(
+			AIRECompanionGameplayTags::WeaponCompanionMeleeKatana);
+}
+
+void UAIRECompanionEquipmentComponent::SetCombatPresentationActive(
+	const bool bIsInCombat)
+{
+	bCombatPresentationActive = bIsInCombat;
+	if (!IsKatanaWeapon(CurrentWeaponDefinition))
+	{
+		return;
+	}
+
+	SetDualWeaponVisualsVisible(false);
+	SetKatanaBladeDrawn(true);
+}
+
+void UAIRECompanionEquipmentComponent::SetKatanaBladeDrawn(const bool)
+{
+	if (!IsKatanaWeapon(CurrentWeaponDefinition))
+	{
+		return;
+	}
+
+	AAIRECompanionCharacter* Companion =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	if (IsValid(Companion))
+	{
+		Companion->SetKatanaHandWeaponVisible(true);
+	}
+}
+
+void UAIRECompanionEquipmentComponent::DestroyKatanaVisuals()
+{
+	AAIRECompanionCharacter* Companion =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	if (IsValid(Companion))
+	{
+		Companion->SetKatanaHandWeaponVisible(false);
+	}
+}
+
+void UAIRECompanionEquipmentComponent::SetDualWeaponVisualsVisible(
+	const bool bVisible)
+{
+	AAIRECompanionCharacter* Companion =
+		Cast<AAIRECompanionCharacter>(GetOwner());
+	if (!IsValid(Companion))
+	{
+		return;
+	}
+
+	Companion->SetBackWeaponsVisible(
+		bVisible && !bCombatPresentationActive);
+	Companion->SetHandWeaponsVisible(
+		bVisible && bCombatPresentationActive);
+}
+
+void UAIRECompanionEquipmentComponent::SetKatanaEvadePresentation(
+	const bool bEnabled)
+{
+	AActor* Owner = GetOwner();
+	UAIRECombatEvadeComponent* EvadeComponent = IsValid(Owner)
+		? Owner->FindComponentByClass<UAIRECombatEvadeComponent>()
+		: nullptr;
+	if (IsValid(EvadeComponent))
+	{
+		EvadeComponent->SetPresentationMontageOverride(
+			bEnabled ? KatanaEvadeMontage.Get() : nullptr);
+	}
+}
+
 void UAIRECompanionEquipmentComponent::UnequipCurrentWeapon()
 {
 	DesiredWeaponDefinition = nullptr;
@@ -533,6 +638,17 @@ void UAIRECompanionEquipmentComponent::UnequipCurrentWeapon()
 void UAIRECompanionEquipmentComponent::ReleaseCurrentWeaponState()
 {
 	StopAttackTrail();
+	const bool bReleasedKatana = IsKatanaWeapon(CurrentWeaponDefinition);
+	if (bReleasedKatana)
+	{
+		SetKatanaEvadePresentation(false);
+	}
+	DestroyKatanaVisuals();
+	if (bReleasedKatana)
+	{
+		SetDualWeaponVisualsVisible(true);
+	}
+
 	const bool bHadRuntimeState =
 		IsValid(CurrentWeaponDefinition)
 		|| IsValid(PendingWeaponDefinition)

@@ -129,12 +129,10 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 	FAIRECombatMeleeTraceResolution Resolution;
 	const bool bValidRequest = IsValid(Request.World)
 		&& IsValid(Request.Source)
-		&& IsValid(Request.Target)
-		&& Request.Source != Request.Target
+		&& (!Request.Target || (IsValid(Request.Target) && Request.Source != Request.Target && !Request.Target->IsActorBeingDestroyed()))
 		&& !Request.Source->IsActorBeingDestroyed()
-		&& !Request.Target->IsActorBeingDestroyed()
 		&& Request.Source->GetWorld() == Request.World
-		&& Request.Target->GetWorld() == Request.World
+		&& (!Request.Target || Request.Target->GetWorld() == Request.World)
 		&& !Request.Segments.IsEmpty()
 		&& (Request.Shape == EAIRECombatMeleeTraceShape::Sphere
 			|| Request.Shape == EAIRECombatMeleeTraceShape::Capsule)
@@ -168,6 +166,7 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 	TArray<AActor*> AttachedActors;
 	Request.Source->GetAttachedActors(AttachedActors, true, true);
 	QueryParams.AddIgnoredActors(AttachedActors);
+	QueryParams.AddIgnoredActors(Request.IgnoredActors);
 
 	bool bTargetHit = false;
 	bool bBlocked = false;
@@ -189,7 +188,7 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 			CollisionShape,
 			QueryParams);
 		const bool bSegmentTargetHit =
-			bHit && HitResult.GetActor() == Request.Target;
+			bHit && (HitResult.GetActor() == Request.Target || (!Request.Target && HitResult.GetActor() && HitResult.GetActor() != Request.Source));
 
 #if ENABLE_DRAW_DEBUG
 		if (IsMeleeTraceDebugEnabled())
@@ -242,6 +241,11 @@ FAIRECombatMeleeTraceResolution FAIRECombatMeleeTraceResolver::Resolve(
 		}
 		else if (bHit)
 		{
+			// If we haven't found a target yet, store this blocked hit so it can be processed
+			if (!bTargetHit && !bBlocked)
+			{
+				Resolution.HitResult = HitResult;
+			}
 			bBlocked = true;
 		}
 	}

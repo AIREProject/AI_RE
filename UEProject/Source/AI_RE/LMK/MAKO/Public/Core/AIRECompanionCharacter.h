@@ -25,6 +25,7 @@ class UAIRECompanionStorageAutomationComponent;
 class UAIRECompanionWorkOrderComponent;
 class UAbilitySystemComponent;
 class USkeletalMeshComponent;
+class UStaticMeshComponent;
 struct FOnAttributeChangeData;
 
 UCLASS(Blueprintable)
@@ -113,6 +114,12 @@ public:
 	bool AreHandWeaponsVisible() const;
 
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
+	void SetKatanaHandWeaponVisible(bool bVisible);
+
+	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance|Combat")
+	bool IsKatanaHandWeaponVisible() const;
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Appearance|Combat")
 	void SetVisorVisible(bool bVisible);
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Appearance|Combat")
@@ -139,6 +146,9 @@ private:
 	void ApplyHoodVisibility();
 	void ApplyCombatEquipmentVisibility();
 	void SetNamedStaticMeshComponentsVisible(
+		TConstArrayView<FName> ComponentNames,
+		bool bVisible) const;
+	void SetNamedSkeletalMeshComponentsVisible(
 		TConstArrayView<FName> ComponentNames,
 		bool bVisible) const;
 	bool InitializeAutonomousEvadeRuntime();
@@ -203,6 +213,9 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
 	bool bHandWeaponsVisible = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
+	bool bKatanaHandWeaponVisible = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Appearance|Combat", meta = (AllowPrivateAccess = "true"))
 	bool bVisorVisible = false;

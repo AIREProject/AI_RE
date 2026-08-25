@@ -64,6 +64,8 @@ UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 		AIRECompanionGameplayTags::StateActionAttackingBasic);
 	ActivationBlockedTags.AddTag(
 		AIRECompanionGameplayTags::StateActionAttackingSkill);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionEquipping);
 	CooldownGameplayEffectClass = UAIRECompanionAttackCooldownGameplayEffect::StaticClass();
 }
 
@@ -622,8 +624,10 @@ void UAIRECompanionMeleeAttackAbility::ApplyHarvestWeaponVisibility()
 		CompanionCharacter->AreBackWeaponsVisible();
 	bPreviousHandWeaponsVisible =
 		CompanionCharacter->AreHandWeaponsVisible();
+	const bool bIsKatana = ActiveWeaponDefinition->WeaponTag.MatchesTagExact(
+		AIRECompanionGameplayTags::WeaponCompanionMeleeKatana);
 	CompanionCharacter->SetBackWeaponsVisible(false);
-	CompanionCharacter->SetHandWeaponsVisible(true);
+	CompanionCharacter->SetHandWeaponsVisible(!bIsKatana);
 	bHarvestWeaponVisibilityApplied = true;
 }
 

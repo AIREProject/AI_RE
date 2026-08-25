@@ -52,6 +52,12 @@ public:
 		FName AttachSocket);
 	void StopAttackTrail();
 
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Equipment|Katana")
+	void SetKatanaBladeDrawn(bool bDrawn);
+
+	/** Keeps the Dual visuals hidden and the Katana hand weapon visible. */
+	void SetCombatPresentationActive(bool bIsInCombat);
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -63,6 +69,11 @@ private:
 	void ReleaseCurrentWeaponState();
 	void UnlinkCurrentAnimLayer();
 	UAnimInstance* GetOwnerAnimInstance() const;
+
+	bool IsKatanaWeapon(const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition) const;
+	void DestroyKatanaVisuals();
+	void SetDualWeaponVisualsVisible(bool bVisible);
+	void SetKatanaEvadePresentation(bool bEnabled);
 
 	// Legacy fallback for Companion assets without an inventory loadout.
 	// Do not add DeprecatedProperty metadata: UE 5.8 PropertyEditor recursively
@@ -86,6 +97,8 @@ private:
 	TObjectPtr<UNiagaraComponent> ActiveAttackTrailComponent;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
+
+	bool bCombatPresentationActive = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;
 	TSharedPtr<FStreamableHandle> PendingEquipmentLoadHandle;
 	TSharedPtr<FStreamableHandle> ActiveEquipmentLoadHandle;

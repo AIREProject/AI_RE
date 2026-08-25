@@ -86,6 +86,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "AIRE|Combat|Evade")
 	bool IsEvading() const;
 
+	/** Uses the supplied presentation montage until cleared with nullptr. */
+	void SetPresentationMontageOverride(UAnimMontage* MontageOverride);
+
 	bool IsEvadingFrom(
 		const AActor* ThreatActor,
 		const FGuid& TriggerExecutionId) const;
@@ -127,6 +130,9 @@ private:
 	/** Must reference an in-place montage with Enable Root Motion disabled. */
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Evade")
 	TObjectPtr<UAnimMontage> EvadeMontage;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimMontage> DefaultEvadeMontage;
 
 	/** Optional curve to control dash speed over time. If left empty, dash speed is linear. X=Time (0 to 1), Y=Distance Fraction (0 to 1) */
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Combat|Evade")
