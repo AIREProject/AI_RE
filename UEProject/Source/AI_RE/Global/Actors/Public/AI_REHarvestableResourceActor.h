@@ -34,6 +34,10 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, Category = "AI_RE|Harvest")
 	void ApplyDepletedVisualState(bool bNewIsDepleted);
+
+	// 피격 시 시각적 효과(흔들림 등)를 재생하기 위한 이벤트 (블루프린트에서 타임라인 등으로 구현)
+	UFUNCTION(BlueprintImplementableEvent, Category = "AI_RE|Harvest")
+	void PlayHitReactVisual(AActor* InstigatorActor, float DamageAmount);
 	
 protected:
 	virtual void BeginPlay() override;
