@@ -32,6 +32,7 @@ namespace AIRECompanionGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionAttackingSkill, "State.Companion.Action.Attacking.Skill", "Companion combat skill ability is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionAttackingSkillCancelable, "State.Companion.Action.Attacking.SkillCancelable", "The active basic combo is at a safe combat skill insertion window.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionEvading, "State.Companion.Action.Evading", "Companion collision-safe evade movement is active.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionEquipping, "State.Companion.Action.Equipping", "Companion weapon draw or sheathe transition is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateActionSupporting, "State.Companion.Action.Supporting", "Companion is applying a support consumable.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateStaminaRegenBlocked, "State.Companion.Stamina.RegenBlocked", "Companion stamina regeneration is delayed after an autonomous evade spend.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(StateDisabled, "State.Companion.Disabled", "Companion cannot select normal behavior.");
@@ -43,6 +44,7 @@ namespace AIRECompanionGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(WeaponCompanion, "Weapon.Companion", "Root tag for companion weapon identities.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(WeaponCompanionMelee, "Weapon.Companion.Melee", "Root tag for companion melee weapon identities.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(WeaponCompanionMeleeBasic, "Weapon.Companion.Melee.Basic", "Stable identity for the basic melee weapon.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(WeaponCompanionMeleeKatana, "Weapon.Companion.Melee.Katana", "Stable identity for the Cyber Katana weapon.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(DataAttackStaminaCost, "Data.Companion.Attack.StaminaCost", "Legacy attack cost data tag retained for asset compatibility; basic attacks no longer use it.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(DataAttackCooldownDuration, "Data.Companion.Attack.CooldownDuration", "Duration supplied to an attack cooldown Gameplay Effect.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(DataCombatSkillCooldownDuration, "Data.Companion.CombatSkill.CooldownDuration", "Duration supplied to a combat skill cooldown Gameplay Effect.");

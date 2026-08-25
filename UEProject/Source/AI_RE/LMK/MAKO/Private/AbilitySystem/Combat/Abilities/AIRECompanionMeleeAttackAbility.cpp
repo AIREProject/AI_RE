@@ -64,6 +64,8 @@ UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 		AIRECompanionGameplayTags::StateActionAttackingBasic);
 	ActivationBlockedTags.AddTag(
 		AIRECompanionGameplayTags::StateActionAttackingSkill);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionEquipping);
 	CooldownGameplayEffectClass = UAIRECompanionAttackCooldownGameplayEffect::StaticClass();
 }
 

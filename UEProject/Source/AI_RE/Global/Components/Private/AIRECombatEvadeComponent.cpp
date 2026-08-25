@@ -417,6 +417,15 @@ bool UAIRECombatEvadeComponent::IsEvading() const
 	return bEvading;
 }
 
+void UAIRECombatEvadeComponent::SetPresentationMontageOverride(
+	UAnimMontage* MontageOverride)
+{
+	CancelEvade();
+	EvadeMontage = IsValid(MontageOverride)
+		? MontageOverride
+		: DefaultEvadeMontage.Get();
+}
+
 bool UAIRECombatEvadeComponent::IsEvadingFrom(
 	const AActor* ThreatActor,
 	const FGuid& TriggerExecutionId) const
@@ -432,6 +441,7 @@ void UAIRECombatEvadeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	OwnerCharacter = Cast<ACharacter>(GetOwner());
+	DefaultEvadeMontage = EvadeMontage;
 	SetComponentTickEnabled(false);
 }
 

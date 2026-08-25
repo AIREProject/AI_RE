@@ -23,7 +23,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/GameInstance.h"
-#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIRECompanionCharacter, Log, All);
@@ -36,13 +35,17 @@ namespace
 	const FName HairMaterialSlotName(TEXT("MIMI_Hair_Pink_v002"));
 	const FName BackWeaponComponentNames[] =
 	{
-		FName(TEXT("holster_l")),
-		FName(TEXT("holster_r"))
+		FName(TEXT("Dual_holster_L")),
+		FName(TEXT("Dual_holster_R"))
 	};
 	const FName HandWeaponComponentNames[] =
 	{
-		FName(TEXT("weapon_l")),
-		FName(TEXT("weapon_r"))
+		FName(TEXT("Dual_weapon_L")),
+		FName(TEXT("Dual_weapon_R"))
+	};
+	const FName KatanaHandWeaponComponentNames[] =
+	{
+		FName(TEXT("Katana_weapon"))
 	};
 	const FName VisorComponentNames[] =
 	{
@@ -87,6 +90,7 @@ AAIRECompanionCharacter::AAIRECompanionCharacter()
 	UnhoodedHairSkeletalMeshComponent->SetGenerateOverlapEvents(false);
 	UnhoodedHairSkeletalMeshComponent->SetCanEverAffectNavigation(false);
 	UnhoodedHairSkeletalMeshComponent->SetVisibility(false, true);
+
 
 	CompanionAttributeSet = CreateDefaultSubobject<UAIRECompanionAttributeSet>(TEXT("CompanionAttributes"));
 	check(CompanionAttributeSet);
@@ -314,6 +318,20 @@ bool AAIRECompanionCharacter::AreHandWeaponsVisible() const
 	return bHandWeaponsVisible;
 }
 
+void AAIRECompanionCharacter::SetKatanaHandWeaponVisible(
+	const bool bVisible)
+{
+	bKatanaHandWeaponVisible = bVisible;
+	SetNamedSkeletalMeshComponentsVisible(
+		KatanaHandWeaponComponentNames,
+		bVisible);
+}
+
+bool AAIRECompanionCharacter::IsKatanaHandWeaponVisible() const
+{
+	return bKatanaHandWeaponVisible;
+}
+
 void AAIRECompanionCharacter::SetVisorVisible(const bool bVisible)
 {
 	bVisorVisible = bVisible;
@@ -327,6 +345,19 @@ bool AAIRECompanionCharacter::IsVisorVisible() const
 
 void AAIRECompanionCharacter::SetCombatEquipmentActive(const bool bIsInCombat)
 {
+	if (IsValid(EquipmentComponent))
+	{
+		EquipmentComponent->SetCombatPresentationActive(bIsInCombat);
+		if (EquipmentComponent->GetCurrentWeaponTag().MatchesTagExact(
+			AIRECompanionGameplayTags::WeaponCompanionMeleeKatana))
+		{
+			SetBackWeaponsVisible(false);
+			SetHandWeaponsVisible(false);
+			SetVisorVisible(bIsInCombat);
+			return;
+		}
+	}
+
 	SetBackWeaponsVisible(!bIsInCombat);
 	SetHandWeaponsVisible(bIsInCombat);
 	SetVisorVisible(bIsInCombat);
@@ -597,6 +628,7 @@ void AAIRECompanionCharacter::ApplyCombatEquipmentVisibility()
 	SetNamedStaticMeshComponentsVisible(
 		HandWeaponComponentNames,
 		bHandWeaponsVisible);
+	SetKatanaHandWeaponVisible(bKatanaHandWeaponVisible);
 	SetNamedStaticMeshComponentsVisible(
 		VisorComponentNames,
 		bVisorVisible);
@@ -636,6 +668,43 @@ void AAIRECompanionCharacter::SetNamedStaticMeshComponentsVisible(
 			continue;
 		}
 
+		MatchingComponent->SetVisibility(bVisible, true);
+		MatchingComponent->SetHiddenInGame(!bVisible, true);
+	}
+}
+
+void AAIRECompanionCharacter::SetNamedSkeletalMeshComponentsVisible(
+	const TConstArrayView<FName> ComponentNames,
+	const bool bVisible) const
+{
+	TInlineComponentArray<USkeletalMeshComponent*> SkeletalMeshComponents(this);
+	for (const FName ComponentName : ComponentNames)
+	{
+		USkeletalMeshComponent* MatchingComponent = nullptr;
+		const FString GeneratedComponentPrefix =
+			ComponentName.ToString() + TEXT("_GEN_VARIABLE");
+		for (USkeletalMeshComponent* Component : SkeletalMeshComponents)
+		{
+			if (IsValid(Component)
+				&& (Component->GetFName() == ComponentName
+					|| Component->GetName().StartsWith(
+						GeneratedComponentPrefix,
+						ESearchCase::IgnoreCase)))
+			{
+				MatchingComponent = Component;
+				break;
+			}
+		}
+		if (!IsValid(MatchingComponent))
+		{
+			UE_LOG(
+				LogAIRECompanionCharacter,
+				Warning,
+				TEXT("Companion %s does not provide skeletal mesh component %s."),
+				*GetNameSafe(this),
+				*ComponentName.ToString());
+			continue;
+		}
 		MatchingComponent->SetVisibility(bVisible, true);
 		MatchingComponent->SetHiddenInGame(!bVisible, true);
 	}
