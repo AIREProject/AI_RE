@@ -43,6 +43,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void ResetCachedTarget();
 
+	/** 모든 스캔을 정지하고 락온을 풉니다 (플레이어 사망 시 호출) */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void StopScanning();
+
 protected:
 	AActor* ScanForward(
 		float Radius,

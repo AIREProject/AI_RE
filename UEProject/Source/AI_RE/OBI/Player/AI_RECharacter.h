@@ -171,7 +171,26 @@ public:
 	UFUNCTION(Exec)
 	void DebugTakeDamage(float DamageAmount);
 	
+	// 사망 (HP가 0이 되었을 때 내부적으로 호출)
+	UFUNCTION(BlueprintCallable, Category="Combat")
+	virtual void Die();
+
+	// 사망 시 블루프린트에서 추가 연출을 넣을 수 있도록 이벤트 제공
+	UFUNCTION(BlueprintImplementableEvent, Category="Combat")
+	void OnPlayerDied();
+	
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Combat")
+	bool bIsDead = false;
+
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// 체력 변경 이벤트 콜백
+	void HandleHealthChanged(const struct FOnAttributeChangeData& ChangeData);
+
+	FDelegateHandle HealthChangedDelegateHandle;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UI")
 	TSubclassOf<class UAI_REInventoryUI> InventoryUIClass;
 	
@@ -195,6 +214,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<class UAI_RECraftingUI> CraftingUIInstance;
+
+	// 사망 시 재생할 애니메이션 몽타주
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Animation")
+	TObjectPtr<class UAnimMontage> DeathMontage;
 
 	// Component
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
@@ -225,8 +248,6 @@ protected:
 	// 무기 장착용 슬롯 컴포넌트
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<class UStaticMeshComponent> WeaponMeshComponent;
-
-	virtual void BeginPlay() override;
 	
 public:
 	// Crafting
