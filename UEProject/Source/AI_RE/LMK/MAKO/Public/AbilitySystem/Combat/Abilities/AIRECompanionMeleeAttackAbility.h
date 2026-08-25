@@ -58,7 +58,7 @@ private:
 	bool IsActiveExecutionValid() const;
 	bool AreComboMontageSectionsValid(const UAnimMontage* AttackMontage) const;
 	bool TryStartNextStep();
-	void PrepareHarvestComboLoopStep(int32 PayloadStepIndex);
+	void PrepareComboLoopStep(int32 PayloadStepIndex);
 	void ApplyHarvestWeaponVisibility();
 	void RestoreHarvestWeaponVisibility();
 	bool StartAttackMontage();
