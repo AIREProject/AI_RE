@@ -74,20 +74,8 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 		TraceEndTask->ReadyForActivation();
 	}
 
-	// [하위 호환성] 구형 애니메이션 노티파이(ActiveHit) 이벤트도 동일한 핸들러로 라우팅
-	ActiveHitStartTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.Start"), false), nullptr, false, false);
-	if (ActiveHitStartTask)
-	{
-		ActiveHitStartTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleTraceEvent);
-		ActiveHitStartTask->ReadyForActivation();
-	}
-
-	ActiveHitEndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.End"), false), nullptr, false, false);
-	if (ActiveHitEndTask)
-	{
-		ActiveHitEndTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleTraceEvent);
-		ActiveHitEndTask->ReadyForActivation();
-	}
+	// [하위 호환] 구형 애니메이션 노티파이(ActiveHit) 이벤트는 TraceBegin/End 로 대체되었으므로 리스너 제거
+	// ActiveHitStartTask, ActiveHitEndTask 리스너를 더 이상 생성하지 않음 (이중 호출 방지)
 
 
 	ComboWindowOpenTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboWindowOpen")), nullptr, false, false);
