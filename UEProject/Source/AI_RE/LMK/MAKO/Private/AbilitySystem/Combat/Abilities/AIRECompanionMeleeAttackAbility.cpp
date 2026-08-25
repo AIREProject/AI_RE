@@ -624,8 +624,10 @@ void UAIRECompanionMeleeAttackAbility::ApplyHarvestWeaponVisibility()
 		CompanionCharacter->AreBackWeaponsVisible();
 	bPreviousHandWeaponsVisible =
 		CompanionCharacter->AreHandWeaponsVisible();
+	const bool bIsKatana = ActiveWeaponDefinition->WeaponTag.MatchesTagExact(
+		AIRECompanionGameplayTags::WeaponCompanionMeleeKatana);
 	CompanionCharacter->SetBackWeaponsVisible(false);
-	CompanionCharacter->SetHandWeaponsVisible(true);
+	CompanionCharacter->SetHandWeaponsVisible(!bIsKatana);
 	bHarvestWeaponVisibilityApplied = true;
 }
 
