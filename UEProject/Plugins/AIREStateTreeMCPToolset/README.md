@@ -78,8 +78,12 @@ Named state and node creation is retry-safe: a matching sibling state or a match
 3. For a combined animation sequence, use
    `ConfigureBasicAttackComboSectionsFromHits` to place named section boundaries
    between chronological hit notifies and reindex those notifies.
-4. Use `ConfigureBasicAttackComboWindows` to add missing window states from each
-   hit notify to the padded end of its section.
+4. Use `ConfigureBasicAttackComboWindows` to add window states from each hit
+   notify to the padded end of its section. Pass either a fixed
+   `ComboStepCount`, or `ComboVariantStepCounts` for variable-length variants
+   (for example `[4, 3, 3, 3, 4, 4, 4]`). The tool replaces project-owned combo
+   windows and omits the final section of every declared variant. Pass zero and
+   an empty array to preserve the legacy single-chain behavior.
 5. Inspect the result and save the montage with `AssetTools.save_assets`.
 
 ## Enemy melee montage workflow

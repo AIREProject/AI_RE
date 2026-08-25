@@ -47,6 +47,11 @@ public:
 
 	bool IsCurrentWeaponInCategory(FGameplayTag WeaponCategory) const;
 	FGameplayAbilitySpecHandle FindGrantedAbilityHandle(FGameplayTag AbilityTag) const;
+	int32 GetLastBasicComboVariantIndex(
+		const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition) const;
+	void SetLastBasicComboVariantIndex(
+		UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition,
+		int32 VariantIndex);
 	void StartAttackTrail(
 		USkeletalMeshComponent* MeshComponent,
 		FName AttachSocket);
@@ -97,6 +102,7 @@ private:
 	TObjectPtr<UNiagaraComponent> ActiveAttackTrailComponent;
 
 	TWeakObjectPtr<UAbilitySystemComponent> AbilitySystem;
+	TMap<FSoftObjectPath, int32> LastBasicComboVariantIndices;
 
 	bool bCombatPresentationActive = false;
 	TArray<FGameplayAbilitySpecHandle> GrantedAbilityHandles;

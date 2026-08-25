@@ -83,9 +83,19 @@ FName ResolveTrailSocket(
 			WeaponDefinition.CombatSkill.TraceSocketOverride).TraceEndSocket;
 	}
 
+	int32 ResolvedStepIndex = ComboStepIndex;
+	if (!WeaponDefinition.ComboMontageVariants.IsEmpty())
+	{
+		int32 VariantIndex = INDEX_NONE;
+		AIRECompanionWeaponDefinition::ResolveComboVariantStepIndex(
+			WeaponDefinition.ComboMontageVariants,
+			ComboStepIndex,
+			VariantIndex,
+			ResolvedStepIndex);
+	}
 	const FAIREWeaponComboStepDefinition* ComboStep =
-		WeaponDefinition.ComboSteps.IsValidIndex(ComboStepIndex)
-			? &WeaponDefinition.ComboSteps[ComboStepIndex]
+		WeaponDefinition.ComboSteps.IsValidIndex(ResolvedStepIndex)
+			? &WeaponDefinition.ComboSteps[ResolvedStepIndex]
 			: nullptr;
 	const FAIREWeaponTraceSocketPair EmptyOverride;
 	return WeaponDefinition.ResolveTraceSockets(

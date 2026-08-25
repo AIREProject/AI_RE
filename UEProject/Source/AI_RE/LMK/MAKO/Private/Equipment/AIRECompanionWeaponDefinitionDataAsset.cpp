@@ -15,6 +15,59 @@ bool FAIREWeaponTraceSocketPair::IsPartiallyConfigured() const
 	return TraceStartSocket.IsNone() != TraceEndSocket.IsNone();
 }
 
+bool AIRECompanionWeaponDefinition::ResolveComboVariantStepIndex(
+	const TArray<FAIREWeaponComboMontageVariantDefinition>& Variants,
+	const int32 MontageStepIndex,
+	int32& OutVariantIndex,
+	int32& OutStepIndex)
+{
+	OutVariantIndex = INDEX_NONE;
+	OutStepIndex = INDEX_NONE;
+	if (MontageStepIndex < 0)
+	{
+		return false;
+	}
+
+	int32 FirstStepIndex = 0;
+	for (int32 VariantIndex = 0; VariantIndex < Variants.Num(); ++VariantIndex)
+	{
+		const int32 StepCount = Variants[VariantIndex].MontageSections.Num();
+		if (MontageStepIndex < FirstStepIndex + StepCount)
+		{
+			OutVariantIndex = VariantIndex;
+			OutStepIndex = MontageStepIndex - FirstStepIndex;
+			return true;
+		}
+		FirstStepIndex += StepCount;
+	}
+
+	return false;
+}
+
+int32 AIRECompanionWeaponDefinition::SelectNonRepeatingComboVariantIndex(
+	const int32 VariantCount,
+	const int32 PreviousVariantIndex,
+	FRandomStream& RandomStream)
+{
+	if (VariantCount <= 0)
+	{
+		return INDEX_NONE;
+	}
+	if (VariantCount == 1)
+	{
+		return 0;
+	}
+	if (PreviousVariantIndex < 0 || PreviousVariantIndex >= VariantCount)
+	{
+		return RandomStream.RandRange(0, VariantCount - 1);
+	}
+
+	const int32 CandidateIndex = RandomStream.RandRange(0, VariantCount - 2);
+	return CandidateIndex >= PreviousVariantIndex
+		? CandidateIndex + 1
+		: CandidateIndex;
+}
+
 UAIRECompanionWeaponDefinitionDataAsset::UAIRECompanionWeaponDefinitionDataAsset()
 {
 	LeftTraceSockets.TraceStartSocket = FName(TEXT("weapon_l"));
@@ -231,6 +284,58 @@ bool UAIRECompanionWeaponDefinitionDataAsset::IsWeaponDefinitionValid(FText& Out
 			return false;
 		}
 
+	}
+
+	TSet<FName> VariantMontageSections;
+	for (int32 VariantIndex = 0;
+		VariantIndex < ComboMontageVariants.Num();
+		++VariantIndex)
+	{
+		const FAIREWeaponComboMontageVariantDefinition& Variant =
+			ComboMontageVariants[VariantIndex];
+		if (Variant.MontageSections.IsEmpty()
+			|| Variant.MontageSections.Num() > ComboSteps.Num())
+		{
+			OutValidationError = FText::Format(
+				NSLOCTEXT(
+					"AIRECompanionWeaponDefinition",
+					"InvalidComboVariantStepCount",
+					"Combo Variant {0} must contain between 1 and {1} Montage Sections."),
+				FText::AsNumber(VariantIndex),
+				FText::AsNumber(ComboSteps.Num()));
+			return false;
+		}
+
+		for (int32 StepIndex = 0;
+			StepIndex < Variant.MontageSections.Num();
+			++StepIndex)
+		{
+			const FName SectionName = Variant.MontageSections[StepIndex];
+			if (SectionName.IsNone())
+			{
+				OutValidationError = FText::Format(
+					NSLOCTEXT(
+						"AIRECompanionWeaponDefinition",
+						"MissingComboVariantMontageSection",
+						"Combo Variant {0} Step {1} must specify a Montage Section."),
+					FText::AsNumber(VariantIndex),
+					FText::AsNumber(StepIndex));
+				return false;
+			}
+			if (VariantMontageSections.Contains(SectionName))
+			{
+				OutValidationError = FText::Format(
+					NSLOCTEXT(
+						"AIRECompanionWeaponDefinition",
+						"DuplicateComboVariantMontageSection",
+						"Combo Variant {0} Step {1} uses duplicate Montage Section '{2}'."),
+					FText::AsNumber(VariantIndex),
+					FText::AsNumber(StepIndex),
+					FText::FromName(SectionName));
+				return false;
+			}
+			VariantMontageSections.Add(SectionName);
+		}
 	}
 
 	if (!FMath::IsFinite(AttackRange) || AttackRange < 0.0f)
