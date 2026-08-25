@@ -189,6 +189,11 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 
 void UAI_RETargetScannerComponent::PerformCombatTargetCheck()
 {
+	if (!bIsCombatScanEnabled)
+	{
+		return;
+	}
+
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor) return;
 
@@ -212,6 +217,45 @@ void UAI_RETargetScannerComponent::PerformCombatTargetCheck()
 		bool bIsDead = !IsPlayerTargetCandidate(CurrentTarget);
 		
 		if (bIsDead || DistSq > FMath::Square(MaxCombatLockDistance))
+		{
+			bIsCombatState = false;
+			CurrentCombatTarget.Reset();
+			OnCombatStateChanged.Broadcast(false, nullptr);
+		}
+	}
+}
+
+void UAI_RETargetScannerComponent::ToggleCombatScanner()
+{
+	SetCombatScannerEnabled(!bIsCombatScanEnabled);
+}
+
+void UAI_RETargetScannerComponent::SetCombatScannerEnabled(bool bEnable)
+{
+	if (bIsCombatScanEnabled == bEnable)
+	{
+		return;
+	}
+
+	bIsCombatScanEnabled = bEnable;
+
+	if (bIsCombatScanEnabled)
+	{
+		// 켜졌을 때 즉시 한 번 체크하도록 타이머 재시작
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(CombatScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformCombatTargetCheck, ScanInterval, true);
+		}
+	}
+	else
+	{
+		// 꺼졌을 때 타이머 중지 및 록온 해제
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
+		}
+
+		if (bIsCombatState)
 		{
 			bIsCombatState = false;
 			CurrentCombatTarget.Reset();

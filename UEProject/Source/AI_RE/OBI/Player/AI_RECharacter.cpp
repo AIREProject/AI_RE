@@ -160,6 +160,11 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 			EnhancedInputComponent->BindAction(AttackAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoAttack);
 		}
 
+		if (ToggleScannerAction)
+		{
+			EnhancedInputComponent->BindAction(ToggleScannerAction, ETriggerEvent::Started, this, &AAI_RECharacter::ToggleScanner);
+		}
+
 		if (EvadeAction)
 		{
 			EnhancedInputComponent->BindAction(EvadeAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoEvade);
@@ -478,6 +483,14 @@ void AAI_RECharacter::DoAttack()
 			|| !CombatEvadeComponent->IsEvading()))
 	{
 		CombatComponent->TryStartPrimaryAction();
+	}
+}
+
+void AAI_RECharacter::ToggleScanner()
+{
+	if (IsValid(TargetScannerComponent))
+	{
+		TargetScannerComponent->ToggleCombatScanner();
 	}
 }
 

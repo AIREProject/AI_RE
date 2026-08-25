@@ -43,9 +43,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void ResetCachedTarget();
 
-	/** 모든 스캔을 정지하고 락온을 풉니다 (플레이어 사망 시 호출) */
+	/** 모든 스캔을 중단하고 캐시된 타겟 초기화 (플레이어 사망 시 호출) */
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void StopScanning();
+
+	/** 전투 스캔(록온) 기능 토글 */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void ToggleCombatScanner();
+
+	/** 전투 스캔 기능 강제 On/Off */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void SetCombatScannerEnabled(bool bEnable);
+
+	/** 전투 스캔이 켜져있는지 여부 반환 */
+	UFUNCTION(BlueprintPure, Category = "Scanner")
+	bool IsCombatScannerEnabled() const { return bIsCombatScanEnabled; }
+
 
 protected:
 	AActor* ScanForward(
@@ -90,5 +103,6 @@ protected:
 
 private:
 	bool bIsCombatState = false;
+	bool bIsCombatScanEnabled = true;
 	TWeakObjectPtr<AActor> CurrentCombatTarget;
 };
