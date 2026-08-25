@@ -25,7 +25,10 @@ public:
 	EAIRECompanionMeleeTraceMode TraceMode =
 		EAIRECompanionMeleeTraceMode::BasicAttack;
 
-	/** Used only for Basic Attack combo sections. */
+	/**
+	 * Used only for Basic Attack combo sections. Variant montages use the
+	 * cumulative Section index across all preceding variable-length variants.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Companion|Attack", meta = (ClampMin = "0", UIMin = "0"))
 	int32 ComboStepIndex = 0;
 

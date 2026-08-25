@@ -71,7 +71,7 @@ void AIRECompanionCombatVFX::SpawnBossHitSlash(
 {
 	const AAIREBossEnemy* Boss = Cast<AAIREBossEnemy>(TargetActor);
 	UNiagaraSystem* SlashEffect = IsValid(WeaponDefinition)
-		? WeaponDefinition->BossHitSlashEffect.Get()
+		? WeaponDefinition->BossHitSlashEffect.LoadSynchronous()
 		: nullptr;
 	UWorld* World = IsValid(SourceActor) ? SourceActor->GetWorld() : nullptr;
 	if (!IsValid(Boss) || !IsValid(SlashEffect) || !IsValid(World))
@@ -93,11 +93,11 @@ void AIRECompanionCombatVFX::SpawnBossHitSlash(
 		WeaponDefinition->BossHitSlashRotationOffset.ContainsNaN()
 			? FRotator::ZeroRotator
 			: WeaponDefinition->BossHitSlashRotationOffset;
-	const FQuat EffectRotation = RotationOffset.Quaternion()
-		* ResolveSlashRotation(
+	const FQuat EffectRotation = ResolveSlashRotation(
 			ImpactNormal,
 			SourceActor,
-			TargetActor).Quaternion();
+			TargetActor).Quaternion()
+		* RotationOffset.Quaternion();
 	const FVector EffectScale =
 		WeaponDefinition->BossHitSlashScale.ContainsNaN()
 			? FVector::OneVector

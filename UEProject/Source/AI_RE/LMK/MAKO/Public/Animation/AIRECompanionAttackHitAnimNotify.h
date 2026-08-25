@@ -15,7 +15,10 @@ public:
 		UAnimSequenceBase* Animation,
 		const FAnimNotifyEventReference& EventReference) override;
 
-	/** Zero-based index matching the Weapon Definition Combo Steps array. */
+	/**
+	 * Zero-based Combo Step index. Variant montages use the cumulative Section
+	 * index across all preceding variable-length variants.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack", meta = (ClampMin = "0", UIMin = "0"))
 	int32 ComboStepIndex = 0;
 };

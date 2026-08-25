@@ -78,6 +78,10 @@ void AAI_REHarvestableResourceActor::HandleHarvested(
 {
 	(void)AppliedDamage;
 	(void)CurrentHealth;
+
+	// 타격감이 발생하도록 블루프린트 이벤트 호출
+	PlayHitReactVisual(InstigatorActor, AppliedDamage);
+
 	if (GrantedRewardAmount <= 0
 		|| RewardItemAsset == nullptr
 		|| !DeliveryId.IsValid()

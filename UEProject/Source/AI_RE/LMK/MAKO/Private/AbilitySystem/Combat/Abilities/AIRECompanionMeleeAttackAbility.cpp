@@ -13,9 +13,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/AIRECompanionAIController.h"
 #include "Core/AIRECompanionCharacter.h"
+#include "Equipment/AIRECompanionEquipmentComponent.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "Threat/AIRECompanionThreatComponent.h"
-#include "LocalAI/Threat/AIREThreatTargetInterface.h"
+#include "LocalAI/Threat/AIREThreatTargetInterface.h" 
 #include "Work/AIRECompanionWorkOrderComponent.h"
 #include "AI_REHarvestDamageTarget.h"
 #include "AI_REHarvestableResourceActor.h"
@@ -64,6 +65,8 @@ UAIRECompanionMeleeAttackAbility::UAIRECompanionMeleeAttackAbility()
 		AIRECompanionGameplayTags::StateActionAttackingBasic);
 	ActivationBlockedTags.AddTag(
 		AIRECompanionGameplayTags::StateActionAttackingSkill);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionEquipping);
 	CooldownGameplayEffectClass = UAIRECompanionAttackCooldownGameplayEffect::StaticClass();
 }
 
@@ -81,11 +84,23 @@ void UAIRECompanionMeleeAttackAbility::ActivateAbility(
 	CurrentStepIndex = 0;
 	ResumeStepIndex = INDEX_NONE;
 	ActiveWeaponDefinition = GetWeaponDefinition(Handle, ActorInfo);
-
+	if (const AAIRECompanionCharacter* CompanionCharacter =
+			Cast<AAIRECompanionCharacter>(
+				ActorInfo ? ActorInfo->AvatarActor.Get() : nullptr))
+	{
+		if (const UAIRECompanionEquipmentComponent* EquipmentComponent =
+				CompanionCharacter->GetEquipmentComponent())
+		{
+			LastSelectedComboVariantIndex =
+				EquipmentComponent->GetLastBasicComboVariantIndex(
+					ActiveWeaponDefinition);
+		}
+	}
 	const bool bHasEventTarget = InitializeEventTarget(TriggerEventData);
 	ActiveExecutionMode = bHasEventTarget
 		? ResolveExecutionMode(GetEventTarget())
 		: EExecutionMode::None;
+	InitializeComboVariantSelection();
 	AttackRange = 0.0f;
 	if (IsValid(ActiveWeaponDefinition))
 	{
@@ -223,6 +238,8 @@ void UAIRECompanionMeleeAttackAbility::EndAbility(
 	ActiveExecutionMode = EExecutionMode::None;
 	CurrentStepIndex = INDEX_NONE;
 	ResumeStepIndex = INDEX_NONE;
+	ActiveComboVariantIndex = INDEX_NONE;
+	PendingComboVariantIndex = INDEX_NONE;
 	bCurrentStepHitConsumed = false;
 	bCurrentStepPointSampleConsumed = false;
 	bTraceWindowEverOpened = false;
@@ -264,6 +281,21 @@ int32 UAIRECompanionMeleeAttackAbility::GetAttackStepCount() const
 		return 0;
 	}
 
+	if (HasComboMontageVariants())
+	{
+		return ActiveWeaponDefinition->ComboMontageVariants.IsValidIndex(
+			ActiveComboVariantIndex)
+			? ActiveWeaponDefinition->ComboMontageVariants[
+				ActiveComboVariantIndex].MontageSections.Num()
+			: 0;
+	}
+	if (ActiveExecutionMode == EExecutionMode::Harvest
+		&& !ActiveWeaponDefinition->ComboMontageVariants.IsEmpty())
+	{
+		return ActiveWeaponDefinition->ComboMontageVariants[0]
+			.MontageSections.Num();
+	}
+
 	return ActiveWeaponDefinition->ComboSteps.IsEmpty()
 		? 1
 		: ActiveWeaponDefinition->ComboSteps.Num();
@@ -294,7 +326,131 @@ FName UAIRECompanionMeleeAttackAbility::GetAttackStepMontageSection(const int32 
 		return NAME_None;
 	}
 
+	if (!ActiveWeaponDefinition->ComboMontageVariants.IsEmpty())
+	{
+		return GetComboVariantMontageSection(
+			HasComboMontageVariants() ? ActiveComboVariantIndex : 0,
+			StepIndex);
+	}
+
 	return ActiveWeaponDefinition->ComboSteps[StepIndex].MontageSection;
+}
+
+FName UAIRECompanionMeleeAttackAbility::GetComboVariantMontageSection(
+	const int32 VariantIndex,
+	const int32 StepIndex) const
+{
+	if (!IsValid(ActiveWeaponDefinition)
+		|| ActiveWeaponDefinition->ComboMontageVariants.IsEmpty()
+		|| !ActiveWeaponDefinition->ComboMontageVariants.IsValidIndex(
+			VariantIndex))
+	{
+		return NAME_None;
+	}
+
+	const FAIREWeaponComboMontageVariantDefinition& Variant =
+		ActiveWeaponDefinition->ComboMontageVariants[VariantIndex];
+	return Variant.MontageSections.IsValidIndex(StepIndex)
+		? Variant.MontageSections[StepIndex]
+		: NAME_None;
+}
+
+bool UAIRECompanionMeleeAttackAbility::HasComboMontageVariants() const
+{
+	return ActiveExecutionMode == EExecutionMode::Combat
+		&& IsValid(ActiveWeaponDefinition)
+		&& !ActiveWeaponDefinition->ComboSteps.IsEmpty()
+		&& !ActiveWeaponDefinition->ComboMontageVariants.IsEmpty();
+}
+
+void UAIRECompanionMeleeAttackAbility::InitializeComboVariantSelection()
+{
+	ActiveComboVariantIndex = INDEX_NONE;
+	PendingComboVariantIndex = INDEX_NONE;
+	if (!HasComboMontageVariants())
+	{
+		return;
+	}
+
+	if (!bComboVariantRandomInitialized)
+	{
+		ComboVariantRandomStream.Initialize(FMath::Rand());
+		bComboVariantRandomInitialized = true;
+	}
+
+	ActiveComboVariantIndex =
+		AIRECompanionWeaponDefinition::SelectNonRepeatingComboVariantIndex(
+			ActiveWeaponDefinition->ComboMontageVariants.Num(),
+			LastSelectedComboVariantIndex,
+			ComboVariantRandomStream);
+	LastSelectedComboVariantIndex = ActiveComboVariantIndex;
+	CacheLastSelectedComboVariant();
+	PrepareNextComboVariant();
+}
+
+void UAIRECompanionMeleeAttackAbility::PrepareNextComboVariant()
+{
+	PendingComboVariantIndex = HasComboMontageVariants()
+		? AIRECompanionWeaponDefinition::
+			SelectNonRepeatingComboVariantIndex(
+				ActiveWeaponDefinition->ComboMontageVariants.Num(),
+				ActiveComboVariantIndex,
+				ComboVariantRandomStream)
+		: INDEX_NONE;
+}
+
+void UAIRECompanionMeleeAttackAbility::CacheLastSelectedComboVariant() const
+{
+	AAIRECompanionCharacter* CompanionCharacter =
+		Cast<AAIRECompanionCharacter>(GetAvatarActorFromActorInfo());
+	UAIRECompanionEquipmentComponent* EquipmentComponent =
+		IsValid(CompanionCharacter)
+			? CompanionCharacter->GetEquipmentComponent()
+			: nullptr;
+	if (IsValid(EquipmentComponent))
+	{
+		EquipmentComponent->SetLastBasicComboVariantIndex(
+			ActiveWeaponDefinition,
+			LastSelectedComboVariantIndex);
+	}
+}
+
+void UAIRECompanionMeleeAttackAbility::ConfigureCurrentComboMontageLinks()
+{
+	if (!HasComboMontageVariants())
+	{
+		return;
+	}
+
+	for (int32 VariantIndex = 0;
+		VariantIndex < ActiveWeaponDefinition->ComboMontageVariants.Num();
+		++VariantIndex)
+	{
+		const FAIREWeaponComboMontageVariantDefinition& Variant =
+			ActiveWeaponDefinition->ComboMontageVariants[VariantIndex];
+		for (const FName SectionName : Variant.MontageSections)
+		{
+			MontageSetNextSectionName(SectionName, NAME_None);
+		}
+	}
+
+	if (CurrentStepIndex + 1 < GetAttackStepCount())
+	{
+		MontageSetNextSectionName(
+			GetAttackStepMontageSection(CurrentStepIndex),
+			GetAttackStepMontageSection(CurrentStepIndex + 1));
+	}
+
+	const FName LastSection = GetComboVariantMontageSection(
+		ActiveComboVariantIndex,
+		GetAttackStepCount() - 1);
+	const FName PendingFirstSection = GetComboVariantMontageSection(
+		PendingComboVariantIndex,
+		0);
+	if (!LastSection.IsNone() && !PendingFirstSection.IsNone())
+	{
+		MontageSetNextSectionName(LastSection, PendingFirstSection);
+	}
 }
 
 float UAIRECompanionMeleeAttackAbility::GetAttackStepStaggerValue(
@@ -527,9 +683,36 @@ bool UAIRECompanionMeleeAttackAbility::AreComboMontageSectionsValid(
 		return false;
 	}
 
-	for (const FAIREWeaponComboStepDefinition& ComboStep : ActiveWeaponDefinition->ComboSteps)
+	if (!ActiveWeaponDefinition->ComboMontageVariants.IsEmpty())
 	{
-		if (AttackMontage->GetSectionIndex(ComboStep.MontageSection) == INDEX_NONE)
+		for (const FAIREWeaponComboMontageVariantDefinition& Variant
+			: ActiveWeaponDefinition->ComboMontageVariants)
+		{
+			if (Variant.MontageSections.IsEmpty()
+				|| Variant.MontageSections.Num()
+					> ActiveWeaponDefinition->ComboSteps.Num())
+			{
+				return false;
+			}
+
+			for (const FName SectionName : Variant.MontageSections)
+			{
+				if (SectionName.IsNone()
+					|| AttackMontage->GetSectionIndex(SectionName)
+						== INDEX_NONE)
+				{
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	for (const FAIREWeaponComboStepDefinition& ComboStep
+		: ActiveWeaponDefinition->ComboSteps)
+	{
+		if (AttackMontage->GetSectionIndex(ComboStep.MontageSection)
+			== INDEX_NONE)
 		{
 			return false;
 		}
@@ -556,33 +739,73 @@ bool UAIRECompanionMeleeAttackAbility::TryStartNextStep()
 	return true;
 }
 
-void UAIRECompanionMeleeAttackAbility::PrepareHarvestComboLoopStep(
-	const int32 PayloadStepIndex)
+void UAIRECompanionMeleeAttackAbility::PrepareComboLoopStep(
+	const int32 PayloadStepIndex,
+	const int32 PayloadVariantIndex)
 {
 	const int32 LastStepIndex = GetAttackStepCount() - 1;
-	if (ActiveExecutionMode != EExecutionMode::Harvest
-		|| PayloadStepIndex != 0
-		|| CurrentStepIndex != LastStepIndex)
+	if (PayloadStepIndex != 0
+		|| CurrentStepIndex != LastStepIndex
+		|| (HasComboMontageVariants()
+			&& PayloadVariantIndex != PendingComboVariantIndex))
 	{
 		return;
 	}
 
 	AActor* TargetActor = GetEventTarget();
-	if (!IsActiveExecutionValid()
-		|| !IsTargetInRange(TargetActor))
+	bool bCanContinueLoop = IsActiveExecutionValid()
+		&& IsTargetInRange(TargetActor);
+	if (bCanContinueLoop && ActiveExecutionMode == EExecutionMode::Combat)
+	{
+		const APawn* AvatarPawn = Cast<APawn>(GetAvatarActorFromActorInfo());
+		const AAIRECompanionAIController* CompanionController =
+			IsValid(AvatarPawn)
+				? Cast<AAIRECompanionAIController>(AvatarPawn->GetController())
+				: nullptr;
+		const UAIRECompanionThreatComponent* ThreatComponent =
+			IsValid(CompanionController)
+				? CompanionController->GetThreatComponent()
+				: nullptr;
+		bCanContinueLoop = IsValid(ThreatComponent)
+			&& ThreatComponent->IsCombatRequested()
+			&& ThreatComponent->GetSelectedThreatTarget() == TargetActor;
+	}
+
+	if (!bCanContinueLoop)
 	{
 		FinishAbility(false);
 		return;
 	}
 
+	if (HasComboMontageVariants())
+	{
+		if (!ActiveWeaponDefinition->ComboMontageVariants.IsValidIndex(
+			PendingComboVariantIndex))
+		{
+			FinishAbility(true);
+			return;
+		}
+
+		ActiveComboVariantIndex = PendingComboVariantIndex;
+		LastSelectedComboVariantIndex = ActiveComboVariantIndex;
+		CacheLastSelectedComboVariant();
+		PrepareNextComboVariant();
+	}
+
 	CurrentStepIndex = 0;
 	ResetCurrentStepState();
 	FaceTarget(TargetActor);
+	ConfigureCurrentComboMontageLinks();
 	UE_LOG(
 		LogAIRECompanionMeleeAttack,
 		Verbose,
-		TEXT("Companion harvest combo looped without returning to locomotion. Target=%s"),
-		*GetNameSafe(TargetActor));
+		TEXT("Companion combo looped without returning to locomotion. Mode=%s Target=%s Variant=%d PendingVariant=%d"),
+		ActiveExecutionMode == EExecutionMode::Harvest
+			? TEXT("Harvest")
+			: TEXT("Combat"),
+		*GetNameSafe(TargetActor),
+		ActiveComboVariantIndex,
+		PendingComboVariantIndex);
 }
 
 void UAIRECompanionMeleeAttackAbility::ApplyHarvestWeaponVisibility()
@@ -603,8 +826,10 @@ void UAIRECompanionMeleeAttackAbility::ApplyHarvestWeaponVisibility()
 		CompanionCharacter->AreBackWeaponsVisible();
 	bPreviousHandWeaponsVisible =
 		CompanionCharacter->AreHandWeaponsVisible();
+	const bool bIsKatana = ActiveWeaponDefinition->WeaponTag.MatchesTagExact(
+		AIRECompanionGameplayTags::WeaponCompanionMeleeKatana);
 	CompanionCharacter->SetBackWeaponsVisible(false);
-	CompanionCharacter->SetHandWeaponsVisible(true);
+	CompanionCharacter->SetHandWeaponsVisible(!bIsKatana);
 	bHarvestWeaponVisibilityApplied = true;
 }
 
@@ -695,7 +920,11 @@ bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
 		&UAIRECompanionMeleeAttackAbility::HandleMontageInterrupted);
 	MontageTask->ReadyForActivation();
 
-	if (!ActiveWeaponDefinition->ComboSteps.IsEmpty())
+	if (HasComboMontageVariants())
+	{
+		ConfigureCurrentComboMontageLinks();
+	}
+	else if (!ActiveWeaponDefinition->ComboSteps.IsEmpty())
 	{
 		for (const FAIREWeaponComboStepDefinition& ComboStep
 			: ActiveWeaponDefinition->ComboSteps)
@@ -705,12 +934,9 @@ bool UAIRECompanionMeleeAttackAbility::StartAttackMontage()
 				NAME_None);
 		}
 
-		if (ActiveExecutionMode == EExecutionMode::Harvest)
-		{
-			MontageSetNextSectionName(
-				GetAttackStepMontageSection(GetAttackStepCount() - 1),
-				GetAttackStepMontageSection(0));
-		}
+		MontageSetNextSectionName(
+			GetAttackStepMontageSection(GetAttackStepCount() - 1),
+			GetAttackStepMontageSection(0));
 
 		if (CurrentStepIndex + 1 < GetAttackStepCount())
 		{
@@ -761,8 +987,11 @@ bool UAIRECompanionMeleeAttackAbility::ResumeAfterCombatSkill()
 
 bool UAIRECompanionMeleeAttackAbility::TryGetEventStepIndex(
 	const FGameplayEventData& Payload,
-	int32& OutStepIndex) const
+	int32& OutStepIndex,
+	int32& OutVariantIndex) const
 {
+	OutStepIndex = INDEX_NONE;
+	OutVariantIndex = INDEX_NONE;
 	if (!FMath::IsFinite(Payload.EventMagnitude))
 	{
 		return false;
@@ -770,15 +999,46 @@ bool UAIRECompanionMeleeAttackAbility::TryGetEventStepIndex(
 
 	const int32 PayloadStepIndex = FMath::RoundToInt(Payload.EventMagnitude);
 	if (!FMath::IsNearlyEqual(
-			Payload.EventMagnitude,
-			static_cast<float>(PayloadStepIndex))
-		|| !IsAttackStepIndexValid(PayloadStepIndex))
+		Payload.EventMagnitude,
+		static_cast<float>(PayloadStepIndex)))
+	{
+		return false;
+	}
+
+	if (bUsingFallback)
+	{
+		if (!IsAttackStepIndexValid(PayloadStepIndex))
+		{
+			return false;
+		}
+		OutStepIndex = PayloadStepIndex;
+		OutVariantIndex = ActiveComboVariantIndex;
+		return true;
+	}
+
+	if (HasComboMontageVariants())
+	{
+		return AIRECompanionWeaponDefinition::ResolveComboVariantStepIndex(
+			ActiveWeaponDefinition->ComboMontageVariants,
+			PayloadStepIndex,
+			OutVariantIndex,
+			OutStepIndex);
+	}
+
+	if (!IsAttackStepIndexValid(PayloadStepIndex))
 	{
 		return false;
 	}
 
 	OutStepIndex = PayloadStepIndex;
 	return true;
+}
+
+bool UAIRECompanionMeleeAttackAbility::IsEventVariantActive(
+	const int32 PayloadVariantIndex) const
+{
+	return !HasComboMontageVariants()
+		|| PayloadVariantIndex == ActiveComboVariantIndex;
 }
 
 bool UAIRECompanionMeleeAttackAbility::ResolveCurrentStepHit()
@@ -1417,17 +1677,22 @@ void UAIRECompanionMeleeAttackAbility::HandleHitEvent(
 	const FGameplayEventData Payload)
 {
 	int32 PayloadStepIndex = INDEX_NONE;
+	int32 PayloadVariantIndex = INDEX_NONE;
 	if (bIsEnding
 		|| bSuspendedForCombatSkill
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex))
+		|| !TryGetEventStepIndex(
+			Payload,
+			PayloadStepIndex,
+			PayloadVariantIndex))
 	{
 		return;
 	}
 
-	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	PrepareComboLoopStep(PayloadStepIndex, PayloadVariantIndex);
 	if (bIsEnding
 		|| bCurrentStepHitConsumed
 		|| bCurrentStepPointSampleConsumed
+		|| !IsEventVariantActive(PayloadVariantIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;
@@ -1458,11 +1723,22 @@ void UAIRECompanionMeleeAttackAbility::HandleTraceEvent(
 	const FGameplayEventData Payload)
 {
 	int32 PayloadStepIndex = INDEX_NONE;
+	int32 PayloadVariantIndex = INDEX_NONE;
 	if (bIsEnding
 		|| bSuspendedForCombatSkill
 		|| ActiveExecutionMode != EExecutionMode::Combat
+		|| !TryGetEventStepIndex(
+			Payload,
+			PayloadStepIndex,
+			PayloadVariantIndex))
+	{
+		return;
+	}
+
+	PrepareComboLoopStep(PayloadStepIndex, PayloadVariantIndex);
+	if (bIsEnding
 		|| bCurrentStepHitConsumed
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex)
+		|| !IsEventVariantActive(PayloadVariantIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;
@@ -1534,16 +1810,21 @@ void UAIRECompanionMeleeAttackAbility::HandleComboWindowEvent(
 	const FGameplayEventData Payload)
 {
 	int32 PayloadStepIndex = INDEX_NONE;
+	int32 PayloadVariantIndex = INDEX_NONE;
 	if (bIsEnding
 		|| bUsingFallback
-		|| !TryGetEventStepIndex(Payload, PayloadStepIndex))
+		|| !TryGetEventStepIndex(
+			Payload,
+			PayloadStepIndex,
+			PayloadVariantIndex))
 	{
 		return;
 	}
 
-	PrepareHarvestComboLoopStep(PayloadStepIndex);
+	PrepareComboLoopStep(PayloadStepIndex, PayloadVariantIndex);
 	if (bIsEnding
 		|| !IsActiveExecutionValid()
+		|| !IsEventVariantActive(PayloadVariantIndex)
 		|| PayloadStepIndex != CurrentStepIndex)
 	{
 		return;

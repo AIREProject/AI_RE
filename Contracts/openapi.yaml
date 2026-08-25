@@ -1,8 +1,11 @@
 openapi: 3.1.0
 info:
-  title: AI_RE Backend API
+  title: AI_RE Backend API (Legacy Reference)
   version: 0.1.0
-  description: Contract-first API for the A PC, B WebApp, and C Backend topology.
+  description: >-
+    Legacy pre-adoption contract. Do not use this file to generate current
+    clients or decide deployed endpoint support. See Contracts/README.md and
+    https://traip.mtvs2026.work/openapi.json for the current runtime contract.
 servers:
   - url: http://localhost:8000
     description: Local mock Backend

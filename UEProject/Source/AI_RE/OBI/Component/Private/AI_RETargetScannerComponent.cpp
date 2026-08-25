@@ -5,8 +5,6 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "AI_REInteractableInterface.h"
-#include "AI_REHarvestDamageTarget.h"
-#include "AI_REHarvestableResourceComponent.h"
 #include "AIRECombatDamageTargetInterface.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
@@ -26,12 +24,7 @@ namespace
 		{
 			return false;
 		}
-		if (Candidate->Implements<UAI_REHarvestDamageTarget>())
-		{
-			const UAI_REHarvestableResourceComponent* ResourceComponent =
-				Candidate->FindComponentByClass<UAI_REHarvestableResourceComponent>();
-			return !IsValid(ResourceComponent) || !ResourceComponent->IsDepleted();
-		}
+		
 		if (!Candidate->Implements<UAIRECombatDamageTargetInterface>())
 		{
 			return false;
@@ -61,6 +54,7 @@ void UAI_RETargetScannerComponent::BeginPlay()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(InteractionScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformInteractionPrecheck, ScanInterval, true);
+		World->GetTimerManager().SetTimer(CombatScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformCombatTargetCheck, ScanInterval, true);
 	}
 }
 
@@ -69,6 +63,7 @@ void UAI_RETargetScannerComponent::EndPlay(const EEndPlayReason::Type EndPlayRea
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(InteractionScanTimerHandle);
+		World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
 	}
 	SetCachedInteractableTarget(nullptr);
 	
@@ -184,29 +179,44 @@ void UAI_RETargetScannerComponent::PerformInteractionPrecheck()
 			// TODO: UI 띄우기 로직 연동 (나중에 UIManager에서 캐싱된 타겟을 확인하여 띄우게 됩니다)
 			if (GEngine) GEngine->AddOnScreenDebugMessage(11, 0.5f, FColor::Yellow, FString::Printf(TEXT("[상호작용 가능] %s (by Component)"), *HitActor->GetName()));
 		}
+	}
+	else
+	{
+		SetCachedInteractableTarget(nullptr);
+		// TODO: UI 숨기기 연동
+	}
+}
 
-		// 적일 경우 자동 락온 방송
-		if (IsPlayerTargetCandidate(HitActor))
+void UAI_RETargetScannerComponent::PerformCombatTargetCheck()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor) return;
+
+	AActor* CurrentTarget = CurrentCombatTarget.Get();
+
+	if (!CurrentTarget)
+	{
+		// 탐색 모드: 8m(800) 범위 내 적 탐색
+		AActor* HitEnemy = ScanForwardForPlayerTarget(80.0f, 1000.0f, ECC_Pawn, false);
+		if (HitEnemy)
 		{
-			if (!bIsCombatState || CurrentCombatTarget.Get() != HitActor)
-			{
-				bIsCombatState = true;
-				CurrentCombatTarget = HitActor;
-				OnCombatStateChanged.Broadcast(true, HitActor);
-			}
+			bIsCombatState = true;
+			CurrentCombatTarget = HitEnemy;
+			OnCombatStateChanged.Broadcast(true, HitEnemy);
 		}
 	}
 	else
 	{
-		// 적이 사라졌으면 락온 해제 방송
-		if (bIsCombatState)
+		// 유지 모드: 최대 유지 거리(기본 10m)를 벗어나거나 죽으면 해제
+		float DistSq = FVector::DistSquared(OwnerActor->GetActorLocation(), CurrentTarget->GetActorLocation());
+		bool bIsDead = !IsPlayerTargetCandidate(CurrentTarget);
+		
+		if (bIsDead || DistSq > FMath::Square(MaxCombatLockDistance))
 		{
 			bIsCombatState = false;
 			CurrentCombatTarget.Reset();
 			OnCombatStateChanged.Broadcast(false, nullptr);
 		}
-		SetCachedInteractableTarget(nullptr);
-		// TODO: UI 숨기기 연동
 	}
 }
 
@@ -222,6 +232,24 @@ void UAI_RETargetScannerComponent::RefreshInteractableTarget()
 	{
 		SetCachedInteractableTarget(FindBestInteractableInFront(300.0f));
 	}
+}
+
+void UAI_RETargetScannerComponent::StopScanning()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InteractionScanTimerHandle);
+		World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
+	}
+	
+	if (bIsCombatState)
+	{
+		bIsCombatState = false;
+		CurrentCombatTarget.Reset();
+		OnCombatStateChanged.Broadcast(false, nullptr);
+	}
+	
+	SetCachedInteractableTarget(nullptr);
 }
 
 AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
@@ -302,7 +330,7 @@ void UAI_RETargetScannerComponent::SetCachedInteractableTarget(
 
 	SetInteractionOutlineEnabled(PreviousTarget, false);
 	CachedInteractableTarget = NewTarget;
-	SetInteractionOutlineEnabled(NewTarget, true);
+	SetInteractionOutlineEnabled(NewTarget, bInteractionOutlineVisible);
 }
 
 void UAI_RETargetScannerComponent::SetInteractionOutlineEnabled(
@@ -335,4 +363,12 @@ void UAI_RETargetScannerComponent::SetInteractionOutlineEnabled(
 void UAI_RETargetScannerComponent::ResetCachedTarget()
 {
 	SetCachedInteractableTarget(nullptr);
+}
+
+void UAI_RETargetScannerComponent::ToggleInteractionOutlineVisibility()
+{
+	bInteractionOutlineVisible = !bInteractionOutlineVisible;
+	SetInteractionOutlineEnabled(
+		CachedInteractableTarget.Get(),
+		bInteractionOutlineVisible);
 }

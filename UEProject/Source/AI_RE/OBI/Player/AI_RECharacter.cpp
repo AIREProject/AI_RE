@@ -79,6 +79,39 @@ AAI_RECharacter::AAI_RECharacter()
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
 }
 
+void AAI_RECharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 체력 변경 콜백 등록
+	if (AbilitySystemComponent)
+	{
+		HealthChangedDelegateHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHPAttribute()).AddUObject(this, &AAI_RECharacter::HandleHealthChanged);
+	}
+	
+	// 가장 확실하게 인벤토리와 크래프팅 컴포넌트를 연결!
+	if (CraftingComponent && InventoryComponent)
+	{
+		CraftingComponent->SetInventoryComponent(InventoryComponent);
+	}
+
+	if (TargetScannerComponent)
+	{
+		TargetScannerComponent->OnCombatStateChanged.AddDynamic(this, &AAI_RECharacter::HandleCombatStateChanged);
+	}
+}
+
+void AAI_RECharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (AbilitySystemComponent && HealthChangedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UAI_REAttributeSet::GetHPAttribute()).Remove(HealthChangedDelegateHandle);
+		HealthChangedDelegateHandle.Reset();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	// Set up action bindings
@@ -110,6 +143,11 @@ void AAI_RECharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		if (InteractAction)
 		{
 			EnhancedInputComponent->BindAction(InteractAction, ETriggerEvent::Started, this, &AAI_RECharacter::DoInteract);
+		}
+
+		if (InteractionOutlineToggleAction)
+		{
+			EnhancedInputComponent->BindAction(InteractionOutlineToggleAction, ETriggerEvent::Started, this, &AAI_RECharacter::ToggleInteractionOutline);
 		}
 
 		if (CraftAction)
@@ -242,6 +280,49 @@ void AAI_RECharacter::DebugTakeDamage(float DamageAmount)
 	}
 }
 
+void AAI_RECharacter::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
+{
+	// HP가 0 이하로 떨어졌을 때 죽음 처리
+	if (ChangeData.NewValue <= 0.0f && !bIsDead)
+	{
+		Die();
+	}
+}
+
+void AAI_RECharacter::Die()
+{
+	if (bIsDead) return;
+	bIsDead = true;
+
+	// 플레이어 조작 차단
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		DisableInput(PC);
+	}
+
+	// 락온 해제 및 스캔 중지 (카메라가 계속 보스를 따라가는 현상 방지)
+	if (TargetScannerComponent)
+	{
+		TargetScannerComponent->StopScanning();
+	}
+
+	// 진행 중인 모든 몽타주(피격 등) 정지 및 스킬 취소 (사망 애니메이션 씹힘 방지)
+	StopAnimMontage();
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
+
+	// 사망 애니메이션 몽타주가 세팅되어 있다면 재생합니다.
+	if (DeathMontage)
+	{
+		PlayAnimMontage(DeathMontage);
+	}
+	
+	// 블루프린트에서 UI 띄우기 등의 추가 연출 처리를 위해 호출합니다.
+	OnPlayerDied();
+}
+
 void AAI_RECharacter::UseQuickSlot(int32 SlotIndex)
 {
 	if (InventoryComponent)
@@ -364,22 +445,6 @@ bool AAI_RECharacter::IsCraftingUIOpen() const
 		&& CraftingUIInstance->IsInViewport();
 }
 
-void AAI_RECharacter::BeginPlay()
-{
-	Super::BeginPlay();
-
-	// 가장 확실하게 인벤토리와 크래프팅 컴포넌트를 연결!
-	if (CraftingComponent && InventoryComponent)
-	{
-		CraftingComponent->SetInventoryComponent(InventoryComponent);
-	}
-
-	if (TargetScannerComponent)
-	{
-		TargetScannerComponent->OnCombatStateChanged.AddDynamic(this, &AAI_RECharacter::HandleCombatStateChanged);
-	}
-}
-
 void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 {
 	// TargetScannerComponent에서 캐싱된 상호작용 대상을 가져와 즉시 상호작용
@@ -390,6 +455,16 @@ void AAI_RECharacter::DoInteract(const FInputActionValue& Value)
 			IAI_REInteractableInterface::Execute_Interact(Target, this);
 			return;
 		}
+	}
+}
+
+void AAI_RECharacter::ToggleInteractionOutline(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (TargetScannerComponent)
+	{
+		TargetScannerComponent->ToggleInteractionOutlineVisibility();
 	}
 }
 

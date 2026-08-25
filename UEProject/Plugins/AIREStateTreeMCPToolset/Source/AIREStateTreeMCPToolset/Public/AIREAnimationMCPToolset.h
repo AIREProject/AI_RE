@@ -255,6 +255,19 @@ public:
 	static FAIREAnimationComboMontageResult InspectBasicAttackComboMontage(UAnimMontage* Montage);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationComboMontageResult ConfigureBasicAttackHitNotifies(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		const TArray<float>& HitTimes);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
+	static FAIREAnimationComboMontageResult ConfigureKatanaAttachmentNotify(
+		UAnimMontage* Montage,
+		FName NotifyTrackName,
+		float NotifyTime,
+		bool bAttachToHand);
+
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Mutation")
 	static FAIREAnimationComboMontageResult ConfigureBasicAttackComboSectionsFromHits(
 		UAnimMontage* Montage,
 		const TArray<FName>& SectionNames,
@@ -271,7 +284,9 @@ public:
 		UAnimMontage* Montage,
 		FName NotifyTrackName,
 		float WindowStartOffsetAfterHit,
-		float SectionEndPadding);
+		float SectionEndPadding,
+		int32 ComboStepCount,
+		const TArray<int32>& ComboVariantStepCounts);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
 	static FAIREAnimationNotifyMutationResult InspectEnemyMeleeTraceMontage(

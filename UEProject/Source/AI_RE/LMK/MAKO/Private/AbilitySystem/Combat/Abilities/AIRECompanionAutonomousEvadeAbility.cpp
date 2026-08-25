@@ -36,6 +36,8 @@ UAIRECompanionAutonomousEvadeAbility()
 		AIRECompanionGameplayTags::StateActionEvading);
 	ActivationBlockedTags.AddTag(
 		AIRECompanionGameplayTags::CooldownAutonomousEvade);
+	ActivationBlockedTags.AddTag(
+		AIRECompanionGameplayTags::StateActionEquipping);
 }
 
 bool UAIRECompanionAutonomousEvadeAbility::CanActivateAbility(

@@ -2,6 +2,7 @@
 
 #include "Animation/AIRECompanionAttackHitAnimNotify.h"
 #include "Animation/AIRECompanionComboWindowAnimNotifyState.h"
+#include "Animation/AIRECompanionKatanaAttachmentAnimNotify.h"
 #include "Animation/AIRECompanionMeleeTraceAnimNotifyState.h"
 #include "AIREEnemyAttackMovementAnimNotifyState.h"
 #include "AIREEnemyAttackTempoAnimNotifyState.h"
@@ -720,11 +721,231 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::InspectBasicAttackCom
 	return Result;
 }
 
+FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackHitNotifies(
+	UAnimMontage* Montage,
+	const FName NotifyTrackName,
+	const TArray<float>& HitTimes)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeAnimationFailure(Error);
+	}
+	if (NotifyTrackName.IsNone())
+	{
+		return MakeAnimationFailure(TEXT("NotifyTrackName must not be None."));
+	}
+	if (HitTimes.Num() != Montage->GetNumSections())
+	{
+		return MakeAnimationFailure(
+			FString::Printf(
+				TEXT("Expected one hit time per section (%d), but received %d."),
+				Montage->GetNumSections(),
+				HitTimes.Num()));
+	}
+
+	for (int32 StepIndex = 0; StepIndex < HitTimes.Num(); ++StepIndex)
+	{
+		float SectionStartTime = 0.0f;
+		float SectionEndTime = 0.0f;
+		Montage->GetSectionStartAndEndTime(
+			StepIndex,
+			SectionStartTime,
+			SectionEndTime);
+		const float HitTime = HitTimes[StepIndex];
+		if (!FMath::IsFinite(HitTime)
+			|| HitTime < SectionStartTime
+			|| HitTime >= SectionEndTime)
+		{
+			return MakeAnimationFailure(
+				FString::Printf(
+					TEXT("Hit %d at %.3f is outside section %s (%.3f-%.3f)."),
+					StepIndex,
+					HitTime,
+					*Montage->GetSectionName(StepIndex).ToString(),
+					SectionStartTime,
+					SectionEndTime));
+		}
+	}
+
+	TArray<FAIREComboNotifyEntry> ExistingHits;
+	TArray<FAIREComboNotifyEntry> ExistingWindows;
+	GatherComboNotifies(*Montage, ExistingHits, ExistingWindows);
+	bool bAlreadyConfigured = ExistingHits.Num() == HitTimes.Num();
+	for (int32 StepIndex = 0;
+		bAlreadyConfigured && StepIndex < HitTimes.Num();
+		++StepIndex)
+	{
+		bAlreadyConfigured =
+			ExistingHits[StepIndex].StepIndex == StepIndex
+			&& FMath::IsNearlyEqual(
+				ExistingHits[StepIndex].StartTime,
+				HitTimes[StepIndex],
+				0.001f);
+	}
+	if (bAlreadyConfigured)
+	{
+		FAIREAnimationComboMontageResult Result;
+		PopulateInspection(*Montage, Result);
+		Result.bSuccess = true;
+		Result.Message = TEXT("The requested attack hit notifies are already configured.");
+		return Result;
+	}
+
+	const FScopedTransaction Transaction(
+		LOCTEXT("ConfigureBasicAttackHitNotifies", "Configure Basic Attack Hit Notifies"));
+	Montage->Modify();
+	Montage->Notifies.RemoveAll(
+		[](const FAnimNotifyEvent& NotifyEvent)
+		{
+			return IsValid(Cast<UAIRECompanionAttackHitAnimNotify>(
+				NotifyEvent.Notify));
+		});
+
+	if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(
+		Montage,
+		NotifyTrackName))
+	{
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(
+			Montage,
+			NotifyTrackName);
+	}
+
+	for (int32 StepIndex = 0; StepIndex < HitTimes.Num(); ++StepIndex)
+	{
+		UAIRECompanionAttackHitAnimNotify* HitNotify =
+			NewObject<UAIRECompanionAttackHitAnimNotify>(
+				Montage,
+				NAME_None,
+				RF_Transactional);
+		HitNotify->ComboStepIndex = StepIndex;
+		UAnimationBlueprintLibrary::AddAnimationNotifyEventObject(
+			Montage,
+			HitTimes[StepIndex],
+			HitNotify,
+			NotifyTrackName);
+	}
+
+	Montage->RefreshCacheData();
+	Montage->MarkPackageDirty();
+
+	FAIREAnimationComboMontageResult Result;
+	PopulateInspection(*Montage, Result);
+	Result.bSuccess = Result.HitNotifyCount == HitTimes.Num();
+	Result.Message = Result.bSuccess
+		? FString::Printf(
+			TEXT("Configured %d attack hit notifies."),
+			HitTimes.Num())
+		: TEXT("The montage did not end with the requested attack hit notifies.");
+	return Result;
+}
+
+FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureKatanaAttachmentNotify(
+	UAnimMontage* Montage,
+	const FName NotifyTrackName,
+	const float NotifyTime,
+	const bool bAttachToHand)
+{
+	FString Error;
+	if (!ValidateMontage(Montage, Error))
+	{
+		return MakeAnimationFailure(Error);
+	}
+	if (NotifyTrackName.IsNone())
+	{
+		return MakeAnimationFailure(TEXT("NotifyTrackName must not be None."));
+	}
+	if (!FMath::IsFinite(NotifyTime)
+		|| NotifyTime < 0.0f
+		|| NotifyTime >= Montage->GetPlayLength())
+	{
+		return MakeAnimationFailure(
+			FString::Printf(
+				TEXT("NotifyTime %.3f is outside montage length %.3f."),
+				NotifyTime,
+				Montage->GetPlayLength()));
+	}
+
+	const FAnimNotifyEvent* ExistingEvent = Montage->Notifies.FindByPredicate(
+		[bAttachToHand](const FAnimNotifyEvent& NotifyEvent)
+		{
+			const UAIRECompanionKatanaAttachmentAnimNotify* Notify =
+				Cast<UAIRECompanionKatanaAttachmentAnimNotify>(
+					NotifyEvent.Notify);
+			return IsValid(Notify)
+				&& Notify->ShouldAttachToHand() == bAttachToHand;
+		});
+	if (ExistingEvent
+		&& FMath::IsNearlyEqual(
+			ExistingEvent->GetTime(),
+			NotifyTime,
+			0.001f))
+	{
+		FAIREAnimationComboMontageResult Result;
+		PopulateInspection(*Montage, Result);
+		Result.bSuccess = true;
+		Result.Message = TEXT("The requested Katana attachment notify is already configured.");
+		Result.Entries.Add(
+			FString::Printf(
+				TEXT("KatanaAttachment: %.3f -> %s"),
+				NotifyTime,
+				bAttachToHand ? TEXT("Hand") : TEXT("Sheath")));
+		return Result;
+	}
+
+	const FScopedTransaction Transaction(
+		LOCTEXT("ConfigureKatanaAttachmentNotify", "Configure Katana Attachment Notify"));
+	Montage->Modify();
+	Montage->Notifies.RemoveAll(
+		[](const FAnimNotifyEvent& NotifyEvent)
+		{
+			return IsValid(Cast<UAIRECompanionKatanaAttachmentAnimNotify>(
+				NotifyEvent.Notify));
+		});
+
+	if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(
+		Montage,
+		NotifyTrackName))
+	{
+		UAnimationBlueprintLibrary::AddAnimationNotifyTrack(
+			Montage,
+			NotifyTrackName);
+	}
+
+	UAIRECompanionKatanaAttachmentAnimNotify* AttachmentNotify =
+		NewObject<UAIRECompanionKatanaAttachmentAnimNotify>(
+			Montage,
+			NAME_None,
+			RF_Transactional);
+	AttachmentNotify->SetAttachToHand(bAttachToHand);
+	UAnimationBlueprintLibrary::AddAnimationNotifyEventObject(
+		Montage,
+		NotifyTime,
+		AttachmentNotify,
+		NotifyTrackName);
+
+	Montage->RefreshCacheData();
+	Montage->MarkPackageDirty();
+
+	FAIREAnimationComboMontageResult Result;
+	PopulateInspection(*Montage, Result);
+	Result.bSuccess = true;
+	Result.Message = TEXT("Configured the Katana attachment notify.");
+	Result.Entries.Add(
+		FString::Printf(
+			TEXT("KatanaAttachment: %.3f -> %s"),
+			NotifyTime,
+			bAttachToHand ? TEXT("Hand") : TEXT("Sheath")));
+	return Result;
+}
+
 FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackComboWindows(
 	UAnimMontage* Montage,
 	const FName NotifyTrackName,
 	const float WindowStartOffsetAfterHit,
-	const float SectionEndPadding)
+	const float SectionEndPadding,
+	const int32 ComboStepCount,
+	const TArray<int32>& ComboVariantStepCounts)
 {
 	FString Error;
 	if (!ValidateMontage(Montage, Error))
@@ -745,6 +966,53 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	{
 		return MakeAnimationFailure(
 			TEXT("SectionEndPadding must be finite and greater than zero."));
+	}
+	if (ComboStepCount < 0
+		|| (ComboStepCount > 0
+			&& (ComboStepCount < 2
+				|| Montage->GetNumSections() % ComboStepCount != 0)))
+	{
+		return MakeAnimationFailure(
+			TEXT("ComboStepCount must be zero, or at least two and evenly divide the montage section count."));
+	}
+	if (ComboStepCount > 0 && !ComboVariantStepCounts.IsEmpty())
+	{
+		return MakeAnimationFailure(
+			TEXT("Specify either ComboStepCount or ComboVariantStepCounts, not both."));
+	}
+
+	TSet<int32> FinalStepIndices;
+	if (!ComboVariantStepCounts.IsEmpty())
+	{
+		int32 SectionOffset = 0;
+		for (const int32 VariantStepCount : ComboVariantStepCounts)
+		{
+			if (VariantStepCount <= 0)
+			{
+				return MakeAnimationFailure(
+					TEXT("Every ComboVariantStepCounts entry must be greater than zero."));
+			}
+			SectionOffset += VariantStepCount;
+			FinalStepIndices.Add(SectionOffset - 1);
+		}
+		if (SectionOffset != Montage->GetNumSections())
+		{
+			return MakeAnimationFailure(
+				TEXT("ComboVariantStepCounts must sum to the montage section count."));
+		}
+	}
+	else if (ComboStepCount > 0)
+	{
+		for (int32 StepIndex = ComboStepCount - 1;
+			StepIndex < Montage->GetNumSections();
+			StepIndex += ComboStepCount)
+		{
+			FinalStepIndices.Add(StepIndex);
+		}
+	}
+	else
+	{
+		FinalStepIndices.Add(Montage->GetNumSections() - 1);
 	}
 
 	TArray<FAIREComboNotifyEntry> HitNotifies;
@@ -769,9 +1037,14 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 	};
 	TArray<FAIREPendingComboWindow> PendingWindows;
 
-	for (int32 StepIndex = 0; StepIndex < Montage->GetNumSections() - 1; ++StepIndex)
+	const int32 SectionCount = Montage->GetNumSections();
+	for (int32 StepIndex = 0; StepIndex < SectionCount; ++StepIndex)
 	{
-		if (ExistingWindowSteps.Contains(StepIndex))
+		const bool bIsFinalStep = FinalStepIndices.Contains(StepIndex);
+		if (bIsFinalStep
+			|| (ComboStepCount == 0
+				&& ComboVariantStepCounts.IsEmpty()
+				&& ExistingWindowSteps.Contains(StepIndex)))
 		{
 			continue;
 		}
@@ -808,6 +1081,15 @@ FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackC
 		const FScopedTransaction Transaction(
 			LOCTEXT("ConfigureBasicAttackComboWindows", "Configure Basic Attack Combo Windows"));
 		Montage->Modify();
+		if (ComboStepCount > 0 || !ComboVariantStepCounts.IsEmpty())
+		{
+			Montage->Notifies.RemoveAll(
+				[](const FAnimNotifyEvent& NotifyEvent)
+				{
+					return IsValid(Cast<UAIRECompanionComboWindowAnimNotifyState>(
+						NotifyEvent.NotifyStateClass));
+				});
+		}
 
 		if (!UAnimationBlueprintLibrary::IsValidAnimNotifyTrackName(Montage, NotifyTrackName))
 		{

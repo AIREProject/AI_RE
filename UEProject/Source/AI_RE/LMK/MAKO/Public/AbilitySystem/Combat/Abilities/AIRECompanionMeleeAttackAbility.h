@@ -51,6 +51,14 @@ private:
 	float GetAttackStepStaggerValue(int32 StepIndex) const;
 	EAIRECombatTargetingMode GetAttackStepTargetingMode(int32 StepIndex) const;
 	FName GetAttackStepMontageSection(int32 StepIndex) const;
+	FName GetComboVariantMontageSection(
+		int32 VariantIndex,
+		int32 StepIndex) const;
+	bool HasComboMontageVariants() const;
+	void InitializeComboVariantSelection();
+	void PrepareNextComboVariant();
+	void CacheLastSelectedComboVariant() const;
+	void ConfigureCurrentComboMontageLinks();
 	EExecutionMode ResolveExecutionMode(const AActor* TargetActor) const;
 	bool IsTargetValidForAttack(const AActor* TargetActor) const;
 	bool IsTargetInRange(const AActor* TargetActor) const;
@@ -58,12 +66,18 @@ private:
 	bool IsActiveExecutionValid() const;
 	bool AreComboMontageSectionsValid(const UAnimMontage* AttackMontage) const;
 	bool TryStartNextStep();
-	void PrepareHarvestComboLoopStep(int32 PayloadStepIndex);
+	void PrepareComboLoopStep(
+		int32 PayloadStepIndex,
+		int32 PayloadVariantIndex);
 	void ApplyHarvestWeaponVisibility();
 	void RestoreHarvestWeaponVisibility();
 	bool StartAttackMontage();
 	bool ResumeAfterCombatSkill();
-	bool TryGetEventStepIndex(const FGameplayEventData& Payload, int32& OutStepIndex) const;
+	bool TryGetEventStepIndex(
+		const FGameplayEventData& Payload,
+		int32& OutStepIndex,
+		int32& OutVariantIndex) const;
+	bool IsEventVariantActive(int32 PayloadVariantIndex) const;
 	bool ResolveCurrentStepHit();
 	EAIRECombatMeleeTraceResult SampleCurrentStepCombatTrace(
 		USkeletalMeshComponent* MeshComponent,
@@ -139,11 +153,15 @@ private:
 	float CurrentTraceRadius = 0.0f;
 	float CurrentTraceCapsuleHalfHeight = 0.0f;
 	TEnumAsByte<ECollisionChannel> CurrentTraceChannel = ECC_MAX;
+	FRandomStream ComboVariantRandomStream;
 	EAIRECombatTargetingMode CurrentStepTargetingMode =
 		EAIRECombatTargetingMode::SingleTarget;
 	EExecutionMode ActiveExecutionMode = EExecutionMode::None;
 	int32 CurrentStepIndex = INDEX_NONE;
 	int32 ResumeStepIndex = INDEX_NONE;
+	int32 ActiveComboVariantIndex = INDEX_NONE;
+	int32 PendingComboVariantIndex = INDEX_NONE;
+	int32 LastSelectedComboVariantIndex = INDEX_NONE;
 	bool bCurrentStepHitConsumed = false;
 	bool bCurrentStepPointSampleConsumed = false;
 	bool bTraceWindowOpen = false;
@@ -156,5 +174,6 @@ private:
 	bool bHarvestWeaponVisibilityApplied = false;
 	bool bPreviousBackWeaponsVisible = true;
 	bool bPreviousHandWeaponsVisible = false;
+	bool bComboVariantRandomInitialized = false;
 	bool bIsEnding = false;
 };

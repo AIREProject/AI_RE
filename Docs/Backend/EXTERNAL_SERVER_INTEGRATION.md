@@ -1,393 +1,188 @@
 # External AI Companion Server Integration
 
-## 결정
+## 현재 결정
 
-2026-07-27부터 기존 `AI_RE` Backend 구현은 사용하지 않습니다. 현행 Backend 구현은
-워크스페이스의 별도 Git 저장소 `AIRE_SERVER/`를 사용하고, 실제 서비스 호출은
-다음 배포 서버를 사용합니다.
+AI_RE 저장소 안에 Backend를 구현하지 않습니다. UE/Web은 워크스페이스의 별도
+`AIRE_SERVER/` 저장소가 제공하는 Backend를 사용합니다.
 
-- Base URL: [https://traip.mtvs2026.work](https://traip.mtvs2026.work)
-- Swagger UI: [https://traip.mtvs2026.work/docs](https://traip.mtvs2026.work/docs)
-- OpenAPI: [https://traip.mtvs2026.work/openapi.json](https://traip.mtvs2026.work/openapi.json)
+- Base URL: <https://traip.mtvs2026.work>
+- Swagger UI: <https://traip.mtvs2026.work/docs>
+- OpenAPI: <https://traip.mtvs2026.work/openapi.json>
+- Source contract: `AIRE_SERVER/app/`의 FastAPI model과 route
+- 운영 설명: `AIRE_SERVER/docs/api-endpoints.md`
 
-2026-08-11 사용자 결정으로 별도 Backend 작업자는 없으며 이후 필요한 Backend, DB, LLM과
-배포 변경도 파트너가 직접 수행합니다. AX-P01은 2026-08-12 방향 변경으로 UE Local Work가
-아니라 기존 Offline Task API의 서버 경과시간 결과를 UE Inventory에 적용하는 제한된 수직
-슬라이스를 구현합니다.
+과거 문서에 남은 `ai_companion_server`, `/v1/companion/*`와 AI_RE 내부 Backend는 현행 채택
+대상이 아닙니다.
 
-## 계약 우선순위
+## 계약 권위
 
-1. 배포 서버 `/openapi.json`: 지금 호출 가능한 런타임 API의 기준
-2. `AIRE_SERVER/docs/`와 현행 모델·route: 채택한 Backend의 목표 동작과 클라이언트 계약
-3. `AIRE_SERVER/app`과 `tests`: 목표 계약의 구현 사실
-4. `AI_RE/Contracts/`: 계약 재조정 전까지 레거시 참고 자료
+1. 배포 `/openapi.json`: 지금 배포된 HTTP path와 DTO
+2. `AIRE_SERVER/app/`: 채택 Backend의 model, route와 validation 구현
+3. `AIRE_SERVER/tests/`: 오류, 멱등성, scope와 상태 전이의 실행 근거
+4. `AIRE_SERVER/docs/`: 운영 설명과 요청 예시
+5. [`AI_RE/Contracts/`](../../Contracts/README.md): 권위 위치와 검증 결과를 안내하는 registry
 
-배포 OpenAPI와 채택 서버 계약이 다르면 클라이언트에서 임의로 추측하거나 양쪽 형식을
-동시에 지원하지 않습니다. 차이를 기록한 뒤 파트너가 `AIRE_SERVER` 계약·구현·배포 중 어느
-쪽을 갱신할지 결정합니다.
+두 최상위 권위가 다르면 클라이언트가 양쪽 형식을 추측 지원하지 않습니다. 차이를 기록하고
+Backend source 또는 배포를 먼저 정합화합니다.
 
-## 2026-08-14 Companion AI 로드맵 연결
+## 2026-08-25 배포 정합성
 
-대화 품질, canonical Message/Event, 출처 기반 Memory, 관계 상태와 Cross-device 구현 순서는
-워크스페이스 로컬의 [`.agents/docs/planning/CAI_README.md`](../../../.agents/docs/planning/CAI_README.md)에서 관리합니다. 저장소의 `Docs/`에는 현재 계약과 구현 사실만 둡니다.
+배포 OpenAPI와 현재 `AIRE_SERVER`의 `app.openapi()` 결과를 canonical JSON으로 비교했습니다.
 
-이 로드맵에 적힌 Event, Command Result, Memory endpoint와 optional response field는 현재 제안입니다.
-`AIRE_SERVER` model·migration·route·test와 배포 `/openapi.json`이 함께 갱신되기 전에는 UE/Web이
-호출하거나 지원한다고 주장하지 않습니다. 현재 Chat 계약은 그대로 유지하며, 실제 계약 변경 Task에서
-이 문서, OpenAPI, UE USTRUCT, Web validator와 fixture를 함께 갱신합니다.
+| 항목 | 결과 |
+|---|---|
+| 구조 비교 | 완전 일치 |
+| canonical SHA-256 | `7ccee10375121be87a9512bafa2caf44d17f5f4435d91f8eae16e114d071bc4d` |
+| path template | 57개 |
+| component schema | 121개 |
 
-## 2026-08-18 CAI-P1~P5 배포 준비 계약
+따라서 과거에 남아 있던 Context v1, `Command.CraftItem`, Game State, Event, Command Result,
+Memory와 Memory Candidate의 “배포 전 목표 계약” 표기는 더 이상 현재 사실이 아닙니다. 이들은
+배포 OpenAPI에 노출됩니다.
 
-`AIRE_SERVER` 목표 구현에는 `/ready`, Event, Command Result와 사용자 Memory endpoint가
-포함됩니다. Memory 응답의 additive `sources[]`는 내부 source ID 없이 source type/mode/시각만
-제공하고, Web은 목록·검색·정정·고정·개별 삭제·scope reset을 지원합니다. 저장 문장은 LLM이
-생성하지 않고 canonical player Message 원문을 사용하며 Event 관계 기억은 결정론적으로 렌더링합니다.
-Mobile/RealWorld와 InGame/GameWorld의 직접 player Message를 모두 기억 후보로 처리하며,
-Web은 `Message + GameWorld`를 인게임에서 직접 공유한 기억으로 표시합니다. 회상된 Active 기억은
-대사 Prompt에만 들어가고 Command·Recipe 사실이나 실행 권한을 변경하지 않습니다.
+이 비교는 schema 배포 여부만 확인합니다. 모든 endpoint의 정상·오류 runtime smoke, 실제 LLM,
+UE PIE와 모바일 UI 검증을 완료했다는 뜻은 아닙니다.
 
-2026-08-18 공개 `/ready`가 DB revision `0014`, Local LLM `ready`를 반환하고 공개
-`/openapi.json`에서 Memory 전체 경로가 확인되었습니다. 따라서 Web production build는
-`VITE_MEMORY_ENABLED=true`로 활성화합니다.
+같은 날 제한된 read-only smoke에서 `/health`는 `status=ok`, `/ready`는 DB revision `0017`과
+LLM `ready`를 반환했습니다. Game State, Memory, Memory Candidate와 Offline Task GET도 HTTP
+200을 반환했고, malformed pairing body는 HTTP 400 `InvalidRequest` ErrorEnvelope로
+정규화됐습니다. 쓰기·충돌·재전송과 전체 오류 matrix는 아직 별도 검증 항목입니다.
 
-## 2026-08-23 Memory 후보 검토 목표 계약
+## 현재 제품 endpoint
 
-채택 Backend source에는 기존 Memory API의 additive `last_used_at`, `use_count`와 다음 후보
-검토 경로가 구현되어 있습니다.
+### 상태와 대화
 
-```text
-GET   /api/v1/memory-candidates?save_slot_id={id}&companion_id={id}
-GET   /api/v1/memory-candidates/{candidate_id}?save_slot_id={id}&companion_id={id}
-PATCH /api/v1/memory-candidates/{candidate_id}?save_slot_id={id}&companion_id={id}
-```
+| Method | Path | 역할 |
+|---|---|---|
+| `GET` | `/health` | 프로세스와 설정 확인 |
+| `GET` | `/ready` | DB revision과 LLM readiness 확인 |
+| `POST` | `/api/v1/chat` | UE/Web Chat |
+| `POST` | `/api/v1/situations` | UE 상황 기반 선제 대사 |
 
-후보 공개 응답은 type, 원문, source mode, 발생 시점, 검토 사유만 제공하며 confidence,
-Provider, 내부 source ID는 제공하지 않습니다. PATCH는 `Approve|Reject`와 reason을 요구하고,
-Approve에서만 type·importance·pinned·corrected text를 선택적으로 받습니다. 같은 결정은
-멱등이고 다른 결정은 409입니다.
+기본 transport는 HTTP Chat입니다. source에는 호환용 `WS /api/v1/chat`도 있지만 OpenAPI는
+WebSocket을 표현하지 않으므로 현재 UE/Web 신규 구현의 계약 근거로 사용하지 않습니다.
 
-이 계약은 아직 배포 `/openapi.json` 확인 전 목표 계약입니다. Web 구현은
-`VITE_MEMORY_REVIEW_ENABLED=false`를 기본으로 유지하고, Backend migration 0017 배포와 공개
-OpenAPI 확인 후에만 활성화합니다. 기존 Chat request/response 계약은 변경하지 않습니다.
+### Device와 Offline Task
 
-## 2026-07-27 과거 확인 결과
+| 영역 | Path |
+|---|---|
+| Device | `/api/v1/devices`, `/api/v1/devices/me`, `/api/v1/devices/{device_id}` |
+| 등록·pairing | `/api/v1/devices/register-game`, `/pairing-codes`, `/pair` |
+| Offline Task | `/api/v1/tasks`, `/api/v1/tasks/{task_id}`와 `start/complete/claim/collect` |
 
-로컬 `ai_companion_server` Build 1은 다음 API를 구현합니다.
+현재 제품은 고정 GameClient/WebClient role, 단일 Profile, Save Slot `demo-slot-1`, Companion
+`mako` 기준입니다. 실제 bearer credential을 저장소, fixture, URL 또는 로그에 넣지 않습니다.
 
-```text
-POST /v1/companion/message
-POST /v1/companion/event
-```
+### 게임 동기화와 실행 기록
 
-현재 배포 Swagger는 다음 API를 노출합니다.
+| Method | Path | 역할 |
+|---|---|---|
+| `GET/PUT` | `/api/v1/game-state` | 마지막 승인 Inventory Snapshot 조회·저장 |
+| `POST` | `/api/v1/events` | allowlist Game Event 저장 |
+| `POST` | `/api/v1/command-results` | Command Candidate 실행 상태 전이 저장 |
 
-```text
-GET    /health
-GET    /api/v1/system/capabilities
-POST   /api/v1/chat
-POST   /api/v1/devices/register-game
-POST   /api/v1/devices/pairing-codes
-POST   /api/v1/devices/pair
-GET    /api/v1/devices
-GET    /api/v1/devices/me
-DELETE /api/v1/devices/me
-DELETE /api/v1/devices/{device_id}
-```
+Game State는 조회용 서버 복사본이며 gameplay 실행 권위가 아닙니다. PUT은 `operation_id`,
+`state_version`, 원문 body hash와 base version 규칙을 따릅니다.
 
-`GET /health`는 확인 시점에 `status=ok`, `schema_version=1`,
-`ai_mode=companion`을 반환했습니다. 그러나 배포 Swagger에는
-`/v1/companion/message`와 `/v1/companion/event`가 없으므로 두 서버 계약이 현재
-동일하다고 간주할 수 없습니다.
+Event는 `event_id`, Command Result는 `operation_id`로 멱등합니다. 두 요청은 body ID와 같은
+`X-Request-ID` 및 전송한 raw body의 lowercase SHA-256인 `X-Content-SHA256`을 요구합니다.
+Command Result는 canonical Chat에 저장된 같은 scope/session의 Candidate만 참조할 수 있습니다.
 
-## 2026-08-10 AX-I02 HTTP Chat 재확인
+### Memory와 후보 검토
 
-배포 OpenAPI는 `POST /api/v1/chat`와 현재 `ChatRequest`/`ChatResponse`를 제공합니다.
-따라서 AX-I02의 HTTP Chat tactical subset에서는 기존 path/DTO blocker가 해소되었습니다.
-이 확인은 Chat 요청·응답 범위에만 적용하며, 클라이언트는 배포 OpenAPI에 맞춰 호출합니다.
+| Method | Path | 역할 |
+|---|---|---|
+| `GET` | `/api/v1/memories` | Active Memory 목록 |
+| `GET/PATCH/DELETE` | `/api/v1/memories/{memory_id}` | 상세·정정·고정·삭제 |
+| `POST` | `/api/v1/memories/search` | scope 검색 |
+| `POST` | `/api/v1/memories/reset` | scope reset |
+| `GET` | `/api/v1/memory-candidates` | PendingReview 목록 |
+| `GET/PATCH` | `/api/v1/memory-candidates/{candidate_id}` | 상세·Approve/Reject |
 
-`ErrorEnvelope` custom 오류 형식은 배포 OpenAPI에 명시되어 있지 않습니다. AX-I02
-클라이언트는 현재 `ai_server` code snapshot의 후보 계약을 기준으로 오류 응답을
-fail-closed 검증하고, 실제 런타임 응답이 그 계약과 다르면 계약 불일치로 보고합니다.
+Memory 응답의 `sources[]`는 내부 source ID나 원문 없이 type, mode와 발생 시각만 제공합니다.
+`last_used_at`과 `use_count`도 현재 배포 schema에 포함됩니다. 후보 응답은 confidence, Provider와
+내부 source ID를 노출하지 않습니다. 같은 후보 결정을 다시 보내는 것은 멱등이고 다른 결정은
+충돌입니다.
 
-`Event`, `Command`, Command Result 및 전체 M04 계약 Gate는 여전히 해결되지 않았습니다.
-이 항목들의 DTO·인증·매핑은 별도 계약 확인 전까지 확정하지 않습니다.
+Memory Candidate 배포 계약 blocker는 해소되었습니다. Web의 feature flag 활성화는 별도의 실제
+모바일 UI와 runtime 연동 검증을 거쳐 결정하며, OpenAPI 노출만으로 검증 완료 처리하지 않습니다.
 
-## 2026-08-11 AX-I03 Command Candidate Prototype
+## 핵심 DTO 경계
 
-배포 OpenAPI의 현재 `ChatRequest`는 중복 없는 `allowed_commands`를 최대 16개까지 받고,
-`ChatResponse.command_candidates`는 최대 4개를 반환합니다. 배포 `CommandType` enum은
-Follow, HoldPosition, ReturnToPlayer, EngageTarget, DistractTarget, MoveToLocation,
-CancelCurrent, GatherResource, Attack, Switch 열 가지입니다. 워크스페이스에는 기존 문서가
-가리키는 현행 Backend는 `AIRE_SERVER/`이므로 이 확인에는 배포 OpenAPI와 현재
-`AIRE_SERVER/docs/`, `AIRE_SERVER/app` 코드만 사용했습니다. `AIRE_SERVER/old/`는
-이 범위의 런타임 권위가 아닙니다.
+### Chat
 
-AX-I03 UE Prototype은 LLM Command 선택 경험을 먼저 검증하기 위해 Game Chat마다 열 가지를
-모두 고정 광고합니다. 이는 실행 가능한 capability만 광고하는 최종 계약이 아니라 의도적인
-예외이며, 모든 Candidate는 UE Command Gateway에서 다시 검증합니다. 현재 로컬 실행 범위는
-Follow, HoldPosition, ReturnToPlayer, active WorkOrder Cancel과 UE-selected Threat Attack입니다.
-GatherResource와 EngageTarget, DistractTarget, MoveToLocation, Switch는 명시적인
-`UnsupportedExecution`으로 끝나며 gameplay mutation을 만들지 않습니다.
+- `surface=game`은 strict `GameContextV1`을 요구합니다.
+- `surface=mobile`은 `game_context`를 생략하거나 `null`로 보냅니다. `{}`는 허용하지 않습니다.
+- Context v1은 location, threat, nearby resources, workstation, current work와 inventories를
+  대사 facts로만 제공합니다.
+- `allowed_commands`는 최대 16개, 응답 `command_candidates`는 최대 4개입니다.
+- 현재 `CommandType`은 Follow, HoldPosition, ReturnToPlayer, EngageTarget, DistractTarget,
+  MoveToLocation, CancelCurrent, GatherResource, Attack, Switch와 CraftItem입니다.
+- Context나 Memory reference는 Command 권한이나 Recipe 사실을 변경하지 않습니다.
 
-2026-08-13 사용자 결정으로 `GatherResource`는 후속 InGame 수직 슬라이스에 포함합니다. 현재
-배포·UE 동작은 계속 `UnsupportedExecution`이며, 구현 시 명시적 채집 요청만 후보로 허용하고
-UE가 MAKO 중심의 bounded query에서 가장 가까운 유효·비고갈 자원을 다시 선택합니다. 첫 대상인
-`나무`의 Backend 안정 Resource ID와 UE Gameplay Tag, 반경·최대 후보 수는 계약 동결 뒤
-광고를 활성화합니다. Context의 `nearby_resources` 사실만으로 명령을 생성하거나 실행하지 않습니다.
+### Event와 Command Result
 
-Editor MCP로 `ST_AIRECompanion_Local`에 production DirectCommand Task와 property binding,
-`IdleNearPlayer`를 구성하고 Compile·Save했습니다. 사용자는 실제 Game Chat PIE에서 Hold lease,
-Follow 200cm 정지·재추적과 Combat 선점을 확인했습니다. 직접 ReturnToPlayer 후보,
-active WorkOrder Cancel/재개, Level 종료·Owner 파괴와 전체 unsupported Command 실서버 흐름은
-아직 검증되지 않았으므로 이 Prototype은 `Review`이며 전체 통합 완료로 보지 않습니다.
+- Event type은 Combat Started/Ended, Danger Detected, Rescue Completed, Discovery Found,
+  Companion Returned allowlist만 지원합니다.
+- Command Result 최초 상태는 `Accepted | Rejected | Expired`입니다.
+- 후속 전이는 `Accepted → Running → Succeeded | Failed | Cancelled | Expired`만 허용합니다.
+- scope, Candidate request/type, 만료와 terminal 이후 전이를 fail-closed로 검증합니다.
 
-현재 Backend brain은 복귀 발화를 `Command.Switch`로 생성하지만 UE는 이를
-`ReturnToPlayer`로 추측 변환하지 않습니다. 또한 Attack의 `parameters.target_id`는 안정
-World Entity Identity가 구현되기 전까지 선택 Threat와 대조할 수 없으므로 거부합니다.
-Command Result의 Backend 전송은 여전히 계약과 endpoint가 없어 로컬 결과로만 유지합니다.
-이 Prototype은 Event·Command Result를 포함한 전체 M04 Gate를 해제하지 않습니다.
+정확한 field, enum, 길이와 상한은 배포 OpenAPI를 사용합니다. 이 문서는 DTO 전체를 복제하지
+않습니다.
 
-## 2026-08-13 AX-I05 구조화 Chat Context 소비 계약
+## 오류 계약과 OpenAPI 표시 차이
 
-AX-I05의 Backend 권위는 `AIRE_SERVER/` 로컬 구현이다. `POST /api/v1/chat`과 호환 WebSocket은
-typed `ChatRequest.game_context`를 같은 방식으로 검증한다.
-
-- `surface=game`은 `GameContextV1`을 반드시 보낸다. `surface=mobile`은 field 생략 또는
-  `null`만 허용하며 `{}`와 기존 generic object는 호환하지 않는다.
-- Context의 필수 최상위 field는 `schema_version=1`, `location_id`, `threat`,
-  `nearby_resources`, `available_workstations`, `current_work`, `inventories`다.
-  `location_id`, `threat.nearest_kind`, `current_work`만 `null`을 허용한다.
-- Stable ID는 1~128자와 `[A-Za-z0-9][A-Za-z0-9._:-]*`를 사용한다. 임의 key,
-  UObject/class path, credential key, 지원하지 않는 version, malformed cross-field 값은
-  AI 호출 전 `400 InvalidRequest`로 거부한다. Unknown stable ID의 catalogue 존재 여부는
-  AX-I05에서 검사하지 않는다.
-- Threat count는 0~32이며 `present == (count > 0)`이고 count 0이면 nearest kind는
-  `null`이다. Resource는 중복 없는 최대 8종(count 1~32), workstation은 중복 없는 최대
-  8개다. Work type/state와 MAKO/Shared Storage inventory, free-slot·item 합계 상한은
-  `AIRE_SERVER/docs/api-endpoints.md`의 Context v1 절을 따른다.
-- Compact UTF-8 Context가 8KiB를 넘으면 `400 InvalidRequest`, 전체 HTTP body 256KiB를
-  넘으면 `413 RequestTooLarge`다. 배열 입력 순서는 의미가 없고 prompt facts는 stable ID
-  기준으로 정렬한다.
-- Context는 위치, 위협, 자원, workstation, WorkOrder, inventory를 대사 생성 facts로만
-  전달한다. Context를 근거로 Backend가 Command 후보를 추가·제거하거나 `CraftItem`/
-  gameplay를 실행하지 않는다. Command allowlist와 실행 통합은 AX-I06 범위다.
-- `location_id=null`일 때만 개발용 `COMPANION_DEFAULT_LOCATION_ID` fallback을 사용하며,
-  GameWorld 시간은 최상위 `time_context`가 단일 권위다.
-- UE Game 요청의 `time_context`는 요청 직전 PC의 현실 로컬 날짜와 시간을 사용한다.
-- 현재 일반 플레이맵의 stable location ID와 개발 fallback 예시는 `forest_camp`다. lore는 숲
-  캠프 사실만 제공하며 향후 보스맵 ID를 추측하거나 예약하지 않는다.
-- AX-I04 생산 payload는 권위 센서가 없으면 `threat.nearest_kind=null`, resource/workstation
-  빈 배열일 수 있다. 이는 7개 required field를 유지하는 정상 Context이며 Backend가 임의 ID로
-  보충하지 않는다.
-
-2026-08-13 배포 `https://traip.mtvs2026.work/openapi.json`을 다시 확인한 결과
-`ChatRequest.game_context`는 `GameContextV1 | null`이고 7개 field가 모두 required이며
-`additionalProperties=false`다. AX-I05 Context v1 OpenAPI 불일치는 해소됐지만 정상/오류/oversize
-runtime smoke와 실제 UE↔Backend 왕복 성공은 아직 주장하지 않는다.
-
-2026-08-13 AX-I05 로컬 구현은 전체 Backend pytest 574건, Ruff와 mypy를 통과해
-완료했다. AX-I04는 사용자 환경 UE 컴파일에 성공했고 Automation
-`AIRE.Companion.Chat.JsonAdapter.CommandCandidates`와 `AIRE.Companion.Chat.Context.V1`도
-Success다. fixture 기반 PIE state mutation은 사용자 결정으로 생략했으며 성공 근거로 사용하지
-않는다. 실제 Context v1 payload와 UE↔배포 Backend gameplay 왕복은 AX-I06 실제 플레이 Gate로
-이관했고, Gate 완료 전에는 AX-I04/05 왕복을 검증 완료로 표현하지 않는다.
-같은 확인에서 배포 `CommandType`은 기존 열 가지이며 `Command.CraftItem`은 아직 없다. 따라서
-AX-I06 Backend 계약 배포와 정상·거부 smoke를 먼저 끝내고 UE Craft 광고를 활성화해야 한다.
-strict 전환 뒤 기존 Game `game_context={}`는 400이므로 AX-I04 full Context producer를 사용하며,
-Mobile은 Context 생략 또는 `null`을 유지한다.
-
-## 2026-08-13 AX-I06 CraftItem 로컬 목표 계약
-
-AX-I06은 Backend의 `Command.CraftItem` 후보를 UE의 기존 Crafting WorkOrder에 연결한다. 첫
-allowlist 항목은 다음 하나뿐이며 field 누락·추가, 다른 수량과 다른 Recipe ID는 거부한다.
+현재 Backend 구현은 validation 오류를 포함한 HTTP 실패를 다음 `ErrorEnvelope`로 정규화합니다.
 
 ```json
 {
-  "type": "Command.CraftItem",
-  "parameters": {
-    "recipe_id": "recipe-11",
-    "quantity": 1
+  "request_id": "request-1",
+  "error": {
+    "code": "InvalidRequest",
+    "message": "Request validation failed.",
+    "retryable": false,
+    "details": {}
   }
 }
 ```
 
-- Backend는 명시적인 철검 제작 요청에만 후보를 만들며 Recipe 질문은 facts-only 대사로 남긴다.
-  Context의 Inventory 또는 workstation 사실만으로 후보를 만들거나 실행하지 않는다.
-- UE protocol mapping은 `recipe-11` → `DT_crafting_recipes` row `IronSword` → result Item ID
-  `Sword_Iron`이다. 표시 이름이나 UObject path를 protocol identity로 사용하지 않는다.
-- UE는 5,000cm 이내 WorldStatic/WorldDynamic overlap에서 유효 작업대를 최대 8개만 수집하고,
-  `Blacksmith` 유형 중 가장 가까운 Actor를 Candidate 수신 시 다시 선택한다. Context에는 같은
-  bounded provider의 stable capability `Workbench.Blacksmith`만 전달한다.
-- Gateway는 Recipe, 수량, 재료, MAKO 결과 슬롯, Inventory revision, active WorkOrder와 Local AI
-  우선순위를 preflight한 뒤에만 WorkOrder를 만든다. Backend timeout·장애·malformed 응답은
-  Inventory, Crafting 또는 Local AI를 변경하지 않는다.
+다만 현재 배포 OpenAPI는 FastAPI 기본 `422 HTTPValidationError`만 다수 operation에 표시하고,
+실제 custom `400/401/403/404/409/410/413/500/503/504 ErrorEnvelope` 응답을 schema로 충분히
+기술하지 않습니다. 이는 runtime 구현과 OpenAPI 설명 사이의 문서화 gap입니다.
 
-2026-08-13 로컬 Backend 구현은 전체 pytest 592건과 Ruff/mypy를 통과했다. UE source는 사용자
-환경 build와 관련 Automation 5종에 성공했다. 이후 명시적 사용자 요청으로 Unreal MCP를 사용해
-`Sword_Iron`, `IronIngot`, `WoodHandle` Item DataAsset을 생성하고, 실제 DataTable row
-`IronSword`가 `IronIngot×3`, `WoodHandle×1`, `Sword_Iron×1`, Blacksmith, 3초임을 확인했다.
-Inventory/PIE 실제 제작과 배포 OpenAPI의 `CraftItem` 반영·정상/거부 smoke는 아직 별도 Gate다.
+클라이언트는 현재 source와 runtime으로 확인한 ErrorEnvelope를 fail-closed로 파싱하되,
+OpenAPI만 보고 개별 오류 code 지원을 추측하지 않습니다. 실제 응답이 Envelope와 다르면 정상
+응답으로 바꾸지 말고 계약 불일치로 보고합니다.
 
-## 2026-08-10 AX-W01 Web 배포 기준
+## UE/Web 책임 경계
 
-AX-W01 WebApp은 pairing 및 브라우저 credential 저장 없이 `AIRE_WEB` 고정 신원으로
-`POST /api/v1/chat`을 호출합니다. 로컬 개발과 GPT Sites 배포 모두 브라우저에서는
-same-origin `/api/*`를 사용하며, 개발 Vite proxy와 Sites Worker가 각각
-`https://traip.mtvs2026.work`로 전달합니다.
+- UE PC가 현재 gameplay state와 Command 최종 실행 권위를 가집니다.
+- 모든 Command Candidate는 UE Command Gateway에서 target, 상태, 만료와 capability를 다시
+  검증합니다.
+- Mobile/Web은 Command Candidate나 Game State 응답으로 UE gameplay를 직접 변경하지 않습니다.
+- Backend/LLM timeout, unavailable, malformed response와 late callback은 Inventory, StateTree,
+  GAS 또는 현재 Command를 임의 변경하지 않습니다.
+- Backend 장애 중에도 로컬 이동·전투·생존과 이미 승인된 로컬 행동을 유지합니다.
+- GameWorld와 RealWorld 시간을 섞지 않습니다.
 
-2026-08-10 당시 private GPT Sites 배포의 루트 HTML, JavaScript asset 및 `/health` Backend
-proxy가 HTTP 200으로 확인됐습니다. 이 배포 확인은 Mobile Chat 정상 응답과 전체 실패
-매트릭스의 실제 휴대폰 검증을 대신하지 않습니다.
+## 레거시 계약 처리
 
-## 2026-08-11 AX-W02 Offline Task Web 배포
+`AI_RE/Contracts/openapi.yaml`, `schemas/`와 `fixtures/`는 과거 구현 추적용입니다. 현재 배포 57개
+path 중 일부만 포함하고 제거된 `/api/v1/system/capabilities`도 남아 있으므로 client 생성이나
+지원 판정에 사용하지 않습니다. 자세한 경계와 갱신 절차는
+[`Contracts/README.md`](../../Contracts/README.md)를 따릅니다.
 
-배포 OpenAPI의 `POST /api/v1/tasks`, `GET /api/v1/tasks`와 로컬 `AIRE_SERVER`의 Offline
-Task DTO가 일치함을 확인하고, WebApp에 Gathering/Crafting 생성과 Task 목록 조회를
-추가했습니다. WebClient는 GameClient 전용 start/complete/claim 및 `/collect`를 호출하지
-않으며, `Completed`와 `Claimed`를 UE Inventory 지급 완료로 표시하지 않습니다.
+## 통합 검증 체크리스트
 
-사용자 승인에 따라 GPT Sites 접근 정책은 public으로 전환된 현재 상태를 유지합니다.
-2026-08-11 배포 뒤 루트 HTML, 배포 JavaScript와 `/health` same-origin proxy가 확인됐고,
-배포 JavaScript는 사용자 성공 빌드 산출물과 SHA-256이 일치했습니다. 이 public 운영은
-고정 `AIRE_WEB` 신원을 사용하는 단일-player demo 경계이며 production 인증을 제공하지
-않습니다.
+- 배포 OpenAPI와 source OpenAPI canonical 비교
+- 정상 및 malformed DTO runtime smoke
+- 인증 role과 다른 profile/save slot/companion scope 거부
+- timeout, cancellation, duplicate, expiry와 late callback
+- Event/Command Result raw-body hash와 멱등 재전송
+- Game State version conflict와 stale overwrite 거부
+- Memory 수정·삭제·reset 및 후보 같은/다른 결정 재전송
+- Backend unavailable 중 UE 로컬 AI 유지
+- 실제 UE build/Automation/PIE와 모바일 브라우저 확인
 
-실제 모바일 Gathering/Crafting 생성·목록 확인, 동일 request ID 멱등성, 네 status filter와
-401/403·timeout·network·invalid/malformed JSON UI 매트릭스는 아직 Review 항목입니다.
-
-2026-08-12 배포 계약에는 사용자가 걸린 예약을 해제할 수 있도록
-`DELETE /api/v1/tasks/{task_id}`를 추가했습니다. `AIRE_WEB`이 자기 프로필의
-`Pending/InProgress`만 삭제할 수 있고 `Completed/Claimed`는 거부합니다. 이 경로가 배포
-OpenAPI와 public WebApp에 반영됐습니다. 배포 API에서 생성한 테스트 Task의 DELETE 204와
-후속 목록 제거를 확인했으며, 실제 모바일 조작은 아직 Review 항목입니다.
-
-## 2026-08-12 AX-P01 기존 Offline Task API Prototype
-
-AX-P01은 새 Settlement endpoint나 DB table을 추가하지 않고 배포된 다음 경로만 사용합니다.
-
-```text
-GET  /api/v1/tasks?save_slot_id=demo-slot-1
-POST /api/v1/tasks/{task_id}/start
-POST /api/v1/tasks/{task_id}/complete
-POST /api/v1/tasks/{task_id}/claim
-```
-
-Web 예약 취소는 별도 `DELETE /api/v1/tasks/{task_id}` 경계이며 UE 정산 흐름에는 사용하지
-않습니다. 취소된 Task를 UE가 이전 목록에서 처리하려 해도 서버의 후속 전이는 실패하고 local
-Inventory를 변경하지 않습니다.
-
-UE는 AX-I07 복원 뒤 목록을 한 번 조회합니다. 지원 Task의 `Pending`은 start 후 complete,
-`InProgress`는 complete, `Completed`는 Inventory 적용 대상으로 처리합니다. 비용·보상과 안정
-문자열 `task_id` ledger를 하나의 local Inventory commit으로 적용하고 SaveGame 성공 뒤에만
-claim합니다. 이미 저장된 `task_id`가 다시 `Completed`로 조회되면 Inventory를 바꾸지 않고
-claim만 복구합니다. timeout 뒤 자동 retry나 polling은 하지 않습니다.
-
-클라이언트 allowlist는 수량 1~50의 `PlantStem` Gathering과 `ShoddyBandage` Crafting입니다.
-Gathering은 결과 수량만큼 `PlantStem`을 지급합니다. Crafting은 Backend가 최신 Game State의
-MAKO → Shared Storage 순서로 결과 1개당 `PlantStem` 2개를 Task 생성 transaction에서 예약
-차감하고, UE는 완료된 Task에서 같은 차감을 local Inventory에 재현한 뒤 `ShoddyBandage`를
-지급합니다. 제작 Task가 아직 `InProgress`이면 UE는 차감 전 local Snapshot을 서버에 올리지
-않습니다. Task 응답에 별도 settlement receipt가 없는 제한 수직 슬라이스라는 점은 유지합니다.
-
-Snapshot이 없으면 `InventorySnapshotRequired`, 재료가 부족하면
-`InsufficientCraftingMaterials`로 Task 전체를 거절합니다. 활성 제작 예약 삭제는 예약했던
-컨테이너별 수량을 환불합니다. 서버 제작 예약·환불 이후 Game State PUT은 GET으로 확인한
-version을 `X-Base-State-Version`으로 보내 stale overwrite를 막습니다.
-
-현재 배포 Backend는 관리자 Offline Task 정책을 Task 생성 시 snapshot합니다. 기본 정책은
-`PlantStem` Gathering 5초/개와 `ShoddyBandage` Crafting 10초/개이며, 클라이언트는 이 값을
-계산하거나 덮어쓰지 않습니다. complete 시 첫 단위 미만이면
-`InProgress(progress_quantity=0, result_quantity=null)`을 유지합니다. UE는 이를 정상적인
-미완료 응답으로 받아 Inventory와 Claim을 건드리지 않고 다음 실행·수동 동기화에서 다시
-계산합니다.
-
-Swagger Admin의
-`/api/v1/admin/offline-task-policies`에서 `gathering-plant-stem`과
-`crafting-shoddy-bandage`의 `seconds_per_item`을 PATCH할 수 있으며 기본값은 각각 5초와
-10초입니다. 새 Task는 생성 시 정책값을 snapshot하므로 기존 Task에는 소급 적용되지 않습니다.
-migration 0008과 관련 OpenAPI가 배포됐습니다. 관리자 인증 정책값 직접 조회와 실제 Crafting
-E2E는 아직 별도 검증 항목입니다.
-
-수량 Task는 생성 즉시 `InProgress`로 시작하며 GET 목록은 서버 시간 기준
-`progress_quantity`를 반환합니다. Web은 자동 polling 없이 사용자가 새로고침할 때만 이를
-갱신하고, UE가 complete를 호출한 시점의 정수 수량을 최종 확정합니다.
-
-배포 스모크에서 Gathering 3개 Task는 생성 직후 진행량 0, 6초 뒤 진행량 1을 반환했고,
-정리 DELETE 뒤 목록에서 사라졌습니다. 이 증거는 서버시간 Gathering과 예약 삭제의 정상
-경로만 확인하며 UE apply/save/claim 및 Crafting 비용·보상 경로를 대신하지 않습니다.
-
-`Claimed`는 기존 서버 Task 상태이며 별도 Settlement receipt가 아닙니다. 이 Prototype은
-generic Outbox, 전체 Game State Sync와 범용 AX-I11/I12를 완료하지 않으며 AX-G3/AX-G4 완료
-근거로 사용하지 않습니다.
-
-## 2026-08-12 AX-I09 Game State local pre-deploy Review 계약
-
-AX-I09는 채택 `AIRE_SERVER`의 로컬 Game State 계약·구현을 다음 경로로 동결했습니다.
-
-```text
-PUT /api/v1/game-state
-GET /api/v1/game-state?save_slot_id={id}&companion_id={id}
-```
-
-PUT은 `AIRE_GAME` GameClient 전용이고 GET은 `AIRE_GAME`과 `AIRE_WEB`이 읽을 수 있습니다.
-Bearer에서 얻은 `profile_id`가 scope 권위이며 WebClient는 Snapshot을 변경하지 않습니다.
-일반 Gameplay 실행 권위는 계속 UE에 있습니다. 단, Web에서 시작한 `ShoddyBandage` 제작의
-재료 가능 여부와 예약 차감은 서버 Snapshot이 권위이며, UE는 완료 Task를 적용한 뒤 그 결과를
-다음 Game State PUT으로 맞춥니다.
-
-PUT body는 `schema_version=1`, `content_version=1`, `operation_id`, 1 이상 단조 증가
-`state_version`, `world_session_id`, UTC offset 포함 `captured_at`, `save_slot_id`,
-`companion_id`, `inventory`를 필수로 가집니다. `X-Request-ID`는 `operation_id`와 정확히
-같아야 합니다. `X-Content-SHA256`은 재직렬화하거나 canonicalize한 JSON이 아니라 HTTP로
-전송한 **정확한 원문 JSON UTF-8 bytes**의 SHA-256 64자리 소문자 hex입니다.
-GET의 응답 상관관계용 `X-Request-ID`는 선택이며, 생략하면 서버가 생성합니다.
-
-Inventory payload는 다음 전체 로컬 저장 범위를 고정된 상한으로 포함합니다.
-
-- Player: `capacity=30`, revision, 일반 Slot 0~29와 Quick Slot 100~109를 합친 최대 40
-  Stack, nullable Weapon Equipment 1칸
-- MAKO: `AIRE.Inventory.MAKO`, `capacity=20`, capacity 이하 Stack, nullable Weapon
-  Equipment 1칸
-- Shared Storage: `AIRE.Inventory.SharedStorage`, `capacity=50`, capacity 이하 Stack,
-  Equipment object의 `equipped_item_id=null`
-- Stack: stable server Item ID, 유효 slot index, count 1~99. Weapon은 count 1이고 장착
-  ID도 server Item master의 Weapon이어야 함
-
-`inventory.containers`에는 MAKO와 Shared Storage가 중복 없이 정확히 하나씩 있어야 합니다.
-`snapshot_id`, World summary, UObject/Actor 경로와 실행 가능한 Command/LLM payload는 계약에
-없습니다. 정상 PUT/GET은 HTTP 200으로 Snapshot과 `request_id`, `operation_id`, 서버
-`last_synced_at`을 반환합니다.
-
-같은 scope에서 같은 `operation_id`와 같은 원문 body bytes 재전송은 최초 응답을 그대로
-반환하고 version·timestamp·부작용을 추가하지 않습니다. 같은 operation에 다른 bytes는
-`409 DuplicateRequest`, 새 operation의 같거나 낮은 version은
-`409 GameStateVersionConflict`, 빈 scope GET은 `404 GameStateNotFound`입니다. Header/hash,
-strict DTO, schema/content version, bounds와 Item 의미 검증 실패는 `400 InvalidRequest`이고
-현재 Snapshot을 바꾸지 않습니다.
-
-이 상태는 **local pre-deploy Review**입니다. 공개 배포
-`https://traip.mtvs2026.work/openapi.json`에는 아직 두 경로가 없으며 migration 적용, 배포
-OpenAPI 반영 또는 runtime smoke 성공을 주장하지 않습니다. 따라서 AX-I10 UE HTTP wiring과
-AX-W03 Mobile 조회는 배포 계약 확인 전 호출 가능 상태로 간주하지 않습니다.
-
-## 2026-08-13 M04-E03-T03 GatherResource InGame 계약
-
-Game surface의 첫 채집 후보는 `Command.GatherResource`와 정확한
-`{"resource":"wood"}`만 사용합니다. `quantity`, 추가 parameter, `stone`, 채집 방법 질문과
-모호한 대상은 후보를 만들지 않습니다. Mobile OfflineTask의 기존 자원·수량 계약은 유지합니다.
-
-UE는 `wood`를 `Resource.Wood` Gameplay Tag로 매핑하고 Candidate 수신 시 MAKO 중심
-5,000cm, 최대 8개의 bounded overlap query를 다시 실행합니다. 가장 가까운 유효·비고갈 나무
-한 그루를 기존 Harvesting WorkOrder로 고갈될 때까지 처리합니다. Context에는 같은 provider가
-`{"kind":"wood","count":N}`만 제공하며 Actor 이름·path·instance identity는 전송하지 않습니다.
-
-## 연동 Gate
-
-UE/Web 클라이언트의 새 서버 연동을 완료하려면 파트너가 다음 중 하나로 계약을 동기화해야 합니다.
-
-1. `AIRE_SERVER` 현행 계약을 배포 서버에 반영
-2. 배포 서버 계약을 목표 계약으로 채택하고 `AIRE_SERVER` 문서·코드·테스트를 갱신
-
-Gate가 해결되기 전에도 Base URL 설정, 비동기 요청 수명주기, timeout, 취소, 오류 표시와
-Backend 미접속 시 로컬 AI 유지 작업은 진행할 수 있습니다. 요청·응답 DTO와 Command 매핑은
-계약 확정 후 구현합니다.
+Unreal build, Automation과 PIE는 사용자가 수행합니다.
