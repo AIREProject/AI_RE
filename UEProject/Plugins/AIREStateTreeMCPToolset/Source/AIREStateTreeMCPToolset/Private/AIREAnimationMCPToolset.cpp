@@ -1,10 +1,13 @@
 #include "AIREAnimationMCPToolset.h"
 
+#include "AssetToolsModule.h"
 #include "Animation/AIRECompanionAttackHitAnimNotify.h"
 #include "Animation/AIRECompanionComboWindowAnimNotifyState.h"
 #include "Animation/AIRECompanionKatanaAttachmentAnimNotify.h"
 #include "Animation/AIRECompanionMeleeTraceAnimNotifyState.h"
 #include "AIREEnemyAttackMovementAnimNotifyState.h"
+#include "Animation/AnimBlueprint.h"
+#include "Animation/AnimInstance.h"
 #include "AIREEnemyAttackTempoAnimNotifyState.h"
 #include "AIREEnemyMeleeTraceAnimNotifyState.h"
 #include "Animation/AnimMontage.h"
@@ -14,7 +17,12 @@
 #include "Animation/Skeleton.h"
 #include "AnimationBlueprintLibrary.h"
 #include "ControlRigBlueprintLegacy.h"
+#include "Editor.h"
+#include "Subsystems/EditorAssetSubsystem.h"
 #include "Engine/SkeletalMesh.h"
+#include "Factories/AnimBlueprintFactory.h"
+#include "Factories/AnimMontageFactory.h"
+#include "Misc/PackageName.h"
 #include "Rigs/RigHierarchy.h"
 #include "Rigs/RigHierarchyController.h"
 #include "RigVMModel/RigVMController.h"
@@ -40,6 +48,22 @@ namespace
 		const FString& Message)
 	{
 		FAIREAnimationComboMontageResult Result;
+		Result.Message = Message;
+		return Result;
+	}
+
+	FAIREAnimationBlueprintCreateResult MakeAnimBlueprintCreateFailure(
+		const FString& Message)
+	{
+		FAIREAnimationBlueprintCreateResult Result;
+		Result.Message = Message;
+		return Result;
+	}
+
+	FAIREAnimationMontageCreateResult MakeMontageCreateFailure(
+		const FString& Message)
+	{
+		FAIREAnimationMontageCreateResult Result;
 		Result.Message = Message;
 		return Result;
 	}
@@ -422,6 +446,153 @@ namespace
 
 		return true;
 	}
+}
+
+FAIREAnimationBlueprintCreateResult UAIREAnimationMCPToolset::CreateAnimBlueprint(
+	const FString& FolderPath,
+	const FName AssetName,
+	USkeleton* TargetSkeleton)
+{
+	if (!FolderPath.StartsWith(AllowedAnimationAssetRoot))
+	{
+		return MakeAnimBlueprintCreateFailure(FString::Printf(
+			TEXT("Folder '%s' is outside the allowed root '%s'."),
+			*FolderPath,
+			*AllowedAnimationAssetRoot));
+	}
+	if (AssetName.IsNone()
+		|| AssetName.ToString().Contains(TEXT("/")))
+	{
+		return MakeAnimBlueprintCreateFailure(
+			TEXT("AssetName must be a non-empty object name."));
+	}
+	if (!IsAllowedAnimationAsset(TargetSkeleton))
+	{
+		return MakeAnimBlueprintCreateFailure(
+			TEXT("A Skeleton under the allowed root is required."));
+	}
+
+	const FString PackageName = FolderPath / AssetName.ToString();
+	if (!FPackageName::IsValidLongPackageName(PackageName))
+	{
+		return MakeAnimBlueprintCreateFailure(FString::Printf(
+			TEXT("'%s' is not a valid Unreal package path."),
+			*PackageName));
+	}
+
+	UEditorAssetSubsystem* AssetSubsystem = GEditor != nullptr
+		? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>()
+		: nullptr;
+	if (!IsValid(AssetSubsystem))
+	{
+		return MakeAnimBlueprintCreateFailure(
+			TEXT("Editor Asset Subsystem is unavailable."));
+	}
+	if (AssetSubsystem->DoesAssetExist(PackageName))
+	{
+		return MakeAnimBlueprintCreateFailure(FString::Printf(
+			TEXT("Asset '%s' already exists."),
+			*PackageName));
+	}
+
+	UAnimBlueprintFactory* Factory = NewObject<UAnimBlueprintFactory>();
+	Factory->BlueprintType = BPTYPE_Normal;
+	Factory->ParentClass = UAnimInstance::StaticClass();
+	Factory->TargetSkeleton = TargetSkeleton;
+	Factory->bTemplate = false;
+	FAssetToolsModule& AssetToolsModule =
+		FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+	UAnimBlueprint* NewAnimBlueprint = Cast<UAnimBlueprint>(
+		AssetToolsModule.Get().CreateAsset(
+			AssetName.ToString(),
+			FolderPath,
+			UAnimBlueprint::StaticClass(),
+			Factory));
+	if (!IsValid(NewAnimBlueprint))
+	{
+		return MakeAnimBlueprintCreateFailure(
+			TEXT("AnimBlueprint factory could not create the asset."));
+	}
+
+	FAIREAnimationBlueprintCreateResult Result;
+	Result.bSuccess = true;
+	Result.AnimBlueprint = NewAnimBlueprint;
+	Result.Message =
+		TEXT("AnimBlueprint created in memory. Configure, compile, and save it explicitly.");
+	return Result;
+}
+
+FAIREAnimationMontageCreateResult UAIREAnimationMCPToolset::CreateAnimMontage(
+	const FString& FolderPath,
+	const FName AssetName,
+	UAnimSequence* SourceAnimation)
+{
+	if (!FolderPath.StartsWith(AllowedAnimationAssetRoot))
+	{
+		return MakeMontageCreateFailure(FString::Printf(
+			TEXT("Folder '%s' is outside the allowed root '%s'."),
+			*FolderPath,
+			*AllowedAnimationAssetRoot));
+	}
+	if (AssetName.IsNone()
+		|| AssetName.ToString().Contains(TEXT("/")))
+	{
+		return MakeMontageCreateFailure(
+			TEXT("AssetName must be a non-empty object name."));
+	}
+	if (!IsAllowedAnimationAsset(SourceAnimation)
+		|| !IsValid(SourceAnimation->GetSkeleton()))
+	{
+		return MakeMontageCreateFailure(
+			TEXT("A source animation with a valid Skeleton under the allowed root is required."));
+	}
+
+	const FString PackageName = FolderPath / AssetName.ToString();
+	if (!FPackageName::IsValidLongPackageName(PackageName))
+	{
+		return MakeMontageCreateFailure(FString::Printf(
+			TEXT("'%s' is not a valid Unreal package path."),
+			*PackageName));
+	}
+
+	UEditorAssetSubsystem* AssetSubsystem = GEditor != nullptr
+		? GEditor->GetEditorSubsystem<UEditorAssetSubsystem>()
+		: nullptr;
+	if (!IsValid(AssetSubsystem))
+	{
+		return MakeMontageCreateFailure(
+			TEXT("Editor Asset Subsystem is unavailable."));
+	}
+	if (AssetSubsystem->DoesAssetExist(PackageName))
+	{
+		return MakeMontageCreateFailure(FString::Printf(
+			TEXT("Asset '%s' already exists."),
+			*PackageName));
+	}
+
+	UAnimMontageFactory* Factory = NewObject<UAnimMontageFactory>();
+	Factory->TargetSkeleton = SourceAnimation->GetSkeleton();
+	Factory->SourceAnimation = SourceAnimation;
+	FAssetToolsModule& AssetToolsModule =
+		FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+	UAnimMontage* NewMontage = Cast<UAnimMontage>(
+		AssetToolsModule.Get().CreateAsset(
+			AssetName.ToString(),
+			FolderPath,
+			UAnimMontage::StaticClass(),
+			Factory));
+	if (!IsValid(NewMontage))
+	{
+		return MakeMontageCreateFailure(
+			TEXT("AnimMontage factory could not create the asset."));
+	}
+
+	FAIREAnimationMontageCreateResult Result;
+	Result.bSuccess = true;
+	Result.Montage = NewMontage;
+	Result.Message =
+		TEXT("AnimMontage created in memory. Configure and save it explicitly.");
+	return Result;
 }
 
 FAIREAnimationComboMontageResult UAIREAnimationMCPToolset::ConfigureBasicAttackComboSectionsFromHits(

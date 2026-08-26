@@ -10,7 +10,8 @@ swap. Backend, replication, boss phases, wild animals, inventory, storage, and
 
 - Code baseline: 2026-08-10
 - Task status: `Review` (`M03-E09-T01`) / `Done` (`M03-E09-T02A`) /
-  `Review` (`M03-E09-T02B`)
+  `Review` (`M03-E09-T02B`) / `Implementation In Progress`
+  (`M03-E09-T05`)
 - Completed locally: T01 C++ baseline, the user-verified T02A Boss physical trace,
   T02B source for the shared melee resolver, MAKO weapon trace, autonomous evade,
   stamina, and short invulnerability, plus the project-owned MAKO socket, trace-window,
@@ -77,8 +78,9 @@ stagger attributes; a stagger-only request to such a target is rejected explicit
 
 ## 3. Enemy composition and Boss baseline
 
-`AAIREEnemyBase` is abstract. `AAIREBossEnemy` is its only concrete child in this
-task and inherits it directly.
+`AAIREEnemyBase` is abstract. `AAIREBossEnemy` and
+`AAIREWildAnimalEnemy` are thin direct children; both reuse the same component-owned
+GAS damage, reaction, attack, trace, and death paths.
 
 ```text
 AAIREEnemyBase
@@ -89,6 +91,7 @@ AAIREEnemyBase
 └─ UAIPerceptionStimuliSourceComponent
 
 AAIREBossEnemy : AAIREEnemyBase
+AAIREWildAnimalEnemy : AAIREEnemyBase
 ```
 
 The vitality component owns Health initialization, the dead tag, ability
@@ -400,7 +403,13 @@ PlayerController assignment, Player evade presentation, and the physical two-way
 Player/MAKO swap gate. Existing Player mapping assets must remain unchanged until
 that owner performs the integration.
 
-Only the Boss derivative participates in this gate. WildAnimal remains out of scope.
+`M03-E09-T05` adds a retaliatory WildAnimal policy without creating a parallel
+combat stack. A WildAnimal observes sight candidates but may select only a Damage
+source or an explicitly promoted target. Its attacks use the same
+`UAIREEnemyAttackComponent`, montage trace-window Sweep,
+`FAIRECombatDamageRequest`, target-scoped Execution ID ledger, and exact-once
+commit path as Boss. Home, aggro entries, StateTree instance, retreat, Return reset,
+and lifecycle cleanup remain independent per spawned enemy.
 
 ## 7. Verification gate
 
