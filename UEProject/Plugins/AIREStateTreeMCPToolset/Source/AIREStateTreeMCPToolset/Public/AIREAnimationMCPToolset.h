@@ -284,7 +284,9 @@ public:
 		UAnimMontage* Montage,
 		FName NotifyTrackName,
 		float WindowStartOffsetAfterHit,
-		float SectionEndPadding);
+		float SectionEndPadding,
+		int32 ComboStepCount,
+		const TArray<int32>& ComboVariantStepCounts);
 
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
 	static FAIREAnimationNotifyMutationResult InspectEnemyMeleeTraceMontage(

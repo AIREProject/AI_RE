@@ -297,6 +297,28 @@ miss recovery로 종료합니다. 기본 공격은 현재 선택 Target 하나�
 Montage Section과 Step 수치만 다르게 구성합니다. 두 번째 이상의 시스템에서 Combo Step
 구성을 공유해야 할 때만 별도 AttackSet Data Asset 추출을 검토합니다.
 
+카타나처럼 동일한 단계별 Damage·Stagger·Trace 계약으로 여러 Montage Section 묶음을
+사용하는 무기는 `ComboMontageVariants`를 사용합니다. `ComboSteps`는 Damage, Stagger,
+Targeting, Trace Side와 Socket의 공통 최대 Step 데이터를 소유하고, 각 Variant의 실제
+타수는 `MontageSections.Num()`으로 결정합니다. Variant는 1개 이상이면서
+`ComboSteps.Num()`을 넘지 않아야 하며 Section 이름은 전체 Variant에서 고유해야 합니다.
+Ability는 묶음 종료 전에 직전 Variant를 제외한 다음 Variant를 균등 선택해 마지막
+Section의 `NextSection`을 미리 연결합니다. 새 묶음의 Step 0 Notify가 도착하면 선택을
+확정하고 단계 Index는 다시 `0`부터 시작합니다.
+마지막 확정 Variant는 장비 Component에도 무기별로 보존하므로 Ability 제거를 동반하는
+Unequip 뒤 같은 무기를 다시 장착해도 첫 Variant가 직전 선택과 연속되지 않습니다.
+Variant 배열이 비어 있으면 기존 단일 Section 목록과 fallback 계약은 그대로 유지됩니다.
+Montage Notify의 `ComboStepIndex`는 Variant 로컬 Index가 아니라 Montage 전체 Section의
+누적 0-based Index이며 런타임이 이를 Variant와 로컬 Step으로 환산합니다.
+Harvest는 랜덤 Variant 전환을 사용하지 않고 첫 번째 Variant의 Section과 실제 타수만
+재사용합니다. 따라서 전투용 Variant Montage로 교체해도 존재하지 않는 legacy
+`ComboSteps.MontageSection` 이름 때문에 fallback으로 내려가지 않습니다.
+
+카타나 Variant 공격은 리타겟 시퀀스의 Root Motion을 Montage에서만 소비합니다. 공격 중
+CharacterMovement가 적용한 실제 Capsule 이동은 Montage 종료 뒤에도 유지하며 시작 위치로
+복원하거나 별도 코드 이동을 더하지 않습니다. 충돌로 Root Motion 이동이 제한되면 제한된
+Capsule 위치가 최종 결과입니다.
+
 ### 6.2 전투 스킬 삽입 계약
 
 `UAIRECompanionCombatSkillAbility`는 기본 공격과 독립된 Request·Hit·Started·Ended와
@@ -518,6 +540,23 @@ StateTree를 Compile한 뒤 Save합니다.
 6. 마지막 Step에는 다음 단계가 없으므로 Combo Window가 필요하지 않습니다.
 7. Data Validation 후 Weapon Definition, Montage와 관련 Anim Blueprint를
    Compile·Save합니다.
+
+서로 다른 타수의 Variant를 한 Montage에 넣을 때는 Variant 순서대로 Section을 배치하고,
+Hit·Trace·Combo Window Notify의 `ComboStepIndex`를 전체 누적 Index로 입력합니다. 각
+Variant의 마지막 Section에는 Combo Window를 두지 않습니다. MCP의
+`ConfigureBasicAttackComboWindows`에는 `ComboVariantStepCounts`를 전달합니다. 예를 들어
+쌍검 7종은 `[4, 3, 3, 3, 4, 4, 4]`이며 25 Section에 Combo Window 18개가 필요합니다.
+
+다중 Variant를 한 Montage에 둘 때는 모든 Variant가 같은 `ComboSteps` 수를 사용하고,
+각 Variant의 `MontageSections`는 전체 Montage에서 고유해야 합니다. 각 Variant의 마지막
+Step에는 Combo Window를 두지 않습니다. Ability가 다음 Variant를 무중복 선택해 마지막
+Section에서 다음 Variant의 첫 Section으로 직접 연결합니다. 원본에 연속 재생용
+`Combo_All`이 있으면 타격별 클립을 끝까지 이어 붙이지 않고 Variant마다 `Combo_All`
+하나를 Montage Segment로 사용한 뒤, Segment 내부를 세 개의 논리 Section으로 나눕니다.
+이 방식은 개별 클립마다 포함된 준비·회수 구간의 중복과 자세 초기화를 피하면서 동일한
+3-Step Damage·Trace 계약을 유지합니다. 리타겟 시퀀스의
+`Enable Root Motion`, `RefPose` Root Lock과 normalized scale을 확인하고 Anim Blueprint는
+`Root Motion from Montages Only`를 유지합니다.
 
 Notify는 Trace 명중을 확정하지 않습니다. NotifyState와 시간 fallback은 같은 공용 공간
 resolver를 호출하고, 같은 단계의 `ExecutionId`는 snapshotted Target에 terminal 결과를

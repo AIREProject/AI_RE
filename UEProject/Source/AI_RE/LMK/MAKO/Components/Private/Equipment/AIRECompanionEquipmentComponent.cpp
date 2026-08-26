@@ -629,6 +629,31 @@ void UAIRECompanionEquipmentComponent::SetKatanaEvadePresentation(
 	}
 }
 
+int32 UAIRECompanionEquipmentComponent::GetLastBasicComboVariantIndex(
+	const UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition) const
+{
+	if (!IsValid(WeaponDefinition))
+	{
+		return INDEX_NONE;
+	}
+
+	const int32* VariantIndex = LastBasicComboVariantIndices.Find(
+		FSoftObjectPath(WeaponDefinition));
+	return VariantIndex ? *VariantIndex : INDEX_NONE;
+}
+
+void UAIRECompanionEquipmentComponent::SetLastBasicComboVariantIndex(
+	UAIRECompanionWeaponDefinitionDataAsset* WeaponDefinition,
+	const int32 VariantIndex)
+{
+	if (IsValid(WeaponDefinition))
+	{
+		LastBasicComboVariantIndices.Add(
+			FSoftObjectPath(WeaponDefinition),
+			VariantIndex);
+	}
+}
+
 void UAIRECompanionEquipmentComponent::UnequipCurrentWeapon()
 {
 	DesiredWeaponDefinition = nullptr;

@@ -71,6 +71,19 @@ struct AI_RE_API FAIREWeaponComboStepDefinition
 };
 
 USTRUCT(BlueprintType)
+struct AI_RE_API FAIREWeaponComboMontageVariantDefinition
+{
+	GENERATED_BODY()
+
+	/**
+	 * Ordered Montage sections for this variant. The array length is the
+	 * runtime attack count and may not exceed the shared ComboSteps array.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack|Combo")
+	TArray<FName> MontageSections;
+};
+
+USTRUCT(BlueprintType)
 struct AI_RE_API FAIREWeaponCombatSkillDefinition
 {
 	GENERATED_BODY()
@@ -119,6 +132,17 @@ struct AI_RE_API FAIREWeaponCombatSkillDefinition
 namespace AIRECompanionWeaponDefinition
 {
 	inline constexpr float HarvestRangeAcceptanceTolerance = 25.0f;
+
+	AI_RE_API bool ResolveComboVariantStepIndex(
+		const TArray<FAIREWeaponComboMontageVariantDefinition>& Variants,
+		int32 MontageStepIndex,
+		int32& OutVariantIndex,
+		int32& OutStepIndex);
+
+	AI_RE_API int32 SelectNonRepeatingComboVariantIndex(
+		int32 VariantCount,
+		int32 PreviousVariantIndex,
+		FRandomStream& RandomStream);
 }
 
 UCLASS(BlueprintType)
@@ -154,6 +178,14 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Combo")
 	TArray<FAIREWeaponComboStepDefinition> ComboSteps;
+
+	/**
+	 * Optional section-only variants. Each non-empty variant may contain from
+	 * one through ComboSteps.Num() sections. Empty preserves the legacy
+	 * AttackMontage + ComboSteps behavior.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Attack|Combo")
+	TArray<FAIREWeaponComboMontageVariantDefinition> ComboMontageVariants;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TSoftClassPtr<UAnimInstance> LinkedAnimLayerClass;
