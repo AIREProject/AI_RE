@@ -77,6 +77,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> AttackAction;
 
+	/** Toggle Scanner Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> ToggleScannerAction;
+
 	/** Assign IA_AIREPlayerEvade and map it to Left Ctrl in the active Player IMC. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> EvadeAction;
@@ -116,6 +120,9 @@ protected:
 
 	/** Called for attack input */
 	void DoAttack();
+
+	/** Toggles the combat target scanner */
+	void ToggleScanner();
 
 	/** Starts a dash in the movement direction captured when the input begins. */
 	void DoEvade();

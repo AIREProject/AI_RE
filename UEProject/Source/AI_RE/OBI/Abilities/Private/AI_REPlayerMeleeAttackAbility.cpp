@@ -5,13 +5,13 @@
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "Engine/World.h"
-#include "TimerManager.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "DrawDebugHelpers.h"
 #include "AI_REHarvestDamageTarget.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REWeaponItemDataAsset.h"
+#include "AI_RECharacter.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
@@ -53,20 +53,30 @@ void UAI_REPlayerMeleeAttackAbility::ActivateAbility(
 		HitEventTask->ReadyForActivation();
 	}
 
-	// 연속 판정용 이벤트 수신 대기 (다단 히트/트레이스)
-	ActiveHitStartTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.Start")), nullptr, false, false);
-	if (ActiveHitStartTask)
+	TraceEventTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Attack.TraceBegin"), false), nullptr, false, false);
+	if (TraceEventTask)
 	{
-		ActiveHitStartTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleActiveHitStart);
-		ActiveHitStartTask->ReadyForActivation();
+		TraceEventTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleTraceEvent);
+		TraceEventTask->ReadyForActivation();
 	}
 
-	ActiveHitEndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ActiveHit.End")), nullptr, false, false);
-	if (ActiveHitEndTask)
+	TraceSampleTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Attack.TraceSample"), false), nullptr, false, false);
+	if (TraceSampleTask)
 	{
-		ActiveHitEndTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleActiveHitEnd);
-		ActiveHitEndTask->ReadyForActivation();
+		TraceSampleTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleTraceEvent);
+		TraceSampleTask->ReadyForActivation();
 	}
+
+	TraceEndTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Attack.TraceEnd"), false), nullptr, false, false);
+	if (TraceEndTask)
+	{
+		TraceEndTask->EventReceived.AddDynamic(this, &UAI_REPlayerMeleeAttackAbility::HandleTraceEvent);
+		TraceEndTask->ReadyForActivation();
+	}
+
+	// [하위 호환] 구형 애니메이션 노티파이(ActiveHit) 이벤트는 TraceBegin/End 로 대체되었으므로 리스너 제거
+	// ActiveHitStartTask, ActiveHitEndTask 리스너를 더 이상 생성하지 않음 (이중 호출 방지)
+
 
 	ComboWindowOpenTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(this, FGameplayTag::RequestGameplayTag(FName("Event.Combat.ComboWindowOpen")), nullptr, false, false);
 	if (ComboWindowOpenTask)
@@ -138,14 +148,14 @@ void UAI_REPlayerMeleeAttackAbility::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
-	if (GetWorld())
-	{
-		GetWorld()->GetTimerManager().ClearTimer(ActiveHitTimerHandle);
-	}
+
 	HitActorsThisSwing.Empty();
 
 	MontageTask = nullptr;
 	HitEventTask = nullptr;
+	TraceEventTask = nullptr;
+	TraceSampleTask = nullptr;
+	TraceEndTask = nullptr;
 	ActiveHitStartTask = nullptr;
 	ActiveHitEndTask = nullptr;
 	ComboWindowOpenTask = nullptr;
@@ -167,41 +177,250 @@ void UAI_REPlayerMeleeAttackAbility::HandleMontageInterrupted()
 
 void UAI_REPlayerMeleeAttackAbility::HandleHitEvent(FGameplayEventData Payload)
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, TEXT("[Debug] HandleHitEvent Fired! (Array Cleared)"));
 	// 기존 단발성 타격 처리 (한 번만 검사)
 	HitActorsThisSwing.Empty();
 	PerformTraceHit();
 }
 
-void UAI_REPlayerMeleeAttackAbility::HandleActiveHitStart(FGameplayEventData Payload)
+void UAI_REPlayerMeleeAttackAbility::HandleTraceEvent(FGameplayEventData Payload)
 {
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, TEXT("[Debug] HandleActiveHitStart Fired! (Array Cleared)"));
-	// 연속 판정 시작 (배열 비우고 타이머 시작)
-	HitActorsThisSwing.Empty();
-	bIsActiveHitEnded = false;
-
-	if (GetWorld())
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (!Character) return;
+	
+	USceneComponent* TraceMesh = nullptr;
+	if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
 	{
-		// 0.05초마다 PerformTraceHit 실행
-		GetWorld()->GetTimerManager().SetTimer(ActiveHitTimerHandle, this, &UAI_REPlayerMeleeAttackAbility::PerformTraceHit, 0.05f, true);
+		if (CombatComp->EquippedWeapon && CombatComp->EquippedWeapon != CombatComp->DefaultUnarmedWeapon)
+		{
+			if (AAI_RECharacter* PlayerChar = Cast<AAI_RECharacter>(Character))
+			{
+				TraceMesh = PlayerChar->GetWeaponMeshComponent();
+			}
+		}
+	}
+	
+	if (!TraceMesh)
+	{
+		TraceMesh = Character->GetMesh();
+	}
+
+	FName ReceivedTagName = Payload.EventTag.GetTagName();
+
+	if (ReceivedTagName == FName("Event.Attack.TraceBegin") ||
+		ReceivedTagName == FName("Event.Combat.ActiveHit.Start"))
+	{
+		HitActorsThisSwing.Empty();
+		bIsActiveHitEnded = false;
+		TryBeginCurrentStepTrace(TraceMesh);
+	}
+	else if (ReceivedTagName == FName("Event.Attack.TraceSample"))
+	{
+		if (bUseFallbackTrace)
+		{
+			PerformTraceHit();
+		}
+		else
+		{
+			FHitResult TargetHit;
+			EAIRECombatMeleeTraceResult TraceResult = SampleCurrentStepCombatTrace(TraceMesh, TargetHit);
+			ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+		}
+	}
+	else if (ReceivedTagName == FName("Event.Attack.TraceEnd") ||
+			 ReceivedTagName == FName("Event.Combat.ActiveHit.End"))
+	{
+		if (bUseFallbackTrace)
+		{
+			PerformTraceHit();
+		}
+		else
+		{
+			FHitResult TargetHit;
+			EAIRECombatMeleeTraceResult TraceResult = SampleCurrentStepCombatTrace(TraceMesh, TargetHit);
+			ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+			CloseCurrentStepTrace();
+		}
+		
+		HitActorsThisSwing.Empty();
+		bIsActiveHitEnded = true;
+
+		if (bHasComboInput)
+		{
+			TryComboTransition();
+		}
 	}
 }
 
-void UAI_REPlayerMeleeAttackAbility::HandleActiveHitEnd(FGameplayEventData Payload)
+void UAI_REPlayerMeleeAttackAbility::TryBeginCurrentStepTrace(USceneComponent* MeshComponent)
 {
-	// 연속 판정 끝 (타이머 정지 및 배열 비우기)
-	if (GetWorld())
-	{
-		GetWorld()->GetTimerManager().ClearTimer(ActiveHitTimerHandle);
-	}
-	HitActorsThisSwing.Empty();
-	bIsActiveHitEnded = true;
+	bTraceWindowOpen = true;
+	ActiveTraceMesh = MeshComponent;
+	
+	CurrentTraceStartSocket = NAME_None;
+	CurrentTraceEndSocket = NAME_None;
 
-	// 예약된 콤보가 있다면 ActiveHit이 끝나는 즉시 캔슬하고 다음 섹션으로 점프
-	if (bHasComboInput)
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (Character)
 	{
-		TryComboTransition();
+		if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
+		{
+			if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(CombatComp->EquippedWeapon))
+			{
+				// [종속성 제거] MAKO의 WeaponDefinition이 아닌 플레이어 WeaponItem에서 직접 소켓 이름을 가져옵니다.
+				CurrentTraceStartSocket = WeaponItem->TraceStartSocket;
+				CurrentTraceEndSocket = WeaponItem->TraceEndSocket;
+			}
+		}
 	}
+
+	// Fallback to default names if trace sockets were not configured
+	if (CurrentTraceStartSocket.IsNone()) CurrentTraceStartSocket = FName("TraceStart");
+	if (CurrentTraceEndSocket.IsNone()) CurrentTraceEndSocket = FName("TraceEnd");
+
+	// If the specified sockets don't exist, try the universal defaults "TraceStart" and "TraceEnd"
+	if (!MeshComponent->DoesSocketExist(CurrentTraceStartSocket) || !MeshComponent->DoesSocketExist(CurrentTraceEndSocket))
+	{
+		if (MeshComponent->DoesSocketExist(FName("TraceStart")) && MeshComponent->DoesSocketExist(FName("TraceEnd")))
+		{
+			CurrentTraceStartSocket = FName("TraceStart");
+			CurrentTraceEndSocket = FName("TraceEnd");
+		}
+	}
+
+	if (!MeshComponent->DoesSocketExist(CurrentTraceStartSocket) || !MeshComponent->DoesSocketExist(CurrentTraceEndSocket))
+	{
+		bUseFallbackTrace = true;
+	}
+
+	if (MeshComponent->DoesSocketExist(CurrentTraceStartSocket) && MeshComponent->DoesSocketExist(CurrentTraceEndSocket))
+	{
+		bUseFallbackTrace = false;
+		PreviousTraceStart = MeshComponent->GetSocketLocation(CurrentTraceStartSocket);
+		PreviousTraceEnd = MeshComponent->GetSocketLocation(CurrentTraceEndSocket);
+	}
+	else
+	{
+		bUseFallbackTrace = true;
+	}
+	
+	FHitResult TargetHit;
+	EAIRECombatMeleeTraceResult TraceResult = SampleCurrentStepCombatTrace(MeshComponent, TargetHit);
+	ResolveCurrentStepTraceSample(TraceResult, TargetHit);
+}
+
+EAIRECombatMeleeTraceResult UAI_REPlayerMeleeAttackAbility::SampleCurrentStepCombatTrace(USceneComponent* MeshComponent, FHitResult& OutTargetHit)
+{
+	if (!bTraceWindowOpen)
+	{
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+	if (ActiveTraceMesh.Get() != MeshComponent)
+	{
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+
+	ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+	if (!Character)
+	{
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+
+	if (!MeshComponent->DoesSocketExist(CurrentTraceStartSocket) || !MeshComponent->DoesSocketExist(CurrentTraceEndSocket))
+	{
+		return EAIRECombatMeleeTraceResult::Invalid;
+	}
+
+	FVector TraceStart = MeshComponent->GetSocketLocation(CurrentTraceStartSocket);
+	FVector TraceEnd = MeshComponent->GetSocketLocation(CurrentTraceEndSocket);
+
+	float TraceRad = 15.0f;
+	if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
+	{
+		if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(CombatComp->EquippedWeapon))
+		{
+			if (WeaponItem->WeaponDefinition)
+			{
+				TraceRad = WeaponItem->WeaponDefinition->TraceRadius;
+			}
+		}
+	} 
+
+	FAIRECombatMeleeTraceRequest TraceRequest;
+	TraceRequest.World = GetWorld();
+	TraceRequest.Source = Character;
+	TraceRequest.Target = nullptr;
+	TraceRequest.Shape = EAIRECombatMeleeTraceShape::Capsule;
+	TraceRequest.Radius = TraceRad;
+	TraceRequest.TraceChannel = ECC_Pawn; 
+	
+	for (const TWeakObjectPtr<AActor>& WeakActor : HitActorsThisSwing)
+	{
+		if (AActor* Actor = WeakActor.Get())
+		{
+			TraceRequest.IgnoredActors.Add(Actor);
+		}
+	}
+
+	float Distance = FVector::Distance(TraceStart, TraceEnd);
+	TraceRequest.CapsuleHalfHeight = (Distance * 0.5f) + TraceRad;
+
+	FVector CapsuleCenter = (TraceStart + TraceEnd) * 0.5f;
+	
+	FVector TraceDir = TraceEnd - TraceStart;
+	if (TraceDir.IsNearlyZero())
+	{
+		TraceDir = MeshComponent->GetUpVector(); // Fallback if sockets are at the exact same location
+	}
+	FQuat CapsuleRot = FRotationMatrix::MakeFromZ(TraceDir).ToQuat();
+
+	FVector PrevCapsuleCenter = (PreviousTraceStart + PreviousTraceEnd) * 0.5f;
+
+	TraceRequest.Segments.Emplace(PrevCapsuleCenter, CapsuleCenter, CapsuleRot);
+
+	const FAIRECombatMeleeTraceResolution Resolution = FAIRECombatMeleeTraceResolver::Resolve(TraceRequest);
+	OutTargetHit = Resolution.HitResult;
+
+	PreviousTraceStart = TraceStart;
+	PreviousTraceEnd = TraceEnd;
+
+	return Resolution.Result;
+}
+
+void UAI_REPlayerMeleeAttackAbility::ResolveCurrentStepTraceSample(EAIRECombatMeleeTraceResult TraceResult, const FHitResult& TargetHit)
+{
+	if (TraceResult == EAIRECombatMeleeTraceResult::TargetHit || TraceResult == EAIRECombatMeleeTraceResult::Blocked)
+	{
+		AActor* HitActor = TargetHit.GetActor();
+		if (HitActor && !HitActorsThisSwing.Contains(HitActor))
+		{
+			HitActorsThisSwing.Add(HitActor);
+			
+			float Dmg = BaseDamage;
+			ACharacter* Character = Cast<ACharacter>(GetAvatarActorFromActorInfo());
+			if (Character)
+			{
+				if (UAI_REPlayerCombatComponent* CombatComp = Character->GetComponentByClass<UAI_REPlayerCombatComponent>())
+				{
+					if (UAI_REWeaponItemDataAsset* WeaponItem = Cast<UAI_REWeaponItemDataAsset>(CombatComp->EquippedWeapon))
+					{
+						if (WeaponItem->WeaponDefinition)
+						{
+							Dmg = WeaponItem->WeaponDefinition->Damage;
+						}
+					}
+				}
+				ProcessHit(TargetHit, Dmg, Character);
+			}
+		}
+	}
+}
+
+void UAI_REPlayerMeleeAttackAbility::CloseCurrentStepTrace()
+{
+	bTraceWindowOpen = false;
+	ActiveTraceMesh.Reset();
+	PreviousTraceStart = FVector::ZeroVector;
+	PreviousTraceEnd = FVector::ZeroVector;
 }
 
 void UAI_REPlayerMeleeAttackAbility::HandleComboWindowOpen(FGameplayEventData Payload)
@@ -374,8 +593,6 @@ void UAI_REPlayerMeleeAttackAbility::PerformTraceHit()
 void UAI_REPlayerMeleeAttackAbility::ProcessHit(const FHitResult& HitResult, float Dmg, ACharacter* Character)
 {
 	AActor* HitActor = HitResult.GetActor();
-	if (GEngine && HitActor) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Red, FString::Printf(TEXT("[Debug] ProcessHit applied to: %s"), *HitActor->GetName()));
-	if (GEngine) GEngine->AddOnScreenDebugMessage(-1, 2.0f, FColor::Orange, FString::Printf(TEXT( "[Debug] 타격 성공! 대상: %s, 데미지: %.1f"), *HitActor->GetName(), Dmg));
 
 	// 하이브리드 최적화 분기: ASC가 있는 대상 vs 단순 자원(나무/돌)
 	UAbilitySystemComponent* TargetASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(HitActor, true);
@@ -391,6 +608,7 @@ void UAI_REPlayerMeleeAttackAbility::ProcessHit(const FHitResult& HitResult, flo
 			FGameplayEffectSpecHandle DamageSpec = SourceASC->MakeOutgoingSpec(DamageEffectClass, 1.0f, EffectContext);
 			if (DamageSpec.IsValid())
 			{
+				DamageSpec.Data.Get()->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), Dmg);
 				SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec.Data.Get(), TargetASC);
 			}
 		}

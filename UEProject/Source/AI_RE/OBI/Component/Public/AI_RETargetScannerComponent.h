@@ -51,6 +51,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Scanner")
 	void StopScanning();
 
+	/** 전투 스캔(록온) 기능 토글 */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void ToggleCombatScanner();
+
+	/** 전투 스캔 기능 강제 On/Off */
+	UFUNCTION(BlueprintCallable, Category = "Scanner")
+	void SetCombatScannerEnabled(bool bEnable);
+
+	/** 전투 스캔이 켜져있는지 여부 반환 */
+	UFUNCTION(BlueprintPure, Category = "Scanner")
+	bool IsCombatScannerEnabled() const { return bIsCombatScanEnabled; }
+
+
 protected:
 	AActor* ScanForward(
 		float Radius,
@@ -97,5 +110,6 @@ private:
 	bool bInteractionOutlineVisible = true;
 
 	bool bIsCombatState = false;
+	bool bIsCombatScanEnabled = true;
 	TWeakObjectPtr<AActor> CurrentCombatTarget;
 };

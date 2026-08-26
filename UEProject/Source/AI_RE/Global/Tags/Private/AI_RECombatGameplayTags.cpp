@@ -13,6 +13,11 @@ namespace AI_RECombatGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_ActiveHit_Start, "Event.Combat.ActiveHit.Start", "대검 등 다단/지속 타격 시작 이벤트");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combat_ActiveHit_End, "Event.Combat.ActiveHit.End", "대검 등 다단/지속 타격 종료 이벤트");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Attack_Trace, "Event.Attack.Trace", "무기 궤적 트레이스용 베이스 태그");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Attack_TraceBegin, "Event.Attack.TraceBegin", "무기 궤적 트레이스 시작 이벤트");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Attack_TraceSample, "Event.Attack.TraceSample", "무기 궤적 트레이스 샘플링 이벤트");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Attack_TraceEnd, "Event.Attack.TraceEnd", "무기 궤적 트레이스 종료 이벤트");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Player_Melee, "Weapon.Player.Melee", "플레이어용 근접 무기 베이스 카테고리 태그");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Player_Melee_Sword, "Weapon.Player.Melee.Sword", "플레이어용 대검/검 무기 태그");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Weapon_Player_Melee_Fist, "Weapon.Player.Melee.Fist", "플레이어용 맨손/주먹 무기 태그");

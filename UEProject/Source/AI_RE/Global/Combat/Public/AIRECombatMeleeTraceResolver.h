@@ -52,6 +52,7 @@ struct AI_RE_API FAIRECombatMeleeTraceRequest
 	/** Required only for capsule requests and includes the hemisphere caps. */
 	float CapsuleHalfHeight = 0.0f;
 	ECollisionChannel TraceChannel = ECC_MAX;
+	TArray<AActor*> IgnoredActors;
 };
 
 struct AI_RE_API FAIRECombatMeleeTraceResolution
