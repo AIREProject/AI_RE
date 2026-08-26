@@ -43,26 +43,25 @@
       </div>
     </section>
 
-    <section class="slide slide--overview-focus" data-scope="main" data-title="프로젝트 개요" aria-label="2. 프로젝트 개요">
-      <div class="slide-accent"></div>
-      <div class="slide-inner split split--overview">
-        <div class="copy">
-          <span class="kicker">PROJECT</span>
-          <h2>개인화 AI로<br>확장되는 사용자 경험</h2>
-          <ul class="feature-list">
-            <li><strong>맥락 이해</strong><span>사용자와 환경의 상태를 읽습니다</span></li>
-            <li><strong>자율 판단</strong><span>대화에 머물지 않고 제안하고 행동합니다</span></li>
-            <li><strong>경험 확장</strong><span>다양한 인터페이스에서 같은 AI를 만납니다</span></li>
-          </ul>
-        </div>
-        <figure class="media-frame media-frame--hero">
-          <img src="./assets/overview-device-connection-v5.png" alt="평범한 방의 게임 화면 속 OUTOPIA와 모바일 웹 디바이스를 잇는 빛의 흐름">
-          <figcaption>YOUR AI · EVERYWHERE</figcaption>
-        </figure>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
-
+    <section class="slide slide--overview-focus slide--overview-expanded" data-scope="main" data-title="프로젝트 개요" aria-label="2. 프로젝트 개요">
+  <div class="slide-accent"></div>
+  <div class="slide-inner overview-expanded">
+    <div class="overview-expanded__copy">
+      <span class="kicker">ABOUT PROJECT</span>
+      <h2>게임 밖에서도, 같은 동료</h2>
+      <p class="overview-expanded__lead">게임에서 함께한 경험과 기억이<br>게임이 끝난 뒤에도 이어집니다.</p>
+      <dl class="overview-expanded__points">
+        <div><dt>함께 행동</dt><dd>탐색 · 전투 · 작업</dd></div>
+        <div><dt>이어지는 기억</dt><dd>대화 · 게임 속 사건</dd></div>
+        <div><dt>일상 속 연결</dt><dd>Web · Discord · KakaoTalk</dd></div>
+      </dl>
+    </div>
+    <figure class="overview-expanded__visual">
+      <img src="./assets/overview-device-connection-v5.png" alt="게임 속 MAKO와 모바일 경험이 연결되는 모습">
+    </figure>
+  </div>
+  <div class="slide-rule"></div>
+</section>
     <section class="slide slide--gameplay-video" data-scope="main" data-title="플레이 영상" aria-label="3. 플레이 영상">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--gameplay-video">
@@ -85,7 +84,7 @@
         <header class="slide-header slide-header--compact differentiation-header">
           <div>
             <span class="kicker">TARGET · DIFFERENCE</span>
-            <h2>관계에 몰입하는 사용자에게,<br>기억이 이어지는 하나의 동료</h2>
+            <h2>좋아하는 캐릭터와,<br>게임 밖에서도 함께</h2>
           </div>
         </header>
         <div class="ax-comparison">
@@ -265,108 +264,211 @@
       </div>
       <div class="slide-rule"></div>
     </section>
-    <section class="slide slide--multiplatform slide--platform-experience" data-scope="main" data-title="플랫폼 확장 · 사업화" aria-label="9. 플랫폼 확장과 사업화">
+    <section class="slide slide--multiplatform" data-scope="main" data-title="기술 프레임워크" aria-label="10. 기술 프레임워크">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--multiplatform">
         <header class="slide-header slide-header--compact multiplatform-header">
           <div>
-            <span class="kicker">CONNECTED EXPERIENCE</span>
-            <h2>게임 안에서도, 밖에서도 같은 MAKO</h2>
+            <span class="kicker">TECH FRAMEWORK</span>
+            <h2>하나의 MAKO를 연결하는 기술 프레임워크</h2>
           </div>
         </header>
-        <div class="surface-journey" aria-label="MAKO를 만나는 네 개의 접점">
-          <article><em>01</em><strong>UNREAL</strong><span>함께 플레이</span></article>
-          <article><em>02</em><strong>MOBILE WEB</strong><span>대화 · 기억 · 요청</span></article>
-          <article><em>03</em><strong>DISCORD</strong><span>대화 · 기억 · 요청</span></article>
-          <article class="surface-journey__kakao"><em>04</em><strong>KAKAO TALK</strong><span>대화</span></article>
-        </div>
-        <div class="platform-thesis"><strong>같은 MAKO</strong><span>접점이 달라도 이어지는 하나의 관계</span></div>
-        <p class="platform-business">게임 콘텐츠 <i>·</i> 동료 서비스 <i>·</i> IP 확장</p>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
-
-    <section class="slide slide--mobile-final" data-title="모바일 경험" aria-label="11. 모바일 경험">
-      <div class="slide-accent"></div>
-      <div class="slide-inner split split--mobile">
-        <div class="copy">
-          <span class="kicker">MOBILE EXPERIENCE</span>
-          <h2>게임 밖에서도<br>MAKO와의 관계는 이어집니다</h2>
-          <div class="mobile-status">
-            <article>
-              <span class="mobile-status__index">01</span>
-              <strong>언제든 대화</strong>
-              <p>게임 밖에서도 MAKO와 자연스럽게 대화를 이어갑니다.</p>
+        <div class="architecture architecture--matrix architecture--multiplatform">
+          <div class="architecture__column architecture__column--frontend">
+            <span class="architecture__label">FRONTEND</span>
+            <article class="architecture__ue">
+              <span class="status status--done">CURRENT</span>
+              <strong>PC</strong>
+              <p>전투 · 이동 · 작업</p>
             </article>
-            <article>
-              <span class="mobile-status__index">02</span>
-              <strong>하나의 동료</strong>
-              <p>게임과 모바일이 같은 MAKO의 정체성과 관계를 공유합니다.</p>
-            </article>
-            <article>
-              <span class="mobile-status__index">03</span>
-              <strong>이어지는 기억</strong>
-              <p>일상의 대화와 게임 속 사건을 기억하고, 다음 만남에서 자연스럽게 회상합니다.</p>
+            <article class="architecture__mobile">
+              <span class="status status--progress">PROTOTYPE</span>
+              <strong>MOBILE</strong>
+              <p>게임 밖 대화 · 요청</p>
             </article>
           </div>
-        </div>
-        <div class="phone-presentation">
-          <div class="phone-device phone-device--chat-demo">
-            <span class="phone-side phone-side--volume" aria-hidden="true"></span>
-            <span class="phone-side phone-side--power" aria-hidden="true"></span>
-            <div class="phone-screen">
-              <span class="phone-island" aria-hidden="true"></span>
-              <div class="chat-demo" aria-label="MAKO와의 모바일 대화 예시">
-                <header class="chat-demo__header">
-                  <img class="chat-demo__avatar" src="./assets/mako-chat-profile-crop.png" alt="MAKO">
-                  <div><small>나의 동료</small><strong>MAKO</strong></div>
-                  <i>ONLINE</i>
-                </header>
-                <div class="chat-demo__viewport">
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="500">
-                    <p>오늘 드디어 AI : RE를 소개하는 날이야.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="1300" data-chat-hide="2300" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="2300">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>드디어 오늘이네요! 그동안 발표 자료 계속 다듬느라 고생했잖아요. 준비한 만큼 분명 잘할 수 있을 거예요.</p></div>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="4300">
-                    <p>붕대 제작법 알려줘.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="5200" data-chat-hide="6200" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="6200">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>식물 줄기 2개가 필요해요. 작업대에서 바로 만들 수 있어요.</p></div>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="8200">
-                    <p>그럼 붕대 하나 만들어 줘.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="9000" data-chat-hide="9900" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="9900">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>좋아요. 제가 바로 붕대 하나를 만들게요.</p></div>
-                  </div>
-                  <div class="chat-demo__task" data-chat-delay="10800">
-                    <span>✓</span><div><small>제작 시작</small><strong>붕대 × 1</strong></div>
-                  </div>
-                </div>
-              </div>
-              <span class="phone-home" aria-hidden="true"></span>
+          <div class="architecture__bridge" aria-hidden="true">
+            <span>REQUEST</span>
+            <div class="architecture__bridge-track">
+              <i>→</i>
+              <i>←</i>
             </div>
+            <strong>RESPONSE</strong>
+          </div>
+          <div class="architecture__column architecture__column--service">
+            <span class="architecture__label">BACKEND</span>
+            <article class="architecture__backend">
+              <span class="status status--done">GATEWAY</span>
+              <strong>SERVER</strong>
+              <p>인증 · 검증 · 맥락 연결</p>
+            </article>
+            <div class="architecture__service-link" aria-hidden="true">↕</div>
+            <article class="architecture__llm">
+              <span class="status status--next">AI ENGINE</span>
+              <strong>AI</strong>
+              <p>언어 이해 · 대화 · 개인화 후보</p>
+            </article>
           </div>
         </div>
       </div>
       <div class="slide-rule"></div>
     </section>
 
-    
+    <section class="slide slide--memory-architecture" data-scope="main" data-title="장기기억" aria-label="9. 장기기억">
+      <div class="slide-inner memory-architecture">
+        <header class="memory-architecture__header">
+          <span class="kicker">LONG-TERM MEMORY</span>
+          <h2>기억은 근거에서 시작됩니다</h2>
+        </header>
+
+        <div class="memory-flow" aria-label="근거가 있는 장기기억의 저장과 회상 흐름">
+          <article><em>01</em><strong>근거 원문</strong><span>대화 · 게임 사건</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>02</em><strong>기억 후보</strong><span>출처 · 사용자 범위</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>03</em><strong>활성 기억</strong><span>승인된 기억만</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>04</em><strong>제한 회상</strong><span>상위 3개 · 360자</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>05</em><strong>응답 확인</strong><span>참조 · 숫자 · 부정</span></article>
+        </div>
+
+        <div class="memory-detail">
+          <div class="memory-principles">
+            <section>
+              <em>환각 제어</em>
+              <strong>근거가 확인된 기억만 사용</strong>
+              <p>출처 없는 저장 차단 · 답변 내용 재확인</p>
+            </section>
+            <section>
+              <em>망각 제어</em>
+              <strong>지우지 않고 우선순위를 조절</strong>
+              <p>30일 기준 순위 감쇠 · 고정 기억 유지</p>
+            </section>
+            <section>
+              <em>사용자 통제</em>
+              <strong>기억을 직접 고치고 삭제</strong>
+              <p>조회 · 검색 · 정정 · 고정 · 삭제 · 초기화</p>
+            </section>
+          </div>
+
+          <aside class="memory-ui" aria-label="Memory API 기억 관리 화면">
+            <header>
+              <div><span>함께 쌓은 기억</span><strong>MAKO가 기억하는 이야기</strong></div>
+              <button type="button">모든 기억 잊기</button>
+            </header>
+            <div class="memory-ui__toolbar">
+              <div class="memory-ui__search"><span aria-hidden="true">⌕</span> 기억에서 찾아보기</div>
+              <button type="button">검색</button>
+            </div>
+            <div class="memory-ui__body">
+              <section class="memory-ui__list" aria-label="저장된 기억 목록">
+                <article class="memory-ui__item memory-ui__item--selected">
+                  <div><span>선호 기억</span><em>고정됨</em></div>
+                  <strong>비 오는 날 산책하는 걸 좋아해</strong>
+                  <p>모바일에서 직접 공유한 기억</p>
+                  <footer><button type="button">자세히</button><button type="button">고정 해제</button><button type="button">이 기억 잊기</button></footer>
+                </article>
+                <article class="memory-ui__item">
+                  <div><span>약속 기억</span><em>저장된 이야기</em></div>
+                  <strong>장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</strong>
+                  <p>게임에서 함께 정한 약속</p>
+                  <footer><button type="button">자세히</button><button type="button">오래 기억하기</button><button type="button">이 기억 잊기</button></footer>
+                </article>                <article class="memory-ui__item memory-ui__item--realworld">
+                  <div><span>프로필 기억</span><em>일상에서 공유</em></div>
+                  <strong>주말에는 조용한 카페에서 그림을 그리며 쉬는 걸 좋아해</strong>
+                  <p>모바일에서 직접 공유한 기억</p>
+                  <footer><button type="button">자세히</button><button type="button">오래 기억하기</button><button type="button">이 기억 잊기</button></footer>
+                </article>
+              </section>
+              <section class="memory-ui__edit" aria-label="선택한 기억 수정">
+                <header><span>선택한 기억</span><strong>선호 기억</strong></header>
+                <label>기억할 내용<textarea rows="3">비 오는 날 산책하는 걸 좋아해</textarea></label>
+                <label>정정 이유<input type="text" value="내 취향을 더 정확하게 수정" readonly></label>
+                <label class="memory-ui__check"><input type="checkbox" checked> 오래 기억하기</label>
+                <button type="button">내용 저장</button>
+              </section>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+    <section class="slide slide--mobile-final" data-title="멀티플랫폼 경험" aria-label="10. 멀티플랫폼 경험">
+      <div class="slide-inner platform-experience">
+        <header class="platform-experience__header">
+          <span class="kicker">ONE COMPANION · MANY PLATFORMS</span>
+          <h2>게임 밖에서도, 같은 MAKO</h2>
+        </header>
+
+        <div class="platform-layout">
+          <div class="platform-pillars">
+            <article>
+              <em>01</em>
+              <div><strong>언제든 대화</strong><p>게임 밖에서도 MAKO와 자연스럽게 대화를 이어갑니다.</p></div>
+            </article>
+            <article>
+              <em>02</em>
+              <div><strong>하나의 동료</strong><p>게임과 여러 플랫폼이 같은 MAKO의 정체성과 관계를 공유합니다.</p></div>
+            </article>
+            <article>
+              <em>03</em>
+              <div><strong>이어지는 기억</strong><p>일상의 대화와 게임 속 사건을 다음 만남에서 자연스럽게 회상합니다.</p></div>
+            </article>
+          </div>
+
+          <div class="platform-devices">
+            <div class="platform-mobile-pair">
+              <article class="platform-device platform-device--kakao">
+                <header><div><span>KAKAOTALK</span><strong>일상 속 대화</strong></div><em>MAKO</em></header>
+                <div class="vertical-phone vertical-phone--kakao">
+                  <span class="vertical-phone__island" aria-hidden="true"></span>
+                  <header><button type="button" aria-label="뒤로">‹</button><img src="./assets/mako-chat-profile-crop.png" alt="MAKO"><div><strong>MAKO</strong><small>나의 동료</small></div></header>
+                  <div class="kakao-chat">
+                    <p class="kakao-chat__user">으, 퇴근하고 싶다.</p>
+                    <div class="kakao-chat__mako"><img src="./assets/mako-chat-profile-crop.png" alt=""><p><strong>MAKO</strong>6시 30분까지 얼마 안 남았어. 조금만 더 힘내.</p></div>
+                    <div class="kakao-input">메시지 입력 <span>＋</span></div>
+                  </div>
+                  <span class="vertical-phone__home" aria-hidden="true"></span>
+                </div>
+              </article>
+
+              <article class="platform-device platform-device--web">
+                <header><div><span>WEB</span><strong>대화 · 기억 · 작업</strong></div><em>ONLINE</em></header>
+                <div class="vertical-phone vertical-phone--web">
+                  <span class="vertical-phone__island" aria-hidden="true"></span>
+                  <header><img src="./assets/mako-chat-profile-crop.png" alt="MAKO"><div><small>나의 동료</small><strong>MAKO</strong></div></header>
+                  <div class="web-chat">
+                    <p class="web-chat__user">비가 오네.</p>
+                    <div class="web-chat__mako"><img src="./assets/mako-chat-profile-crop.png" alt=""><p><strong>MAKO</strong>비 오는 날 산책 나가는 거 좋아하잖아. 산책 가려고?</p></div>
+                  </div>
+                  <span class="vertical-phone__home" aria-hidden="true"></span>
+                </div>
+              </article>
+            </div>
+
+            <article class="platform-device platform-device--discord">
+              <header><div><span>DISCORD</span></div></header>
+              
+              <div class="discord-ui">
+                <aside aria-hidden="true"><b>AI</b><span></span><span></span></aside>
+                <section>
+                  
+                  <div class="discord-conversation">
+                    <div class="discord-message"><div class="discord-avatar discord-avatar--user">P</div><p><strong>PLAYER <time>오늘 14:21</time></strong>나무 30개만 캐 놔줘.</p></div>
+                    <div class="discord-message"><img class="discord-avatar" src="./assets/mako-chat-profile-crop.png" alt="MAKO"><p><strong>MAKO <small>BOT</small> <time>오늘 14:21</time></strong>좋아, 나무 30개 모아둘게.</p></div>
+                  </div>
+                  
+                  <div class="discord-command">메시지 보내기</div>
+                </section>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
     <section class="slide slide--generative-ai" data-scope="main" data-title="생성형 AI 활용" aria-label="8. 생성형 AI 활용">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--generative-ai">

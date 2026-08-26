@@ -31,63 +31,90 @@
     { category: "production", categoryTitle: "제작 과정 · 검증", title: "근거와 출처", headline: "시장 자료와 구현 근거를 구분해 관리", bullets: ["시장: Grand View Research", "사례: NVIDIA ACE · Character.AI", "구현: OpenAPI · 프로젝트 문서 · 테스트 결과"], cards: [["MARKET", "외부 자료", "규모 · 성장률"], ["CASE", "공식 사례", "대화 · 게임 AI"], ["PROJECT", "내부 근거", "계약 · 코드 · 테스트"]], source: "시장조사 메모 · share.gemini.google/Ma15pK0tJXLb" }
   ];
 
-  const architecture = document.querySelector(".slide--multiplatform");
-  architecture.dataset.scope = "main";
-  architecture.dataset.title = "기술 아키텍처";
-  architecture.className = "slide slide--multiplatform";
-  architecture.innerHTML =
-    '<div class="slide-accent"></div><div class="slide-inner slide-inner--multiplatform">' +
-    '<header class="slide-header slide-header--compact multiplatform-header"><div><span class="kicker">TECH FRAMEWORK</span><h2>하나의 MAKO를 연결하는 기술 프레임워크</h2></div></header>' +
-    '<div class="architecture architecture--matrix architecture--multiplatform">' +
-    '<div class="architecture__column architecture__column--frontend"><span class="architecture__label">FRONTEND</span>' +
-    '<article class="architecture__ue"><strong>PC</strong><p>게임 플레이 · 이동 · 전투 · 작업</p></article>' +
-    '<article class="architecture__mobile"><strong>MOBILE</strong><p class="architecture__surfaces">WEB / DISCORD / KAKAO TALK</p><p>게임 밖 대화 · 기억 관리 · 요청</p></article></div>' +
-    '<div class="architecture__bridge" aria-hidden="true"><span>REQUEST</span><div class="architecture__bridge-track"><i>→</i><i>←</i></div><strong>RESPONSE</strong></div>' +
-    '<div class="architecture__column architecture__column--service"><span class="architecture__label">BACKEND</span>' +
-    '<article class="architecture__backend"><strong>SERVER</strong><p>사용자 연결 · 데이터 관리 · 맥락 유지</p></article><div class="architecture__service-link" aria-hidden="true">↕</div>' +
-    '<article class="architecture__llm"><strong>AI</strong><p>대화 생성 · 기억 회상 · 상황 이해</p></article></div></div></div><div class="slide-rule"></div>';
-
-  document.querySelector(".slide--local-ai")?.removeAttribute("data-scope");
-  document.querySelector(".slide--generative-ai")?.removeAttribute("data-scope");
-
-  const mobile = document.querySelector(".slide--mobile-final");
-  mobile.dataset.scope = "main";
-
-  const vision = document.querySelector(".slide--final-polish");
-  vision.dataset.scope = "main";
-  vision.dataset.title = "Next Vision";
-  vision.innerHTML =
-    '<div class="slide-accent"></div><div class="slide-inner slide-inner--final-polish">' +
-    '<header class="slide-header slide-header--compact polish-header"><div><span class="kicker">NEXT VISION</span><h2>게임 속 동료를,<br>더 많은 일상으로</h2></div></header>' +
-    '<div class="todo-board vision-board" aria-label="AI RE의 확장 방향">' +
-    '<article><span aria-hidden="true"></span><em>01</em><div><strong>게임 콘텐츠</strong><p>캐릭터 · 에피소드 DLC</p></div></article>' +
-    '<article><span aria-hidden="true"></span><em>02</em><div><strong>플랫폼 확장</strong><p>Web · Discord · Kakao · Voice</p></div></article>' +
-    '<article><span aria-hidden="true"></span><em>03</em><div><strong>현실로 확장</strong><p>Physical AI · 공식 IP · B2B</p></div></article></div>' +
-    '<p class="polish-statement vision-statement"><strong>게임 콘텐츠</strong> → 동료 서비스 → <strong>Physical AI · IP</strong></p></div><div class="slide-rule"></div>';
-
-  const oldAppendix = [...document.querySelectorAll('[data-scope="appendix"]')];
-  oldAppendix.forEach((slide, index) => {
-    if (index >= appendixPages.length) {
-      slide.removeAttribute("data-scope");
-      return;
+  const marketFit = document.createElement("section");
+  marketFit.id = "market-fit";
+  marketFit.className = "slide slide--market-fit";
+  marketFit.dataset.scope = "main";
+  marketFit.dataset.title = "시장성";
+  marketFit.innerHTML =
+    '<div class="slide-inner market-fit">' +
+    '<header class="market-fit__header"><span class="kicker">MARKET FIT</span><h2>생존게임과 AI 캐릭터 챗의 교차점</h2></header>' +
+    '<div class="market-fit__charts"><section class="market-fit__survival">' +
+    '<div class="market-fit__section-title"><strong>생존게임의 누적 성과</strong><span>공개 판매 · 이용 규모</span></div>' +
+    '<div class="market-fit__bars market-fit__bars--sales"><div class="market-fit__bar"><div><strong>PALWORLD<small>추정 판매</small></strong><span>2,500만 장</span></div><i style="--bar:100"></i></div>' +
+    '<div class="market-fit__bar"><div><strong>ARK<small>공식 판매</small></strong><span>2,000만 장+</span></div><i style="--bar:80"></i></div>' +
+    '<div class="market-fit__bar"><div><strong>ENSHROUDED<small>공식 플레이어</small></strong><span>400만 명</span></div><i style="--bar:16"></i></div></div>' +
+    '<p class="market-fit__caption">동료 · 성장 · 건축이 결합된 유료 생존게임의 누적 성과</p></section>' +
+    '<section class="market-fit__chat"><div class="market-fit__section-title"><strong>국내 AI 캐릭터 챗</strong><span>ZETA · CRACK · 2024.04 → 2026.03</span></div>' +
+    '<div class="market-fit__curve"><svg viewBox="0 0 760 230" role="img" aria-label="AI 캐릭터 챗 MAU와 총 사용시간 성장 추세"><line x1="32" y1="190" x2="728" y2="190"></line><line x1="32" y1="34" x2="32" y2="190"></line>' +
+    '<path class="market-fit__curve-line market-fit__curve-line--mau" d="M32 182 C190 180 310 164 430 132 S620 75 728 54"></path><path class="market-fit__curve-line market-fit__curve-line--time" d="M32 185 C205 184 342 176 468 138 S650 48 728 24"></path>' +
+    '<circle class="market-fit__curve-dot market-fit__curve-dot--mau" cx="32" cy="182" r="5"></circle><circle class="market-fit__curve-dot market-fit__curve-dot--mau" cx="728" cy="54" r="6"></circle><circle class="market-fit__curve-dot market-fit__curve-dot--time" cx="32" cy="185" r="5"></circle><circle class="market-fit__curve-dot market-fit__curve-dot--time" cx="728" cy="24" r="6"></circle></svg>' +
+    '<div class="market-fit__curve-labels"><span>2024.04</span><span>2026.03</span></div><div class="market-fit__curve-legend"><p><i></i><strong>MAU</strong><span>16만 → 196만</span><em>12배</em></p><p><i></i><strong>총 사용시간</strong><span>110만h → 6,310만h</span><em>57배</em></p></div></div>' +
+    '<p class="market-fit__overlap"><strong>62.5%</strong><span><b>제타 사용자 100명 중 약 63명</b>이 모바일 게임 이용량 상위 10% 집단에 포함</span></p></section></div>' +
+    '<div class="market-fit__logic"><span><strong>생존게임</strong>반복되는 공동 사건</span><i>→</i><span><strong>동료</strong>경험이 관계로 축적</span><i>→</i><span><strong>LLM</strong>정해진 대사 밖의 대화</span>' +
+    '<button type="button" data-slide-target="market-evidence-pragmata">시장 사례 보기 →</button></div>' +
+    '<p class="market-fit__source">Alinea Analytics · Snail Games · Keen Games · MobileIndex / IGAWorks</p></div><div class="slide-rule"></div>';
+  deck.appendChild(marketFit);
+  const marketEvidencePages = [
+    {
+      title: "행동하는 동료의 시장 신호",
+      modifier: "pragmata",
+      html:
+        '<div class="market-evidence__wash"></div><div class="slide-inner market-evidence">' +
+        '<header class="market-evidence__header"><span>PRAGMATA · CAPCOM</span><h2>신규 IP도 동료와 함께하는 플레이로 시장을 만들었다</h2><p>프래그마타는 인간과 안드로이드 동료의 협력 플레이를 핵심 경험으로 내세운 SF 액션 어드벤처입니다.</p></header>' +
+        '<div class="pragmata-market-body"><div class="pragmata-market-data">' +
+        '<div class="market-timeline" aria-label="프래그마타 누적 판매 추이">' +
+        '<div><em>2 DAYS</em><strong>1,000,000</strong><span>전 세계 판매</span></div><i></i>' +
+        '<div><em>16 DAYS</em><strong>2,000,000</strong><span>전 세계 판매</span></div><i></i>' +
+        '<div class="market-timeline__latest"><em>FY Q1</em><strong>2,510,000</strong><span>누적 판매</span></div></div>' +
+        '<p class="market-evidence__meaning"><strong>2026.04.17 출시 · 완전 신규 IP</strong> CAPCOM은 새로운 게임성과 함께 캐릭터·세계관을 초기 판매 동력으로 평가했습니다.</p></div>' +
+        '<figure class="market-reference market-reference--pragmata"><img src="./assets/market-pragmata-keyart.png" alt="프래그마타의 휴와 안드로이드 동료 다이애나 공식 키아트"><figcaption>HUGH × DIANA · OFFICIAL KEY ART · ©CAPCOM</figcaption></figure></div>' +
+        '<p class="market-evidence__sources"><a href="https://www.capcom.co.jp/ir/english/news/html/e260420.html" target="_blank">CAPCOM · 1M / 2 days</a><span>·</span><a href="https://www.capcom.co.jp/ir/news/pdf/260507.pdf" target="_blank">CAPCOM · 2M / 16 days</a><span>·</span><a href="https://www.capcom.co.jp/ir/english/data/result_2025.html" target="_blank">CAPCOM FY2026 Q1 · 2.51M</a></p></div><div class="slide-rule"></div>'
+    },
+    {
+      title: "관계형 캐릭터 서비스의 수익화",
+      modifier: "ryza",
+      html:
+        '<div class="market-evidence__wash"></div><div class="slide-inner market-evidence">' +
+        '<header class="market-evidence__header"><span>RYZACHAT:AI · SPIRALAI × KOEI TECMO</span><h2>캐릭터와의 관계가 모바일 반복 매출로 확장됐다</h2><p>2026년 8월 25일 일본 출시. 대화만으로 탐색·채집·조합·전투가 진행되는 공식 라이선스 AI 채팅 RPG입니다.</p></header>' +
+        '<div class="ryza-market-body"><figure class="market-reference market-reference--ryza"><img src="./assets/market-ryzachat-demo.jpg" alt="라이자챗 AI의 캐릭터 대화와 응답 UI가 보이는 공식 데모 구동 화면"><figcaption>캐릭터 대화 · 음성 · 응답 UI · RYZACHAT:AI 공식 데모</figcaption></figure>' +
+        '<div class="ryza-market-data"><div class="ryza-interest"><em>2026.08.26 조사 시점</em><strong>일본 App Store 무료 앱 종합 3위</strong><span>예상보다 많은 사전등록 → 서버 증설 → 8월 25일 출시</span></div>' +
+        '<div class="ryza-economics__pricing">' +
+        '<div><span>MONTHLY</span><strong>¥980</strong><em>월 구독</em></div>' +
+        '<div><span>ANNUAL</span><strong>¥6,000</strong><em>연 구독</em></div>' +
+        '<div><span>TEXT</span><strong>45</strong><em>월 기본 대화 횟수</em></div>' +
+        '<div><span>IAP</span><strong>¥190–3,900</strong><em>추가 대화 토큰</em></div>' +
+        '<div><span>SKIN</span><strong>¥1,850</strong><em>의상 단품</em></div></div></div></div>' +
+        '<div class="market-caution"><strong>관심</strong><span>출시 직후 무료 앱 상위권으로 초기 유입 확인</span><strong>과제</strong><span>이용 횟수 제한과 추가 과금에는 가격 민감도가 발생</span></div>' +
+        '<p class="market-evidence__sources"><a href="https://ryzachat-ai.go-spiral.ai/" target="_blank">RyzaChat:AI 공식 · 화면</a><span>·</span><a href="https://apps.apple.com/jp/iphone/charts" target="_blank">Apple · 일본 무료 앱 순위</a><span>·</span><a href="https://www.4gamer.net/games/029/G102959/20260825010/" target="_blank">4Gamer · 출시</a><span>·</span><a href="https://dengekionline.com/article/202608/85461" target="_blank">전격온라인 · 가격</a><span>·</span><a href="https://www.itmedia.co.jp/news/article/2608/25/2000000774/" target="_blank">ITmedia · 가격 반응</a></p></div><div class="slide-rule"></div>'
+    },
+    {
+      title: "두 사례와 AI : RE",
+      modifier: "aire",
+      html:
+        '<div class="market-evidence__wash"></div><div class="slide-inner market-evidence">' +
+        '<header class="market-evidence__header"><span>AI : RE · PROJECT FIT</span><h2>행동의 유대와 이어지는 관계를 하나의 동료로</h2><p>프래그마타와 라이자챗의 시장 신호가 현재 AI : RE의 동료 경험과 어떻게 맞닿는지 정리했습니다.</p></header>' +
+        '<div class="aire-market-flow">' +
+        '<section><em>01</em><strong>PRAGMATA</strong><h3>행동하는 동료</h3><p>함께 전투하고 문제를 해결하며 플레이 안에서 유대를 형성</p><small>동료 AI · DIANA</small></section>' +
+        '<b>→</b><section><em>02</em><strong>RYZACHAT:AI</strong><h3>이어지는 캐릭터</h3><p>좋아하던 게임 캐릭터와 대화하며 관계를 일상으로 연결</p><small>AI CHAT RPG · RYZA</small></section>' +
+        '<b>→</b><section><em>03</em><strong>AI : RE</strong><h3>같은 동료</h3><p>게임에서는 함께 행동하고, 게임 밖에서는 대화와 기억을 공유</p><small>ONE COMPANION</small></section></div>' +
+        '<div class="aire-market-rule"><strong>현재 프로젝트 기조</strong><span>게임 안 · 함께 행동</span><span>게임 밖 · 대화와 기억</span><span>접점이 바뀌어도 같은 정체성</span><span>행동 권한은 게임 규칙으로 통제</span></div>' +
+        '<p class="market-evidence__sources">해석 근거 · CAPCOM 공식 판매자료 · RyzaChat:AI 공식 기능 · AI : RE 현재 구현 기조</p></div><div class="slide-rule"></div>'
     }
-    const page = appendixPages[index];
-    slide.className = "slide appendix-slide appendix-explain-slide";
-    slide.dataset.scope = "appendix";
-    slide.dataset.category = page.category;
-    slide.dataset.categoryTitle = page.categoryTitle;
-    slide.dataset.title = page.title;
-    const paragraphs = page.bullets.map((item) => "<p>" + item + "</p>").join("");
-    const facts = page.cards.map((fact) =>
-      '<div class="appendix-fact"><span>' + fact[0] + '</span><strong>' + fact[1] + '</strong><p>' + fact[2] + '</p></div>'
-    ).join("");
-    slide.innerHTML =
-      '<div class="slide-accent"></div><div class="slide-inner appendix-shell appendix-explain">' +
-      '<header class="appendix-document__header"><h2>' + page.title + '</h2><p>' + page.headline + '</p></header>' +
-      '<div class="appendix-document__body"><div class="appendix-prose">' + paragraphs + '</div>' +
-      '<div class="appendix-facts">' + facts + '</div></div><p class="source-line">' + page.source + '</p></div><div class="slide-rule"></div>';
-  });
+  ];
 
+  marketEvidencePages.forEach((page) => {
+    const slide = document.createElement("section");
+    slide.id = "market-evidence-" + page.modifier;
+    slide.className = "slide market-evidence-slide market-evidence--" + page.modifier;
+    slide.dataset.scope = "appendix";
+    slide.dataset.category = "market-evidence";
+    slide.dataset.categoryTitle = "최신 시장 근거";
+    slide.dataset.title = page.title;
+    slide.innerHTML = page.html;
+    slide.insertAdjacentHTML("beforeend", '<button type="button" class="appendix-return market-evidence__return" data-slide-target="market-fit">← 본문 07</button>');
+    deck.appendChild(slide);
+  });
   const mainOrder = [
     ".slide--cover",
     ".slide--overview-focus",
@@ -95,7 +122,9 @@
     ".slide--gameplay-video",
     ".slide--gameplay-loop",
     ".slide--character-design",
+    ".slide--market-fit",
     ".slide--multiplatform",
+    ".slide--memory-architecture",
     ".slide--mobile-final",
     ".team-slide",
     ".slide--final-polish",
@@ -211,6 +240,17 @@
     updateSlides();
   };
 
+  document.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-slide-target]");
+    if (!trigger) return;
+    const target = document.getElementById(trigger.dataset.slideTarget);
+    const targetIndex = slides.indexOf(target);
+    if (targetIndex < 0) return;
+    event.preventDefault();
+    goToSlide(targetIndex);
+    setMenuOpen(false);
+  });
+
   const addMenuGroup = (title, groupSlides) => {
     if (!groupSlides.length) return;
     const heading = document.createElement("span");
@@ -236,7 +276,8 @@
     ["AI 시스템 구조", "ai"],
     ["장기기억 · 환각 · 망각", "memory"],
     ["멀티플랫폼 연동", "platform"],
-    ["제작 과정 · 검증", "production"]
+    ["제작 과정 · 검증", "production"],
+    ["최신 시장 근거", "market-evidence"]
   ].forEach(([title, key]) => addMenuGroup(title, appendixSlides.filter((slide) => slide.dataset.category === key)));
 
   prevButton.addEventListener("click", () => goToSlide(currentIndex - 1));
