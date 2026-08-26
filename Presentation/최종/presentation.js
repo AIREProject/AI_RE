@@ -52,8 +52,7 @@
     '<div class="market-fit__curve-labels"><span>2024.04</span><span>2026.03</span></div><div class="market-fit__curve-legend"><p><i></i><strong>MAU</strong><span>16만 → 196만</span><em>12배</em></p><p><i></i><strong>총 사용시간</strong><span>110만h → 6,310만h</span><em>57배</em></p></div></div>' +
     '<p class="market-fit__overlap"><strong>62.5%</strong><span><b>제타 사용자 100명 중 약 63명</b>이 모바일 게임 이용량 상위 10% 집단에 포함</span></p></section></div>' +
     '<div class="market-fit__logic"><span><strong>생존게임</strong>반복되는 공동 사건</span><i>→</i><span><strong>동료</strong>경험이 관계로 축적</span><i>→</i><span><strong>LLM</strong>정해진 대사 밖의 대화</span>' +
-    '<button type="button" data-slide-target="market-evidence-pragmata">시장 사례 보기 →</button></div>' +
-    '<p class="market-fit__source">Alinea Analytics · Snail Games · Keen Games · MobileIndex / IGAWorks</p></div><div class="slide-rule"></div>';
+    '<button type="button" data-slide-target="market-evidence-pragmata">시장 사례 보기</button></div></div><div class="slide-rule"></div>';
   deck.appendChild(marketFit);
   const marketEvidencePages = [
     {
@@ -124,14 +123,13 @@
     ".slide--character-design",
     ".slide--market-fit",
     ".slide--multiplatform",
-    ".slide--memory-architecture",
-    ".slide--mobile-final",
-    ".team-slide",
+    ".slide--memory-platform",
     ".slide--final-polish",
     ".slide--closing"
   ];
   const mainSlides = mainOrder.map((selector) => document.querySelector(selector)).filter(Boolean);
-  const appendixSlides = [...document.querySelectorAll('[data-scope="appendix"]')];
+  const appendixSlides = [...document.querySelectorAll('[data-scope="appendix"]')]
+    .sort((a, b) => (Number(a.dataset.appendixOrder) || 1000) - (Number(b.dataset.appendixOrder) || 1000));
   const slides = [...mainSlides, ...appendixSlides];
   slides.forEach((slide) => deck.appendChild(slide));
   document.querySelectorAll(".slide:not([data-scope])").forEach((slide) => {
@@ -151,6 +149,8 @@
   const progressBar = document.getElementById("progressBar");
   const chatDemo = document.querySelector(".chat-demo");
   const chatViewport = document.querySelector(".chat-demo__viewport");
+  const gameplayVideoSlide = document.querySelector(".slide--gameplay-video");
+  const gameplayVideo = gameplayVideoSlide?.querySelector("video");
 
   let currentIndex = 0;
   let touchStartX = null;
@@ -210,7 +210,31 @@
     if (open) menu.querySelector(".menu-item.is-active")?.focus();
   };
 
-  const updateSlides = () => {
+  const resetGameplayVideo = () => {
+    if (!gameplayVideo) return;
+    gameplayVideo.pause();
+    const resetTime = () => { gameplayVideo.currentTime = 0; };
+    if (gameplayVideo.readyState >= 1) resetTime();
+    else gameplayVideo.addEventListener("loadedmetadata", resetTime, { once: true });
+  };
+
+  const requestGameplayVideoFullscreen = () => {
+    if (!gameplayVideo || document.fullscreenElement === gameplayVideo) return;
+    const request = gameplayVideo.requestFullscreen?.bind(gameplayVideo) || gameplayVideo.webkitRequestFullscreen?.bind(gameplayVideo);
+    if (!request) return;
+    try {
+      const result = request();
+      result?.catch?.(() => {});
+    } catch (_) {}
+  };
+
+  const leaveGameplayVideo = () => {
+    if (!gameplayVideo) return;
+    gameplayVideo.pause();
+    if (document.fullscreenElement === gameplayVideo) document.exitFullscreen?.().catch?.(() => {});
+  };
+
+  const updateSlides = ({ requestVideoFullscreen = false } = {}) => {
     slides.forEach((slide, index) => {
       slide.classList.toggle("is-active", index === currentIndex);
       slide.classList.toggle("is-before", index < currentIndex);
@@ -231,13 +255,19 @@
     document.body.classList.toggle("is-appendix", isAppendix);
     document.title = slide.dataset.title + " | TRAIP AI : RE";
     if (slide.contains(chatDemo)) startChatDemo(); else stopChatDemo();
+    if (slide === gameplayVideoSlide) {
+      resetGameplayVideo();
+      if (requestVideoFullscreen) requestGameplayVideoFullscreen();
+    } else {
+      leaveGameplayVideo();
+    }
   };
 
   const goToSlide = (index) => {
     const nextIndex = Math.max(0, Math.min(index, slides.length - 1));
     if (nextIndex === currentIndex) return;
     currentIndex = nextIndex;
-    updateSlides();
+    updateSlides({ requestVideoFullscreen: slides[nextIndex] === gameplayVideoSlide });
   };
 
   document.addEventListener("click", (event) => {
@@ -271,6 +301,7 @@
 
   addMenuGroup("MAIN · 7 MIN", mainSlides);
   [
+    ["기존 본문 자료", "preserved-main"],
     ["시장 · 사업성", "market"],
     ["게임플레이 구현", "gameplay"],
     ["AI 시스템 구조", "ai"],
@@ -294,6 +325,12 @@
     if (event.key === "Escape" && isMenuOpen) { event.preventDefault(); setMenuOpen(false); return; }
     if (event.key.toLowerCase() === "m") { event.preventDefault(); setMenuOpen(!isMenuOpen); return; }
     if (isMenuOpen) return;
+    if (event.key === " " && slides[currentIndex] === gameplayVideoSlide && gameplayVideo) {
+      event.preventDefault();
+      if (gameplayVideo.paused) gameplayVideo.play().catch(() => {});
+      else gameplayVideo.pause();
+      return;
+    }
     if (["ArrowRight", "ArrowDown", "PageDown", " "].includes(event.key)) { event.preventDefault(); goToSlide(currentIndex + 1); }
     else if (["ArrowLeft", "ArrowUp", "PageUp", "Backspace"].includes(event.key)) { event.preventDefault(); goToSlide(currentIndex - 1); }
     else if (event.key === "Home") { event.preventDefault(); goToSlide(0); }

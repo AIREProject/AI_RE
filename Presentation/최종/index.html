@@ -48,7 +48,7 @@
   <div class="slide-inner overview-expanded">
     <div class="overview-expanded__copy">
       <span class="kicker">ABOUT PROJECT</span>
-      <h2>게임 밖에서도, 같은 동료</h2>
+      <h2>게임밖에서도 함께하는 동료</h2>
       <p class="overview-expanded__lead">게임에서 함께한 경험과 기억이<br>게임이 끝난 뒤에도 이어집니다.</p>
       <dl class="overview-expanded__points">
         <div><dt>함께 행동</dt><dd>탐색 · 전투 · 작업</dd></div>
@@ -69,7 +69,7 @@
           <span class="kicker">GAMEPLAY</span>
         </header>
         <div class="gameplay-video-placeholder">
-          <video controls playsinline preload="metadata" aria-label="AI : RE 게임플레이 영상">
+          <video controls playsinline preload="auto" aria-label="AI : RE 게임플레이 영상">
             <source src="./assets/Gameplay.mp4" type="video/mp4">
             브라우저가 영상을 지원하지 않습니다.
           </video>
@@ -144,7 +144,7 @@
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide team-slide" data-scope="main" data-title="R&amp;R" aria-label="R&amp;R">
+    <section class="slide team-slide" data-scope="appendix" data-appendix-order="3" data-category="preserved-main" data-title="R&amp;R" aria-label="Appendix. R&amp;R">
       <div class="slide-accent"></div>
       <div class="slide-inner">
         <header class="team-header">
@@ -237,11 +237,6 @@
           <span class="game-cycle__arrow game-cycle__arrow--three">↖</span>
           <span class="game-cycle__arrow game-cycle__arrow--four">↗</span>
         </div>
-        <figure class="gameplay-loop-mako" aria-hidden="true">
-          <img src="./assets/mako-portrait-transparent.png" alt="">
-          <figcaption>MAKO · AI COMPANION</figcaption>
-        </figure>
-        <p class="gameplay-loop-outcome">탐색부터 전투까지, PLAYER와 MAKO가 하나의 생존 사이클을 함께 반복합니다.</p>
       </div>
       <div class="slide-rule"></div>
     </section>
@@ -314,7 +309,55 @@
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide slide--memory-architecture" data-scope="main" data-title="장기기억" aria-label="9. 장기기억">
+    <section id="memory-platform" class="slide slide--memory-platform" data-scope="main" data-title="기억 · 멀티플랫폼" aria-label="9. 기억과 멀티플랫폼">
+      <div class="slide-accent"></div>
+      <div class="slide-inner memory-platform">
+        <header class="memory-platform__header">
+          <span class="kicker">LONG-TERM MEMORY · USER CONTROL</span>
+          <h2>MAKO가 기억하는 이야기를<br><strong>직접 관리합니다</strong></h2>
+        </header>
+
+        <section class="memory-console" aria-label="MAKO의 기억 관리 화면">
+          <header class="memory-console__topbar">
+            <div><span>함께 쌓은 기억</span><strong>MAKO가 기억하는 이야기</strong></div>
+            <button type="button" tabindex="-1">모든 기억 잊기</button>
+          </header>
+
+          <div class="memory-console__toolbar"><span aria-hidden="true">⌕</span> 기억에서 찾아보기 <button type="button" tabindex="-1">검색</button></div>
+
+          <div class="memory-console__body">
+            <div class="memory-console__list">
+              <article class="memory-console__item is-selected">
+                <div><span>함께한 약속</span><em>오래 기억하는 중</em></div>
+                <strong>장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</strong>
+                <p>게임에서 함께 정한 약속</p>
+              </article>
+              <article class="memory-console__item">
+                <div><span>사용자의 취향</span><em>일상에서 공유</em></div>
+                <strong>주말에는 조용한 카페에서 그림을 그리며 쉬는 걸 좋아해</strong>
+                <p>게임 밖에서 직접 알려준 이야기</p>
+              </article>
+            </div>
+
+            <aside class="memory-console__detail">
+              <span>선택한 기억</span>
+              <strong>함께한 약속</strong>
+              <p>장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</p>
+              <div>
+                <button type="button" tabindex="-1">내용 고치기</button>
+                <button type="button" tabindex="-1">오래 기억하기</button>
+                <button class="is-danger" type="button" tabindex="-1">이 기억 잊기</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <div class="memory-platform__statement"><strong>찾고 · 고치고 · 오래 기억하고 · 잊게 할 수 있습니다.</strong><span>한번 정리한 기억은 어디서 만나도 같은 MAKO에게 이어집니다.</span><div class="memory-platform__appendix-links"><button type="button" data-slide-target="memory-architecture">기억 상세</button><button type="button" data-slide-target="multiplatform-detail">플랫폼 상세</button></div></div>
+      </div>
+      <div class="slide-rule"></div>
+    </section>
+
+    <section id="memory-architecture" class="slide slide--memory-architecture" data-scope="appendix" data-appendix-order="1" data-category="preserved-main" data-title="장기기억 상세" aria-label="Appendix. 장기기억 상세">
       <div class="slide-inner memory-architecture">
         <header class="memory-architecture__header">
           <span class="kicker">LONG-TERM MEMORY</span>
@@ -392,9 +435,10 @@
           </aside>
         </div>
       </div>
+      <button type="button" class="appendix-return memory-architecture__return" data-slide-target="memory-platform">← 본문 09</button>
       <div class="slide-rule"></div>
     </section>
-    <section class="slide slide--mobile-final" data-title="멀티플랫폼 경험" aria-label="10. 멀티플랫폼 경험">
+    <section id="multiplatform-detail" class="slide slide--mobile-final" data-scope="appendix" data-appendix-order="2" data-category="preserved-main" data-title="멀티플랫폼 상세" aria-label="Appendix. 멀티플랫폼 상세">
       <div class="slide-inner platform-experience">
         <header class="platform-experience__header">
           <span class="kicker">ONE COMPANION · MANY PLATFORMS</span>
@@ -466,6 +510,7 @@
           </div>
         </div>
       </div>
+      <button type="button" class="appendix-return mobile-final__return" data-slide-target="memory-platform">← 본문 09</button>
       <div class="slide-rule"></div>
     </section>
 
