@@ -6,6 +6,20 @@
 
 class UAnimMontage;
 
+UENUM(BlueprintType)
+enum class EAIREEnemyEngagementPolicy : uint8
+{
+	AggressiveOnSight,
+	Retaliatory
+};
+
+UENUM(BlueprintType)
+enum class EAIREEnemyIdlePolicy : uint8
+{
+	Stationary,
+	HomeWander
+};
+
 USTRUCT(BlueprintType)
 struct AI_RE_API FAIREEnemyMeleeTraceSettings
 {
@@ -103,6 +117,35 @@ public:
 	/** Maximum 2D distance from the spawn point before returning home. Zero disables the distance leash. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
 	float HomeLeashRadius = 2500.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI")
+	EAIREEnemyEngagementPolicy EngagementPolicy =
+		EAIREEnemyEngagementPolicy::AggressiveOnSight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI")
+	EAIREEnemyIdlePolicy IdlePolicy = EAIREEnemyIdlePolicy::Stationary;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderMinRadius = 250.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderMaxRadius = 600.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "1.0", UIMin = "1.0", Units = "cm/s", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderSpeed = 160.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderWaitMin = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderWaitMax = 6.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Wander", meta = (ClampMin = "1.0", UIMin = "1.0", Units = "cm", EditCondition = "IdlePolicy == EAIREEnemyIdlePolicy::HomeWander"))
+	float HomeWanderAcceptanceRadius = 60.0f;
+
+	/** Health ratio at or below which combat is cancelled and the enemy returns home. Zero disables retreat. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Engagement", meta = (ClampMin = "0.0", ClampMax = "1.0", UIMin = "0.0", UIMax = "1.0"))
+	float RetreatHealthRatio = 0.0f;
 
 	/** Enables sprint and lateral approach decisions outside the preferred melee range. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AIRE|Enemy|AI|Engagement")

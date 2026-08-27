@@ -36,9 +36,10 @@ Backend source 또는 배포를 먼저 정합화합니다.
 | path template | 57개 |
 | component schema | 121개 |
 
-따라서 과거에 남아 있던 Context v1, `Command.CraftItem`, Game State, Event, Command Result,
-Memory와 Memory Candidate의 “배포 전 목표 계약” 표기는 더 이상 현재 사실이 아닙니다. 이들은
-배포 OpenAPI에 노출됩니다.
+이 표는 2026-08-25 배포 snapshot의 검증 결과입니다. 현재 Backend source는 배포 전 Kakao
+Adapter endpoint를 더해 58개 path와 123개 schema를 생성하므로 더 이상 배포 OpenAPI와 완전히
+같지 않습니다. 기존 Context v1, `Command.CraftItem`, Game State, Event, Command Result,
+Memory와 Memory Candidate는 여전히 배포 OpenAPI에 노출되며 기존 UE/Web 계약은 바뀌지 않습니다.
 
 이 비교는 schema 배포 여부만 확인합니다. 모든 endpoint의 정상·오류 runtime smoke, 실제 LLM,
 UE PIE와 모바일 UI 검증을 완료했다는 뜻은 아닙니다.
@@ -57,6 +58,7 @@ LLM `ready`를 반환했습니다. Game State, Memory, Memory Candidate와 Offli
 | `GET` | `/health` | 프로세스와 설정 확인 |
 | `GET` | `/ready` | DB revision과 LLM readiness 확인 |
 | `POST` | `/api/v1/chat` | UE/Web Chat |
+| `POST` | `/api/v1/integrations/kakao/chat` | Kakao Adapter 전용 Chat (source 추가, 배포 전) |
 | `POST` | `/api/v1/situations` | UE 상황 기반 선제 대사 |
 
 기본 transport는 HTTP Chat입니다. source에는 호환용 `WS /api/v1/chat`도 있지만 OpenAPI는
@@ -72,6 +74,12 @@ WebSocket을 표현하지 않으므로 현재 UE/Web 신규 구현의 계약 근
 
 현재 제품은 고정 GameClient/WebClient role, 단일 Profile, Save Slot `demo-slot-1`, Companion
 `mako` 기준입니다. 실제 bearer credential을 저장소, fixture, URL 또는 로그에 넣지 않습니다.
+
+Kakao Adapter는 예외적으로 사용자별 독립 Profile을 사용하며 게임·웹 `AIRE_OPEN`과 기억을
+공유하지 않습니다. 전용 `KAKAO_ADAPTER_TOKEN`으로 서비스 인증을 하고, Backend가
+`bot_id + botUserKey`를 비밀 pepper로 HMAC 처리한 Profile/Device ID만 저장합니다. 이 additive
+endpoint는 source와 테스트에 구현됐지만 Production 배포 전이므로 배포 OpenAPI에 나타나기
+전에는 Kakao Skill을 활성화하지 않습니다.
 
 ### 게임 동기화와 실행 기록
 

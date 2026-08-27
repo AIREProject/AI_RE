@@ -5,11 +5,43 @@
 #include "ToolsetRegistry/ToolsetDefinition.h"
 #include "AIREAnimationMCPToolset.generated.h"
 
+class UAnimBlueprint;
 class UAnimMontage;
 class UAnimSequence;
 class UAnimSequenceBase;
 class UControlRigBlueprint;
 class USkeletalMesh;
+class USkeleton;
+
+USTRUCT(BlueprintType)
+struct FAIREAnimationBlueprintCreateResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	TObjectPtr<UAnimBlueprint> AnimBlueprint;
+};
+
+USTRUCT(BlueprintType)
+struct FAIREAnimationMontageCreateResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	bool bSuccess = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Animation")
+	TObjectPtr<UAnimMontage> Montage;
+};
 
 USTRUCT(BlueprintType)
 struct FAIREAnimationComboMontageResult
@@ -251,6 +283,20 @@ class AIRESTATETREEMCPTOOLSET_API UAIREAnimationMCPToolset : public UToolsetDefi
 	GENERATED_BODY()
 
 public:
+	/** Creates an unsaved AnimBlueprint for an explicit Skeleton without opening a picker. */
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Lifecycle")
+	static FAIREAnimationBlueprintCreateResult CreateAnimBlueprint(
+		const FString& FolderPath,
+		FName AssetName,
+		USkeleton* TargetSkeleton);
+
+	/** Creates an unsaved AnimMontage from one source animation under the project-owned LMK root. */
+	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Lifecycle")
+	static FAIREAnimationMontageCreateResult CreateAnimMontage(
+		const FString& FolderPath,
+		FName AssetName,
+		UAnimSequence* SourceAnimation);
+
 	UFUNCTION(meta = (AICallable), Category = "AIRE|Animation|Query")
 	static FAIREAnimationComboMontageResult InspectBasicAttackComboMontage(UAnimMontage* Montage);
 

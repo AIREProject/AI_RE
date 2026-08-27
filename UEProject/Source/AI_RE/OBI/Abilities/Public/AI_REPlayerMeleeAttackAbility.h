@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AI_REPlayerGameplayAbility.h"
+#include "AIRECombatMeleeTraceResolver.h"
 #include "AI_REPlayerMeleeAttackAbility.generated.h"
 
 class UAnimMontage;
@@ -53,10 +54,14 @@ private:
 	void HandleHitEvent(FGameplayEventData Payload);
 
 	UFUNCTION()
-	void HandleActiveHitStart(FGameplayEventData Payload);
+	void HandleTraceEvent(FGameplayEventData Payload);
 
-	UFUNCTION()
-	void HandleActiveHitEnd(FGameplayEventData Payload);
+	void PerformTraceHit();
+
+	void TryBeginCurrentStepTrace(USceneComponent* MeshComponent);
+	EAIRECombatMeleeTraceResult SampleCurrentStepCombatTrace(USceneComponent* MeshComponent, FHitResult& OutTargetHit);
+	void ResolveCurrentStepTraceSample(EAIRECombatMeleeTraceResult TraceResult, const FHitResult& TargetHit);
+	void CloseCurrentStepTrace();
 
 	UFUNCTION()
 	void HandleComboWindowOpen(FGameplayEventData Payload);
@@ -67,7 +72,6 @@ private:
 	UFUNCTION()
 	void HandleComboInput(FGameplayEventData Payload);
 
-	void PerformTraceHit();
 	void ProcessHit(const FHitResult& HitResult, float Dmg, ACharacter* Character);
 	void TryComboTransition();
 
@@ -76,10 +80,35 @@ private:
 	bool bHasComboInput = false;
 	bool bIsActiveHitEnded = false;
 
+	bool bUseFallbackTrace = false;
+	bool bTraceWindowOpen = false;
+	FVector PreviousTraceStart = FVector::ZeroVector;
+	FVector PreviousTraceEnd = FVector::ZeroVector;
+	FName CurrentTraceStartSocket = NAME_None;
+	FName CurrentTraceEndSocket = NAME_None;
+
 	UPROPERTY()
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> MontageTask;
 
 	// 콤보 윈도우 타이밍 감지 태스크
+	UPROPERTY(Transient)
+	TWeakObjectPtr<USceneComponent> ActiveTraceMesh;
+
+	UPROPERTY()
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> HitEventTask;
+	UPROPERTY()
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> TraceEventTask;
+	UPROPERTY()
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> TraceSampleTask;
+	UPROPERTY()
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> TraceEndTask;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitStartTask;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitEndTask;
+
 	UPROPERTY(Transient)
 	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ComboWindowOpenTask;
 	
@@ -89,21 +118,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ComboInputTask;
 
-	// 연속 타격(Active Hit) 감지 태스크
-	UPROPERTY(Transient)
-	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitStartTask;
-
-	UPROPERTY(Transient)
-	TObjectPtr<class UAbilityTask_WaitGameplayEvent> ActiveHitEndTask;
-
-	// 지속 판정용 타이머 핸들
-	FTimerHandle ActiveHitTimerHandle;
-
 	// 현재 스윙에서 이미 타격한 적들을 기억하는 배열 (중복 타격 방지)
 	UPROPERTY(Transient)
 	TSet<TWeakObjectPtr<AActor>> HitActorsThisSwing;
 
-	// 기존의 단발성 타격 이벤트 (가벼운 무기/맨손용)
-	UPROPERTY(Transient)
-	TObjectPtr<class UAbilityTask_WaitGameplayEvent> HitEventTask;
 };

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#fbf9f6">
   <title>TRAIP | AI : RE 프로젝트 발표</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260828-4">
 </head>
 <body>
   <button class="menu-toggle" id="menuToggle" type="button" aria-controls="slideMenu" aria-expanded="false">
@@ -43,26 +43,25 @@
       </div>
     </section>
 
-    <section class="slide slide--overview-focus" data-scope="main" data-title="프로젝트 개요" aria-label="2. 프로젝트 개요">
-      <div class="slide-accent"></div>
-      <div class="slide-inner split split--overview">
-        <div class="copy">
-          <span class="kicker">PROJECT</span>
-          <h2>개인화 AI로<br>확장되는 사용자 경험</h2>
-          <ul class="feature-list">
-            <li><strong>맥락 이해</strong><span>사용자와 환경의 상태를 읽습니다</span></li>
-            <li><strong>자율 판단</strong><span>대화에 머물지 않고 제안하고 행동합니다</span></li>
-            <li><strong>경험 확장</strong><span>다양한 인터페이스에서 같은 AI를 만납니다</span></li>
-          </ul>
-        </div>
-        <figure class="media-frame media-frame--hero">
-          <img src="./assets/overview-device-connection-v5.png" alt="평범한 방의 게임 화면 속 OUTOPIA와 모바일 웹 디바이스를 잇는 빛의 흐름">
-          <figcaption>YOUR AI · EVERYWHERE</figcaption>
-        </figure>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
-
+    <section class="slide slide--overview-focus slide--overview-expanded" data-scope="main" data-title="프로젝트 개요" aria-label="2. 프로젝트 개요">
+  <div class="slide-accent"></div>
+  <div class="slide-inner overview-expanded">
+    <div class="overview-expanded__copy">
+      <span class="kicker">ABOUT PROJECT</span>
+      <h2>게임밖에서도 함께하는 동료</h2>
+      <p class="overview-expanded__lead">게임에서 함께한 경험과 기억이<br>게임이 끝난 뒤에도 이어집니다.</p>
+      <dl class="overview-expanded__points">
+        <div><dt>함께 행동</dt><dd>탐색 · 전투 · 작업</dd></div>
+        <div><dt>이어지는 기억</dt><dd>대화 · 게임 속 사건</dd></div>
+        <div><dt>일상 속 연결</dt><dd>Web · Discord · KakaoTalk</dd></div>
+      </dl>
+    </div>
+    <figure class="overview-expanded__visual">
+      <img src="./assets/overview-device-connection-v5.png" alt="게임 속 MAKO와 모바일 경험이 연결되는 모습">
+    </figure>
+  </div>
+  <div class="slide-rule"></div>
+</section>
     <section class="slide slide--gameplay-video" data-scope="main" data-title="플레이 영상" aria-label="3. 플레이 영상">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--gameplay-video">
@@ -70,7 +69,7 @@
           <span class="kicker">GAMEPLAY</span>
         </header>
         <div class="gameplay-video-placeholder">
-          <video controls playsinline preload="metadata" aria-label="AI : RE 게임플레이 영상">
+          <video controls playsinline preload="auto" aria-label="AI : RE 게임플레이 영상">
             <source src="./assets/Gameplay.mp4" type="video/mp4">
             브라우저가 영상을 지원하지 않습니다.
           </video>
@@ -85,7 +84,7 @@
         <header class="slide-header slide-header--compact differentiation-header">
           <div>
             <span class="kicker">TARGET · DIFFERENCE</span>
-            <h2>관계에 몰입하는 사용자에게,<br>기억이 이어지는 하나의 동료</h2>
+            <h2>좋아하는 캐릭터와 게임 밖에서도 함께</h2>
           </div>
         </header>
         <div class="ax-comparison">
@@ -97,7 +96,7 @@
               <li><em>03</em><strong>AI 탐색</strong><small>대화를 넘어선 행동</small></li>
             </ol>
           </article>
-          <div class="ax-shift"><span>AI : RE</span><strong>→</strong></div>
+          <div class="ax-shift"><span>AIRE</span><strong>→</strong></div>
           <article class="ax-comparison__agent">
             <span>DIFFERENCE</span>
             <ol>
@@ -111,41 +110,8 @@
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide slide--audience" data-title="타깃 유저" aria-label="5. 타깃 유저">
-      <div class="slide-accent"></div>
-      <div class="slide-inner">
-        <header class="slide-header audience-header">
-          <div>
-            <span class="kicker">TARGET USERS</span>
-            <h2>나를 이해하고<br>함께할 AI를 원하는 사용자</h2>
-          </div>
-        </header>
-        <div class="audience-grid">
-          <article>
-            <span>RELATIONSHIP</span>
-            <strong>관계 몰입</strong>
-            <p>캐릭터와 서사에 감정적으로 몰입하고 유대감을 느끼는 사용자</p>
-          </article>
-          <article>
-            <span>CONNECTION</span>
-            <strong>연결 경험형 사용자</strong>
-            <p>하나의 콘텐츠 경험이 일상에서도 자연스럽게 이어지길 원하는 사용자</p>
-          </article>
-          <article>
-            <span>EXPLORATION</span>
-            <strong>AI 경험 탐색자</strong>
-            <p>질문과 답변을 넘어 새로운 방식으로 AI를 경험하고 싶은 사용자</p>
-          </article>
-        </div>
-        <div class="audience-insight">
-          <span>USER NEED</span>
-          <strong>함께한 시간이 쌓일수록, 나를 더 잘 알아주는 AI</strong>
-        </div>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
 
-    <section class="slide team-slide" data-scope="main" data-title="R&amp;R" aria-label="R&amp;R">
+    <section id="team-slide" class="slide team-slide" data-scope="appendix" data-appendix-order="4" data-category="preserved-main" data-title="R&amp;R" aria-label="Appendix. R&amp;R">
       <div class="slide-accent"></div>
       <div class="slide-inner">
         <header class="team-header">
@@ -209,27 +175,23 @@
       <div class="slide-inner">
         <header class="gameplay-loop-header">
           <span class="kicker">LOCAL GAMEPLAY LOOP</span>
-          <h2>동료와 함께 완성하는<br>생존 플레이 사이클</h2>
+          <h2>동료와 함께 완성하는 생존 플레이 사이클</h2>
         </header>
         <div class="game-cycle" aria-label="Unreal 로컬 게임플레이 사이클">
           <article class="game-cycle__stage game-cycle__stage--explore">
-            <span>01</span>
-            <strong>탐색 · 획득</strong>
+            <strong>채집</strong>
             <p>필드 자원과 아이템</p>
           </article>
           <article class="game-cycle__stage game-cycle__stage--inventory">
-            <span>02</span>
-            <strong>보관 · 장비</strong>
+            <strong>보관</strong>
             <p>인벤토리와 공유 창고</p>
           </article>
           <article class="game-cycle__stage game-cycle__stage--work">
-            <span>03</span>
-            <strong>제작 · 작업</strong>
+            <strong>제작</strong>
             <p>Workbench와 MAKO Work</p>
           </article>
           <article class="game-cycle__stage game-cycle__stage--combat">
-            <span>04</span>
-            <strong>협력 · 전투</strong>
+            <strong>전투</strong>
             <p>PLAYER × MAKO Combat</p>
           </article>
           <div class="game-cycle__hub"><span>PLAYER</span><i>×</i><strong>MAKO</strong></div>
@@ -238,292 +200,622 @@
           <span class="game-cycle__arrow game-cycle__arrow--three">↖</span>
           <span class="game-cycle__arrow game-cycle__arrow--four">↗</span>
         </div>
-        <figure class="gameplay-loop-mako" aria-hidden="true">
-          <img src="./assets/mako-portrait-transparent.png" alt="">
-          <figcaption>MAKO · AI COMPANION</figcaption>
-        </figure>
-        <p class="gameplay-loop-outcome">탐색부터 전투까지, PLAYER와 MAKO가 하나의 생존 사이클을 함께 반복합니다.</p>
       </div>
       <div class="slide-rule"></div>
     </section>
-    <section class="slide slide--local-ai slide--experience-architecture" data-scope="main" data-title="아키텍처" aria-label="7. 아키텍처">
-      <div class="slide-accent"></div>
-      <div class="slide-inner split split--local-ai">
-        <div class="copy">
-          <span class="kicker">MAKO EXPERIENCE</span>
-          <h2>게임에서는 빠르게,<br>대화에서는 깊게</h2>
-          <div class="experience-layers">
-            <article><em>01</em><div><strong>스스로 판단</strong><span>이동 · 전투 · 작업</span></div></article>
-            <article><em>02</em><div><strong>게임 규칙 안에서 행동</strong><span>상태 확인 · 안전한 실행</span></div></article>
-            <article><em>03</em><div><strong>대화와 기억의 연결</strong><span>사용자 맥락 · 관계의 연속성</span></div></article>
-          </div>
-        </div>
-        <figure class="media-frame media-frame--local-ai media-frame--dark">
-          <img src="./assets/mako-combat-v3.png" alt="전투 상황에서 행동하는 AI 동료 MAKO">
-          <figcaption>GAMEPLAY × MEMORY</figcaption>
-        </figure>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
-    <section class="slide slide--multiplatform slide--platform-experience" data-scope="main" data-title="플랫폼 확장 · 사업화" aria-label="9. 플랫폼 확장과 사업화">
+    <section class="slide slide--multiplatform" data-scope="main" data-title="기술 프레임워크" aria-label="10. 기술 프레임워크">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--multiplatform">
         <header class="slide-header slide-header--compact multiplatform-header">
           <div>
-            <span class="kicker">CONNECTED EXPERIENCE</span>
-            <h2>게임 안에서도, 밖에서도 같은 MAKO</h2>
+            <span class="kicker">TECH FRAMEWORK</span>
+            <h2>하나의 MAKO를 연결하는 기술 프레임워크</h2>
           </div>
         </header>
-        <div class="surface-journey" aria-label="MAKO를 만나는 네 개의 접점">
-          <article><em>01</em><strong>UNREAL</strong><span>함께 플레이</span></article>
-          <article><em>02</em><strong>MOBILE WEB</strong><span>대화 · 기억 · 요청</span></article>
-          <article><em>03</em><strong>DISCORD</strong><span>대화 · 기억 · 요청</span></article>
-          <article class="surface-journey__kakao"><em>04</em><strong>KAKAO TALK</strong><span>대화</span></article>
-        </div>
-        <div class="platform-thesis"><strong>같은 MAKO</strong><span>접점이 달라도 이어지는 하나의 관계</span></div>
-        <p class="platform-business">게임 콘텐츠 <i>·</i> 동료 서비스 <i>·</i> IP 확장</p>
-      </div>
-      <div class="slide-rule"></div>
-    </section>
-
-    <section class="slide slide--mobile-final" data-title="모바일 경험" aria-label="11. 모바일 경험">
-      <div class="slide-accent"></div>
-      <div class="slide-inner split split--mobile">
-        <div class="copy">
-          <span class="kicker">MOBILE EXPERIENCE</span>
-          <h2>게임 밖에서도<br>MAKO와의 관계는 이어집니다</h2>
-          <div class="mobile-status">
-            <article>
-              <span class="mobile-status__index">01</span>
-              <strong>언제든 대화</strong>
-              <p>게임 밖에서도 MAKO와 자연스럽게 대화를 이어갑니다.</p>
+        <div class="architecture architecture--matrix architecture--multiplatform">
+          <div class="architecture__column architecture__column--frontend">
+            <span class="architecture__label">FRONTEND</span>
+            <article class="architecture__ue">
+              <span class="status status--done">CURRENT</span>
+              <strong>PC</strong>
+              <p>전투 · 이동 · 작업</p>
             </article>
-            <article>
-              <span class="mobile-status__index">02</span>
-              <strong>하나의 동료</strong>
-              <p>게임과 모바일이 같은 MAKO의 정체성과 관계를 공유합니다.</p>
-            </article>
-            <article>
-              <span class="mobile-status__index">03</span>
-              <strong>이어지는 기억</strong>
-              <p>일상의 대화와 게임 속 사건을 기억하고, 다음 만남에서 자연스럽게 회상합니다.</p>
+            <article class="architecture__mobile">
+              <span class="status status--progress">PROTOTYPE</span>
+              <strong>MOBILE</strong>
+              <p>게임 밖 대화 · 요청</p>
             </article>
           </div>
-        </div>
-        <div class="phone-presentation">
-          <div class="phone-device phone-device--chat-demo">
-            <span class="phone-side phone-side--volume" aria-hidden="true"></span>
-            <span class="phone-side phone-side--power" aria-hidden="true"></span>
-            <div class="phone-screen">
-              <span class="phone-island" aria-hidden="true"></span>
-              <div class="chat-demo" aria-label="MAKO와의 모바일 대화 예시">
-                <header class="chat-demo__header">
-                  <img class="chat-demo__avatar" src="./assets/mako-chat-profile-crop.png" alt="MAKO">
-                  <div><small>나의 동료</small><strong>MAKO</strong></div>
-                  <i>ONLINE</i>
-                </header>
-                <div class="chat-demo__viewport">
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="500">
-                    <p>오늘 드디어 AI : RE를 소개하는 날이야.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="1300" data-chat-hide="2300" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="2300">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>드디어 오늘이네요! 그동안 발표 자료 계속 다듬느라 고생했잖아요. 준비한 만큼 분명 잘할 수 있을 거예요.</p></div>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="4300">
-                    <p>붕대 제작법 알려줘.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="5200" data-chat-hide="6200" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="6200">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>식물 줄기 2개가 필요해요. 작업대에서 바로 만들 수 있어요.</p></div>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--user" data-chat-delay="8200">
-                    <p>그럼 붕대 하나 만들어 줘.</p>
-                  </div>
-                  <div class="chat-demo__typing" data-chat-delay="9000" data-chat-hide="9900" aria-label="MAKO가 답변을 입력 중">
-                    <span></span><span></span><span></span>
-                  </div>
-                  <div class="chat-demo__message chat-demo__message--mako" data-chat-delay="9900">
-                    <img class="chat-demo__mini-avatar" src="./assets/mako-chat-profile-crop.png" alt="" aria-hidden="true">
-                    <div><strong>MAKO</strong><p>좋아요. 제가 바로 붕대 하나를 만들게요.</p></div>
-                  </div>
-                  <div class="chat-demo__task" data-chat-delay="10800">
-                    <span>✓</span><div><small>제작 시작</small><strong>붕대 × 1</strong></div>
-                  </div>
-                </div>
-              </div>
-              <span class="phone-home" aria-hidden="true"></span>
+          <div class="architecture__bridge" aria-hidden="true">
+            <span>REQUEST</span>
+            <div class="architecture__bridge-track">
+              <i>→</i>
+              <i>←</i>
             </div>
+            <strong>RESPONSE</strong>
+          </div>
+          <div class="architecture__column architecture__column--service">
+            <span class="architecture__label">BACKEND</span>
+            <article class="architecture__backend">
+              <span class="status status--done">GATEWAY</span>
+              <strong>SERVER</strong>
+              <p>인증 · 검증 · 맥락 연결</p>
+            </article>
+            <div class="architecture__service-link" aria-hidden="true">↕</div>
+            <article class="architecture__llm">
+              <span class="status status--next">AI ENGINE</span>
+              <strong>AI</strong>
+              <p>언어 이해 · 대화 · 개인화 후보</p>
+            </article>
           </div>
         </div>
       </div>
       <div class="slide-rule"></div>
     </section>
 
-    
-    <section class="slide slide--generative-ai" data-scope="main" data-title="생성형 AI 활용" aria-label="8. 생성형 AI 활용">
+    <section id="memory-platform" class="slide slide--memory-platform" data-scope="main" data-title="기억 · 멀티플랫폼" aria-label="9. 기억과 멀티플랫폼">
       <div class="slide-accent"></div>
-      <div class="slide-inner slide-inner--generative-ai">
-        <header class="slide-header slide-header--compact generative-ai-header">
-          <div>
-            <span class="kicker">GENERATIVE AI</span>
-            <h2>사람이 방향을 정하고,<br>AI가 반복을 가속합니다</h2>
-          </div>
+      <div class="slide-inner memory-platform">
+        <header class="memory-platform__header">
+          <span class="kicker">LONG-TERM MEMORY · USER CONTROL</span>
+          <h2>MAKO가 기억하는 이야기를 직접 관리합니다</h2>
         </header>
-        <div class="generative-ai-stages">
-          <article class="generative-ai-stage generative-ai-stage--model"><span>01</span><em>MODEL</em><strong>캐릭터 탐색</strong></article>
-          <article class="generative-ai-stage generative-ai-stage--ui"><span>02</span><em>UI / UX</em><strong>경험 설계</strong></article>
-          <article class="generative-ai-stage generative-ai-stage--image"><span>03</span><em>VISUAL</em><strong>이미지 제작</strong></article>
-          <article class="generative-ai-stage generative-ai-stage--code"><span>04</span><em>CODE</em><strong>구현 · 검증</strong></article>
-        </div>
-        <p class="generative-ai-statement"><strong>HUMAN JUDGMENT</strong> × <strong>GENERATIVE AI</strong></p>
+
+        <section class="memory-console" aria-label="MAKO의 기억 관리 화면">
+          <header class="memory-console__topbar">
+            <div><span>함께 쌓은 기억</span><strong>MAKO가 기억하고 있는 이야기</strong></div>
+            <button type="button" tabindex="-1">모든 기억 잊기</button>
+          </header>
+
+          <div class="memory-console__toolbar"><span aria-hidden="true">⌕</span> 기억에서 찾아보기 <button type="button" tabindex="-1">검색</button></div>
+
+          <div class="memory-console__body">
+            <div class="memory-console__list">
+              <article class="memory-console__item is-selected">
+                <div><span>약속 기억</span><em>고정됨</em></div>
+                <strong>오래 기억하는 이야기</strong>
+                <p class="memory-console__item-text">장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</p>
+                <div class="memory-console__source"><span>모바일에서 직접 공유한 기억</span><time datetime="2026-08-25T04:30:00+09:00">2026. 8. 25. 오전 4:30</time></div>
+              </article>
+              <article class="memory-console__item">
+                <div><span>취향 기억</span></div>
+                <strong>저장된 이야기</strong>
+                <p class="memory-console__item-text">주말에는 조용한 카페에서 그림을 그리며 쉬는 걸 좋아해</p>
+                <div class="memory-console__source"><span>모바일에서 직접 공유한 기억</span></div>
+              </article>
+            </div>
+
+            <aside class="memory-console__detail">
+              <span>선택한 기억</span>
+              <strong>약속 기억</strong>
+              <p>장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</p>
+              <div>
+                <button type="button" tabindex="-1">내용 바로잡기</button>
+                <button type="button" tabindex="-1">오래 기억하기</button>
+                <button class="is-danger" type="button" tabindex="-1">이 기억 잊기</button>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <div class="memory-platform__statement"><span>정리한 기억은 다음 대화와 다른 접점에서도 이어집니다.</span><div class="memory-platform__appendix-links"><button type="button" data-slide-target="memory-architecture">기억 상세</button><button type="button" data-slide-target="multiplatform-detail">플랫폼 상세</button></div></div>
       </div>
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide slide--final-polish" data-title="남은 작업" aria-label="12. 남은 작업">
+    <section id="memory-architecture" class="slide slide--memory-architecture" data-scope="appendix" data-appendix-order="2" data-category="preserved-main" data-title="장기기억 상세" aria-label="Appendix. 장기기억 상세">
+      <div class="slide-inner memory-architecture">
+        <header class="memory-architecture__header">
+          <span class="kicker">LONG-TERM MEMORY</span>
+          <h2>기억은 근거에서 시작됩니다</h2>
+        </header>
+
+        <div class="memory-flow" aria-label="근거가 있는 장기기억의 저장과 회상 흐름">
+          <article><em>01</em><strong>근거 원문</strong><span>대화 · 게임 사건</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>02</em><strong>기억 후보</strong><span>출처 · 사용자 범위</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>03</em><strong>활성 기억</strong><span>승인된 기억만</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>04</em><strong>제한 회상</strong><span>상위 3개 · 360자</span></article>
+          <i aria-hidden="true">→</i>
+          <article><em>05</em><strong>응답 확인</strong><span>참조 · 숫자 · 부정</span></article>
+        </div>
+
+        <div class="memory-detail">
+          <div class="memory-principles">
+            <section>
+              <em>환각 제어</em>
+              <strong>근거가 확인된 기억만 사용</strong>
+              <p>출처 없는 저장 차단 · 답변 내용 재확인</p>
+            </section>
+            <section>
+              <em>망각 제어</em>
+              <strong>지우지 않고 우선순위를 조절</strong>
+              <p>30일 기준 순위 감쇠 · 고정 기억 유지</p>
+            </section>
+            <section>
+              <em>사용자 통제</em>
+              <strong>기억을 직접 고치고 삭제</strong>
+              <p>조회 · 검색 · 정정 · 고정 · 삭제 · 초기화</p>
+            </section>
+          </div>
+
+          <aside class="memory-ui" aria-label="Memory API 기억 관리 화면">
+            <header>
+              <div><span>함께 쌓은 기억</span><strong>MAKO가 기억하고 있는 이야기</strong></div>
+              <button type="button">모든 기억 잊기</button>
+            </header>
+            <div class="memory-ui__toolbar">
+              <div class="memory-ui__search"><span aria-hidden="true">⌕</span> 기억에서 찾아보기</div>
+              <button type="button">검색</button>
+            </div>
+            <div class="memory-ui__body">
+              <section class="memory-ui__list" aria-label="저장된 기억 목록">
+                <article class="memory-ui__item memory-ui__item--selected">
+                  <div><span>약속 기억</span><em>고정됨</em></div>
+                  <strong>오래 기억하는 이야기</strong>
+                  <p class="memory-ui__item-text">장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</p>
+                  <ul class="memory-ui__sources">
+                    <li><span>모바일에서 직접 공유한 기억</span><time datetime="2026-08-25T04:30:00+09:00">2026. 8. 25. 오전 4:30</time></li>
+                  </ul>
+                  <footer><button type="button">자세히</button><button type="button">고정 해제</button><button type="button">이 기억 잊기</button></footer>
+                </article>
+                <article class="memory-ui__item">
+                  <div><span>취향 기억</span></div>
+                  <strong>저장된 이야기</strong>
+                  <p class="memory-ui__item-text">비 오는 날 산책하는 걸 좋아해</p>
+                  <ul class="memory-ui__sources">
+                    <li><span>모바일에서 직접 공유한 기억</span></li>
+                  </ul>
+                  <footer><button type="button">자세히</button><button type="button">오래 기억하기</button><button type="button">이 기억 잊기</button></footer>
+                </article>
+                <article class="memory-ui__item memory-ui__item--realworld">
+                  <div><span>프로필 기억</span></div>
+                  <strong>저장된 이야기</strong>
+                  <p class="memory-ui__item-text">주말에는 조용한 카페에서 그림을 그리며 쉬는 걸 좋아해</p>
+                  <ul class="memory-ui__sources">
+                    <li><span>모바일에서 직접 공유한 기억</span></li>
+                  </ul>
+                  <footer><button type="button">자세히</button><button type="button">오래 기억하기</button><button type="button">이 기억 잊기</button></footer>
+                </article>
+              </section>
+              <section class="memory-ui__edit" aria-label="선택한 기억 수정">
+                <header><span>선택한 기억</span><strong>약속 기억</strong></header>
+                <label>기억할 내용<textarea rows="3">장비를 모두 맞췄으니 다음에는 함께 몬스터를 잡으러 가기로 했어</textarea></label>
+                <label>정정 이유 (필수)<input type="text" placeholder="예: 지금은 이렇게 기억해 줘"></label>
+                <label class="memory-ui__check"><input type="checkbox" checked> 오래 기억하기</label>
+                <button type="button">내용 저장</button>
+              </section>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <button type="button" class="appendix-return memory-architecture__return" data-slide-target="memory-platform">← 본문 09</button>
+      <div class="slide-rule"></div>
+    </section>
+    <section id="multiplatform-detail" class="slide slide--mobile-final" data-scope="appendix" data-appendix-order="3" data-category="preserved-main" data-title="멀티플랫폼 상세" aria-label="Appendix. 멀티플랫폼 상세">
+      <div class="slide-inner platform-experience">
+        <header class="platform-experience__header">
+          <span class="kicker">ONE COMPANION · MANY PLATFORMS</span>
+          <h2>게임 밖에서도, 같은 MAKO</h2>
+        </header>
+
+        <div class="platform-layout">
+          <div class="platform-pillars">
+            <article>
+              <em>01</em>
+              <div><strong>언제든 대화</strong><p>게임 밖에서도 MAKO와 자연스럽게 대화를 이어갑니다.</p></div>
+            </article>
+            <article>
+              <em>02</em>
+              <div><strong>하나의 동료</strong><p>게임과 여러 플랫폼이 같은 MAKO의 정체성과 관계를 공유합니다.</p></div>
+            </article>
+            <article>
+              <em>03</em>
+              <div><strong>이어지는 기억</strong><p>일상의 대화와 게임 속 사건을 다음 만남에서 자연스럽게 회상합니다.</p></div>
+            </article>
+          </div>
+
+          <div class="platform-devices">
+            <div class="platform-mobile-pair">
+              <article class="platform-device platform-device--kakao">
+                <header><div><span>KAKAOTALK</span><strong>일상 속 대화</strong></div><em>MAKO</em></header>
+                <div class="vertical-phone vertical-phone--kakao">
+                  <span class="vertical-phone__island" aria-hidden="true"></span>
+                  <header><button type="button" aria-label="뒤로">‹</button><img src="./assets/mako-chat-profile-crop.png" alt="MAKO"><div><strong>MAKO</strong><small>나의 동료</small></div></header>
+                  <div class="kakao-chat">
+                    <p class="kakao-chat__user">으, 퇴근하고 싶다.</p>
+                    <div class="kakao-chat__mako"><img src="./assets/mako-chat-profile-crop.png" alt=""><p><strong>MAKO</strong>6시 30분까지 얼마 안 남았어. 조금만 더 힘내.</p></div>
+                    <div class="kakao-input">메시지 입력 <span>＋</span></div>
+                  </div>
+                  <span class="vertical-phone__home" aria-hidden="true"></span>
+                </div>
+                <figure class="platform-kakao-qr">
+                  <img src="./assets/kakaotalk-qr.png" alt="카카오톡에서 MAKO를 시작할 수 있는 QR 코드">
+                  <figcaption>카카오톡에서 만나기</figcaption>
+                </figure>
+              </article>
+
+              <article class="platform-device platform-device--web">
+                <header><div><span>WEB</span><strong>대화 · 기억 · 작업</strong></div><em>ONLINE</em></header>
+                <div class="vertical-phone vertical-phone--web">
+                  <span class="vertical-phone__island" aria-hidden="true"></span>
+                  <header><img src="./assets/mako-chat-profile-crop.png" alt="MAKO"><div><small>나의 동료</small><strong>MAKO</strong></div></header>
+                  <div class="web-chat">
+                    <p class="web-chat__user">비가 오네.</p>
+                    <div class="web-chat__mako"><img src="./assets/mako-chat-profile-crop.png" alt=""><p><strong>MAKO</strong>비 오는 날 산책 나가는 거 좋아하잖아. 산책 가려고?</p></div>
+                  </div>
+                  <span class="vertical-phone__home" aria-hidden="true"></span>
+                </div>
+              </article>
+            </div>
+
+            <article class="platform-device platform-device--discord">
+              <header><div><span>DISCORD</span></div></header>
+              
+              <div class="discord-ui">
+                <aside aria-hidden="true"><b>AI</b><span></span><span></span></aside>
+                <section>
+                  
+                  <div class="discord-conversation">
+                    <div class="discord-message"><div class="discord-avatar discord-avatar--user">P</div><p><strong>PLAYER <time>오늘 14:21</time></strong>나무 30개만 캐 놔줘.</p></div>
+                    <div class="discord-message"><img class="discord-avatar" src="./assets/mako-chat-profile-crop.png" alt="MAKO"><p><strong>MAKO <small>BOT</small> <time>오늘 14:21</time></strong>좋아, 나무 30개 모아둘게.</p></div>
+                  </div>
+                  
+                  <div class="discord-command">메시지 보내기</div>
+                </section>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="appendix-return mobile-final__return" data-slide-target="memory-platform">← 본문 09</button>
+      <div class="slide-rule"></div>
+    </section>
+
+
+    <section class="slide slide--final-polish" data-title="NEXT VISION" aria-label="10. NEXT VISION">
       <div class="slide-accent"></div>
       <div class="slide-inner slide-inner--final-polish">
         <header class="slide-header slide-header--compact polish-header">
           <div>
-            <span class="kicker">NEXT TODO</span>
-            <h2>완성도를 위해 남은 일</h2>
+            <span class="kicker">NEXT VISION</span>
+        <h2>콘텐츠 · 음성 UX · 플랫폼 확장 가능성</h2>
           </div>
         </header>
-        <div class="todo-board" aria-label="발표 이후 남은 작업">
+        <div class="todo-board" aria-label="콘텐츠·음성 UX·플랫폼 확장 방향">
           <article>
-            <span aria-hidden="true"></span>
-            <em>TODO 01</em>
-            <div><strong>플레이 흐름 다듬기</strong><p>조작 · UI · 피드백</p></div>
+            <em>CONTENT</em>
+            <div><strong>생존 콘텐츠 확장</strong><p>추가 몬스터 · 던전 · 생존 시스템</p></div>
           </article>
           <article>
-            <span aria-hidden="true"></span>
-            <em>TODO 02</em>
-            <div><strong>예외 상황 점검하기</strong><p>지연 · 실패 · 재시작</p></div>
+            <em>VOICE UX</em>
+            <div><strong>음성 사용자 경험</strong><p>STT 음성 인식 · TTS 음성 출력</p></div>
           </article>
           <article>
-            <span aria-hidden="true"></span>
-            <em>TODO 03</em>
-            <div><strong>최종 완성도 높이기</strong><p>아트 · 사운드 · 밸런스</p></div>
+            <em>PLATFORM</em>
+            <div><strong>플랫폼 확장</strong><p>다른 게임 IP · 피지컬 AI</p></div>
           </article>
         </div>
-        <p class="polish-statement">새로운 기능보다, <strong>남은 어색함을 하나씩 지우는 단계.</strong></p>
+    <p class="polish-statement">생존 콘텐츠를 시작으로, <strong>음성 UX와 다른 플랫폼 적용 가능성을 검토합니다.</strong></p>
       </div>
       <div class="slide-rule"></div>
     </section>
 
-    <section class="slide slide--closing" data-scope="main" data-title="마무리" aria-label="14. 마무리">
+    <section id="closing" class="slide slide--closing" data-scope="main" data-title="마무리" aria-label="14. 마무리">
       <img class="closing-image" src="./assets/closing-journey-v2.png" alt="밝은 폐허의 세계를 함께 걸어가는 PLAYER와 MAKO">
       <div class="closing-overlay"></div>
       <div class="closing-content">
         <span class="kicker">TEAM TRAIP · AI : RE</span>
-        <h2>개인화 AI를 넘어,<br>새로운 일상으로</h2>
-        <p>하나의 AI와 쌓은 관계가, 새로운 일상 속으로 이어집니다.</p>
+        <h2>AI와 함께<br>새로운 일상으로</h2>
+        <p>AI와 쌓은 관계가, 새로운 일상 속으로 이어집니다.</p>
       </div>
     </section>
 
-    <section class="slide slide--appendix-interface" data-title="Appendix · Physical AI" aria-label="Appendix. Physical AI">
-      <div class="slide-accent"></div>
-      <div class="slide-inner appendix-interface">
-        <span class="kicker">APPENDIX · PHYSICAL AI</span>
-        <div class="appendix-interface__content">
-          <span>PHYSICAL AI · COMPANION ROBOT</span>
-          <h2>화면 밖으로 이어지는 동행</h2>
-        </div>
-        <div class="appendix-interface__geometry" aria-hidden="true">
-          <i></i><i></i><i></i>
-          <strong>AI | RE</strong>
-        </div>
+    <section id="appendix-toc" class="slide appendix-slide appendix-toc" data-scope="appendix" data-appendix-order="1" data-appendix-index="false" data-category="preserved-main" data-title="APPENDIX 목차" aria-label="INDEX. APPENDIX 목차">
+      <div class="slide-inner appendix-toc__inner">
+        <header class="appendix-toc__header">
+          <span class="kicker">APPENDIX · CONTENTS</span>
+          <h2>APPENDIX 목차</h2>
+        </header>
+        <nav class="appendix-toc__list" aria-label="어펜딕스 페이지 선택">
+          <button type="button" data-slide-target="memory-architecture" aria-label="A01 장기기억 상세로 이동">
+            <span class="appendix-toc__number">A01</span>
+            <span class="appendix-toc__copy"><strong>장기기억 상세</strong><em>기억의 근거 · 저장 · 사용자 관리</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="multiplatform-detail" aria-label="A02 멀티플랫폼 상세로 이동">
+            <span class="appendix-toc__number">A02</span>
+            <span class="appendix-toc__copy"><strong>멀티플랫폼 상세</strong><em>웹앱 · Discord · 카카오톡</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="team-slide" aria-label="A03 팀 소개로 이동">
+            <span class="appendix-toc__number">A03</span>
+            <span class="appendix-toc__copy"><strong>팀 소개</strong><em>TEAM TRAIP · 역할과 협업</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="market-evidence-pragmata" aria-label="A04 프래그마타 시장 사례로 이동">
+            <span class="appendix-toc__number">A04</span>
+            <span class="appendix-toc__copy"><strong>프래그마타 시장 사례</strong><em>신규 IP · 동료 협력 플레이</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="market-evidence-ryza" aria-label="A05 라이자챗 시장 사례로 이동">
+            <span class="appendix-toc__number">A05</span>
+            <span class="appendix-toc__copy"><strong>라이자챗 시장 사례</strong><em>캐릭터 대화 · 서비스 진입</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="market-evidence-aire" aria-label="A06 AI RE 포지셔닝으로 이동">
+            <span class="appendix-toc__number">A06</span>
+            <span class="appendix-toc__copy"><strong>AI : RE 포지셔닝</strong><em>게임 안의 행동 · 게임 밖의 관계</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="market-evidence-stats" aria-label="A07 시장성 수치 출처로 이동">
+            <span class="appendix-toc__number">A07</span>
+            <span class="appendix-toc__copy"><strong>시장성 수치 출처</strong><em>생존게임 판매 · AI 채팅 이용 지표</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-context" aria-label="A08 AI 판단용 게임 상태로 이동">
+            <span class="appendix-toc__number">A08</span>
+            <span class="appendix-toc__copy"><strong>AI 판단용 게임 상태</strong><em>현재 상황을 안전하게 전달</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-behavior" aria-label="A09 동료 행동 실행 구조로 이동">
+            <span class="appendix-toc__number">A09</span>
+            <span class="appendix-toc__copy"><strong>동료 행동 실행 구조</strong><em>StateTree 판단 · GAS 실행</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-offline" aria-label="A10 오프라인 작업 동기화로 이동">
+            <span class="appendix-toc__number">A10</span>
+            <span class="appendix-toc__copy"><strong>오프라인 작업 동기화</strong><em>현실시간 진행 · 보상 반영</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-safety" aria-label="A11 유해 대화 안전 처리로 이동">
+            <span class="appendix-toc__number">A11</span>
+            <span class="appendix-toc__copy"><strong>유해 대화 안전 처리</strong><em>욕설 · 성적 질문 · 위험 요청 대응</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-resilience" aria-label="A12 AI 예외 상황 대응으로 이동">
+            <span class="appendix-toc__number">A12</span>
+            <span class="appendix-toc__copy"><strong>AI 예외 상황 대응</strong><em>응답 검증 · 안전한 처리 · 로컬 유지</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+          <button type="button" data-slide-target="implementation-personalization" aria-label="A13 개인화 데이터 운영 구조로 이동">
+            <span class="appendix-toc__number">A13</span>
+            <span class="appendix-toc__copy"><strong>개인화 데이터 운영 구조</strong><em>가벼운 저장 · 선택적 통신 · 단계적 확장</em></span>
+            <span class="appendix-toc__arrow" aria-hidden="true">→</span>
+          </button>
+        </nav>
       </div>
+      <button type="button" class="appendix-return appendix-toc__return" data-slide-target="closing">← 엔딩</button>
     </section>
 
-<section class="slide appendix-slide appendix-slide--market" data-scope="appendix" data-title="시장 규모"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · MARKET</span><h2>CONVERSATIONAL AI MARKET</h2></header><div class="metric-pair"><article><strong>$41.39B</strong><span>2030 전망</span></article><article><strong>23.7%</strong><span>2025–2030 CAGR</span></article></div><p class="source-line">SOURCE · Grand View Research · Conversational AI Market · 2025</p></div><div class="slide-rule"></div></section>
+    <section id="implementation-context" class="slide appendix-slide technical-appendix technical-appendix--context" data-scope="appendix" data-appendix-order="9" data-category="ai" data-category-title="AI 시스템 구조" data-title="AI 판단용 게임 상태" aria-label="A08. AI 판단용 게임 상태">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A08 · AI DECISION INPUT</p>
+          <h2 class="technical-appendix__title">AI 판단용 게임 상태</h2>
+          <p class="technical-appendix__lead">동료가 현재 상황을 이해할 수 있도록 필요한 정보만 모아 안전하게 전달합니다.</p>
+        </header>
+        <div class="program-structure program-structure--context" aria-label="게임 상황을 수집하고 정리해 AI 판단 정보로 전달하는 구조">
+          <section class="program-structure__group program-structure__group--sources">
+            <div class="program-structure__label"><span>01</span><strong>현재 게임 상황</strong></div>
+            <div class="program-structure__source-list">
+              <div><b>전투 상황</b><span>감지한 위협과 대상</span></div>
+              <div><b>현재 작업</b><span>수행 중인 행동과 목표</span></div>
+              <div><b>보유 자원</b><span>동료와 공유 보관함의 물품</span></div>
+              <div><b>주변 환경</b><span>자원과 사용 가능한 작업대</span></div>
+            </div>
+          </section>
+          <div class="program-structure__arrow"><span>사실 수집</span><b>→</b></div>
+          <section class="program-structure__group program-structure__group--core">
+            <div class="program-structure__label"><span>02</span><strong>게임 상태 정리</strong></div>
+            <div class="program-structure__core-name">안전한 판단 정보로 변환</div>
+            <ol class="program-structure__verb-list"><li>유효한 상태만 수집</li><li>이름과 단위를 통일</li><li>필요한 범위로 제한</li></ol>
+          </section>
+          <div class="program-structure__arrow"><span>검증된 스냅샷</span><b>→</b></div>
+          <section class="program-structure__group program-structure__group--output">
+            <div class="program-structure__label"><span>03</span><strong>AI 판단 정보</strong></div>
+            <div class="program-structure__output-map"><span>위치</span><span>위협</span><span>자원</span><span>작업대</span><span>현재 작업</span><span>인벤토리</span></div>
+            <p>정리된 정보만 AI에 전달</p>
+          </section>
+        </div>
+        <div class="technical-appendix__constraint-strip"><span>안전 원칙</span><span>확인되지 않은 상태는 전달하지 않고, 한 번에 다루는 정보량을 제한합니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>핵심 역할</span><span>흩어진 게임 상황을 일관된 AI 판단 정보로 변환</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="타깃 사용자 근거"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · TARGET</span><h2>RELATIONSHIP · CONNECTION · EXPLORATION</h2></header><div class="evidence-triad"><article><em>01</em><strong>캐릭터 관계 몰입</strong></article><article><em>02</em><strong>게임 밖 연결 경험</strong></article><article><em>03</em><strong>행동하는 AI 탐색</strong></article></div><p class="appendix-keyline">CORE NEED · 시간이 쌓이는 개인화</p></div><div class="slide-rule"></div></section>
+    <section id="implementation-behavior" class="slide appendix-slide technical-appendix technical-appendix--behavior" data-scope="appendix" data-appendix-order="10" data-category="gameplay" data-category-title="게임플레이 구현" data-title="동료 행동 실행 구조" aria-label="A09. 동료 행동 실행 구조">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A09 · AI COMPANION / LOCAL BEHAVIOR</p>
+          <h2 class="technical-appendix__title">동료 행동 실행 구조</h2>
+          <p class="technical-appendix__lead">StateTree가 상황에 맞는 행동을 고르고, GAS Ability가 실제 행동과 수치 변화를 처리합니다.</p>
+        </header>
+        <div class="program-structure program-structure--behavior" aria-label="상황 입력에서 StateTree 판단과 GAS Ability 실행으로 이어지는 구조">
+          <section class="program-structure__node"><span>INPUT</span><strong>상황 입력</strong><small>시야 정보 · 플레이어 명령 · 현재 작업</small></section>
+          <div class="program-structure__arrow"><b>→</b></div>
+          <section class="program-structure__node"><span>GAMEPLAY STATE</span><strong>행동별 현재 상태</strong><small>전투 · 지원 · 명령 · 작업</small></section>
+          <div class="program-structure__arrow"><b>→</b></div>
+          <section class="program-structure__node program-structure__node--decision"><span>DECIDE</span><strong>StateTree</strong><small>우선순위와 이동 행동 선택</small></section>
+          <div class="program-structure__arrow"><b>→</b></div>
+          <section class="program-structure__node"><span>REQUEST</span><strong>행동 요청</strong><small>선택한 행동만 실행 단계로 전달</small></section>
+          <div class="program-structure__arrow"><b>→</b></div>
+          <section class="program-structure__node program-structure__node--execute"><span>EXECUTE</span><strong>GAS Ability</strong><small>대상 · 비용 · 쿨다운 재검증</small></section>
+        </div>
+        <div class="program-structure__priority"><span>행동 우선순위</span><strong>행동 불가</strong><b>›</b><strong>생존</strong><b>›</b><strong>전투 / 지원</strong><b>›</b><strong>명령</strong><b>›</b><strong>작업</strong><b>›</b><strong>복귀 / 대기</strong></div>
+        <div class="technical-appendix__contract-strip"><span>역할 구분</span><span>StateTree는 행동을 선택하고, GAS Ability는 실행 조건과 능력치 변화를 담당합니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>핵심 역할</span><span>상황 판단과 실제 행동 실행을 분리해 안정적으로 제어</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="캐릭터 AI 사례"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · LANDSCAPE</span><h2>RELATIONSHIP · STORY · ACTION</h2></header><div class="evidence-triad"><article><em>RELATIONSHIP</em><strong>Character.AI</strong><span>대화 · 음성 · 기억</span></article><article><em>STORY</em><strong>ZETA · CRACK</strong><span>캐릭터 · 세계관</span></article><article><em>ACTION</em><strong>PUBG Ally</strong><span>인식 · 계획 · 행동</span></article></div><p class="source-line">SOURCES · character.ai · scatterlab.co.kr · wrtn.io · nvidia.com</p></div><div class="slide-rule"></div></section>
+    <section id="implementation-offline" class="slide appendix-slide technical-appendix technical-appendix--offline" data-scope="appendix" data-appendix-order="11" data-category="platform" data-category-title="멀티플랫폼 연동" data-title="오프라인 작업 동기화" aria-label="A10. 오프라인 작업 동기화">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A10 · CROSS-DEVICE WORKFLOW</p>
+          <h2 class="technical-appendix__title">오프라인 작업 동기화</h2>
+          <p class="technical-appendix__lead">웹에서 맡긴 작업의 진행 상황을 서버가 계산하고, 게임이 결과를 확인해 보상에 반영합니다.</p>
+        </header>
+        <div class="program-structure program-structure--offline" aria-label="WebApp, Backend, UE5가 오프라인 작업을 동기화하는 프로그램 구조">
+          <section class="program-structure__device program-structure__device--web">
+            <div class="program-structure__device-head"><span>01</span><strong>WEB APP</strong></div>
+            <h3>작업을 요청하고 확인</h3>
+            <p>생성 · 목록 조회 · 진행 중 취소</p>
+          </section>
+          <div class="program-structure__handoff"><span>작업 요청</span><b>→</b></div>
+          <section class="program-structure__device program-structure__device--server">
+            <div class="program-structure__device-head"><span>02</span><strong>BACKEND</strong></div>
+            <h3>현실시간 진행량을 계산</h3>
+            <div class="program-structure__status"><span>대기</span><b>→</b><span>진행</span><b>→</b><span>완료</span><b>→</b><span>정산</span></div>
+          </section>
+          <div class="program-structure__handoff"><span>확인된 결과</span><b>→</b></div>
+          <section class="program-structure__device program-structure__device--ue">
+            <div class="program-structure__device-head"><span>03</span><strong>UE5</strong></div>
+            <h3>게임 상태에 보상을 확정</h3>
+            <p>결과 확인 → 보상 적용 → 저장 확인 → 완료 처리</p>
+          </section>
+        </div>
+        <div class="technical-appendix__offline-footer"><span>역할 구분</span><span>웹은 작업 요청 · 서버는 현실시간 진행 · 게임은 보상 적용과 저장을 담당합니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>핵심 역할</span><span>게임을 종료한 동안의 작업 결과를 안전하게 이어서 반영</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="경쟁 포지셔닝"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · POSITIONING</span><h2>RELATIONSHIP × ACTION × SURFACE</h2></header><div class="matrix matrix--position"><div><strong>구분</strong><span>대화</span><span>행동</span><span>기억</span><span>멀티접점</span></div><div><strong>Character AI</strong><span>●</span><span>△</span><span>●</span><span>△</span></div><div><strong>Game AI SDK</strong><span>●</span><span>●</span><span>△</span><span>△</span></div><div class="matrix__accent"><strong>AI : RE</strong><span>●</span><span>●</span><span>●</span><span>●</span></div></div><p class="source-line">REFERENCE · NVIDIA ACE · Inworld · Character.AI</p></div><div class="slide-rule"></div></section>
+    <section id="implementation-safety" class="slide appendix-slide technical-appendix technical-appendix--safety" data-scope="appendix" data-appendix-order="12" data-category="safety" data-category-title="대화 안전" data-title="유해 대화 안전 처리" aria-label="A11. 유해 대화 안전 처리">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A11 · CONVERSATION SAFETY</p>
+          <h2 class="technical-appendix__title">유해 대화 안전 처리</h2>
+          <p class="technical-appendix__lead">부적절하거나 위험한 질문이 들어와도 안전한 범위에서 응답하고, 검증을 통과하지 못한 답변은 사용자에게 전달하지 않습니다.</p>
+        </header>
+        <div class="program-structure program-structure--safety" aria-label="위험 요청을 확인하고 안전한 응답으로 전환한 뒤 출력 결과를 재검증하는 구조">
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>01</span><strong>위험 요청 확인</strong></div>
+            <div class="program-structure__core-name">대화 위험 범위 구분</div>
+            <ol class="program-structure__verb-list"><li>욕설과 공격적 표현</li><li>성적이거나 부적절한 질문</li><li>위험 행동과 고위험 판단</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>02</span><strong>안전한 응답 전환</strong></div>
+            <div class="program-structure__core-name">위험한 정보 제공 제한</div>
+            <ol class="program-structure__verb-list"><li>명확한 대화 경계 설정</li><li>안전한 방향으로 안내</li><li>캐릭터 말투와 관계 유지</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>03</span><strong>출력 결과 재검증</strong></div>
+            <div class="program-structure__core-name">안전 기준 통과 후 전달</div>
+            <ol class="program-structure__verb-list"><li>위험하거나 근거 없는 답변 차단</li><li>캐릭터 설정 충돌 제외</li><li>검증 실패 시 안전 응답 사용</li></ol>
+          </section>
+        </div>
+        <div class="technical-appendix__constraint-strip"><span>다단계 보호</span><span>대화 원칙과 출력 검증을 함께 적용해 AI의 첫 답변을 그대로 전달하지 않습니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>사업 효과</span><span>사용자 안전과 캐릭터·IP의 신뢰를 함께 보호</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="게임플레이 기능 지도"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · GAMEPLAY</span><h2>LOCAL GAMEPLAY VERTICAL SLICE</h2></header><div class="feature-map"><span>FOLLOW</span><span>COMBAT</span><span>EVADE</span><span>SUPPORT</span><span>GATHER</span><span>CRAFT</span><span>INVENTORY</span><span>STORAGE</span><span>EQUIPMENT</span><span>SAVE</span><span>DAY / NIGHT</span></div></div><div class="slide-rule"></div></section>
+    <section id="implementation-resilience" class="slide appendix-slide technical-appendix technical-appendix--resilience" data-scope="appendix" data-appendix-order="13" data-appendix-label="A12" data-category="resilience" data-category-title="안정적인 AI 연동" data-title="AI 예외 상황 대응" aria-label="A12. AI 예외 상황 대응">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A12 · AI RESILIENCE</p>
+          <h2 class="technical-appendix__title">AI 예외 상황 대응</h2>
+          <p class="technical-appendix__lead">응답이 늦거나 연결이 끊겨도 외부 결과를 먼저 검증하고, 핵심 게임 플레이는 로컬에서 계속 유지합니다.</p>
+        </header>
+        <div class="program-structure program-structure--resilience" aria-label="AI 응답의 예외를 감지하고 안전하게 처리해 로컬 플레이를 유지하는 구조">
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>01</span><strong>예외 감지</strong></div>
+            <div class="program-structure__core-name">응답 상태 확인</div>
+            <ol class="program-structure__verb-list"><li>지연과 연결 실패</li><li>형식 오류와 만료</li><li>뒤늦게 도착한 응답</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>02</span><strong>안전한 처리</strong></div>
+            <div class="program-structure__core-name">검증되지 않은 변경 차단</div>
+            <ol class="program-structure__verb-list"><li>허용된 정보만 수용</li><li>중복 요청 방지</li><li>재시도 범위 제한</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>03</span><strong>로컬 유지</strong></div>
+            <div class="program-structure__core-name">게임 플레이 계속</div>
+            <ol class="program-structure__verb-list"><li>이동과 전투 유지</li><li>진행 중인 행동 보호</li><li>연결 후 새 요청으로 재개</li></ol>
+          </section>
+        </div>
+        <div class="technical-appendix__constraint-strip"><span>실행 원칙</span><span>AI는 행동 후보를 제안하고, 게임이 대상·상태·만료를 다시 확인한 뒤 최종 실행합니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>운영 효과</span><span>외부 서비스의 일시적인 실패를 핵심 게임 플레이와 분리</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="StateTree"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · STATE TREE</span><h2>BEHAVIOR PRIORITY</h2></header><div class="priority-stack"><strong>SURVIVAL</strong><i>↓</i><strong>COMBAT · SUPPORT</strong><i>↓</i><strong>COMMAND</strong><i>↓</i><strong>WORK</strong><i>↓</i><strong>FOLLOW · IDLE</strong></div></div><div class="slide-rule"></div></section>
+    <section id="implementation-personalization" class="slide appendix-slide technical-appendix technical-appendix--personalization" data-scope="appendix" data-appendix-order="14" data-appendix-label="A13" data-category="personalization" data-category-title="개인화 운영" data-title="개인화 데이터 운영 구조" aria-label="A13. 개인화 데이터 운영 구조">
+      <div class="slide-inner technical-appendix__inner">
+        <header class="technical-appendix__header">
+          <p class="technical-appendix__kicker">A13 · PERSONALIZATION AT SCALE</p>
+          <h2 class="technical-appendix__title">개인화 데이터 운영 구조</h2>
+          <p class="technical-appendix__lead">기억은 가벼운 텍스트로 축적하고 필요한 순간에만 선별해 사용해, 사용자별 개인화를 운영 가능한 부담으로 확장합니다.</p>
+        </header>
+        <div class="program-structure program-structure--personalization" aria-label="가벼운 저장과 선택적 통신으로 개인화를 단계적으로 확장하는 구조">
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>01</span><strong>가벼운 저장</strong></div>
+            <div class="program-structure__core-name">중요한 경험만 기억</div>
+            <ol class="program-structure__verb-list"><li>텍스트 요약 중심</li><li>근거와 범위를 함께 저장</li><li>일반 원문 자동 정리</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>02</span><strong>선택적 통신</strong></div>
+            <div class="program-structure__core-name">관련 기억만 전달</div>
+            <ol class="program-structure__verb-list"><li>현재 상황에 맞게 선별</li><li>회상 개수와 길이 제한</li><li>대용량 원본 전송 제외</li></ol>
+          </section>
+          <section class="program-structure__group">
+            <div class="program-structure__label"><span>03</span><strong>단계적 확장</strong></div>
+            <div class="program-structure__core-name">규모에 맞춰 분리 확장</div>
+            <ol class="program-structure__verb-list"><li>저장·캐시·AI 처리 분리</li><li>운영 DB로 이전 가능</li><li>필요한 자원만 증설</li></ol>
+          </section>
+        </div>
+        <div class="technical-appendix__constraint-strip"><span>비용 구조</span><span>기억이 계속 쌓여도 한 번의 요청에는 현재 상황과 관련된 정보만 사용합니다.</span></div>
+        <div class="technical-appendix__source-footer"><span>사업 확장</span><span>가벼운 데이터와 제한된 통신량으로 사용자별 개인화를 단계적으로 확대</span></div>
+      </div>
+      <button type="button" class="appendix-return technical-appendix__return" data-slide-target="appendix-toc">← APPENDIX 목차</button>
+    </section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="GAS 전투"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · GAS COMBAT</span><h2>REQUEST → ABILITY → HIT → EFFECT</h2></header><div class="evidence-flow evidence-flow--four"><article><em>01</em><strong>StateTree</strong><span>Attack Request</span></article><i>→</i><article><em>02</em><strong>GAS</strong><span>Cost · Cooldown</span></article><i>→</i><article><em>03</em><strong>Socket Trace</strong><span>Execution ID</span></article><i>→</i><article><em>04</em><strong>Effect</strong><span>Damage · Stagger</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="회피와 지원"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · COMBAT BEHAVIOR</span><h2>EVADE · SUPPORT</h2></header><div class="split-evidence"><article><em>AUTONOMOUS EVADE</em><strong>Execution ID · Deterministic Roll</strong><span>거리 · Stamina · Cooldown 재검증</span></article><article><em>HEALING SUPPORT</em><strong>Inventory · Target · Interrupt</strong><span>성공한 행동에만 소비 확정</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="WorkOrder"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · WORK ORDER</span><h2>GATHER · CRAFT · RESUME</h2></header><div class="evidence-flow"><article><em>01</em><strong>REQUEST</strong><span>Type · Target</span></article><i>→</i><article><em>02</em><strong>RUNNING</strong><span>Progress · Interrupt</span></article><i>→</i><article><em>03</em><strong>RESULT</strong><span>Complete · Failure</span></article></div><p class="appendix-keyline">COMBAT INTERRUPT → WORK RESUME</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Inventory와 Storage"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · INVENTORY</span><h2>PLAYER · MAKO · SHARED STORAGE</h2></header><div class="evidence-triad"><article><em>PLAYER</em><strong>Inventory · Quick Slot</strong></article><article><em>MAKO</em><strong>Inventory · Equipment</strong></article><article><em>STORAGE</em><strong>Atomic Transfer</strong></article></div><p class="appendix-keyline">SESSION ID · REVISION · MUTATION ID</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="SaveGame"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · PERSISTENCE</span><h2>SAVE · RESTORE · DEDUPLICATE</h2></header><div class="evidence-flow"><article><em>01</em><strong>PRIMARY</strong><span>Latest Generation</span></article><i>↔</i><article><em>02</em><strong>PREVIOUS</strong><span>Fallback Generation</span></article><i>+</i><article><em>03</em><strong>LEDGER</strong><span>Already Applied</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="월드 시스템"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · WORLD</span><h2>GAMEWORLD TIME · DAY / NIGHT</h2></header><div class="metric-pair"><article><strong>GAMEWORLD</strong><span>플레이 시간 권위</span></article><article><strong>REALWORLD</strong><span>대화 · 오프라인 작업</span></article></div><p class="appendix-keyline">SEPARATED TIME CONTEXT</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="하이브리드 AI"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · HYBRID AI</span><h2>FAST REFLEX · SLOW REASONING</h2></header><div class="split-evidence"><article><em>UNREAL</em><strong>StateTree · GAS · WorkOrder</strong><span>이동 · 전투 · 작업</span></article><article><em>BACKEND</em><strong>LangGraph · Gemma · Memory</strong><span>대화 · 의도 · 장기 맥락</span></article></div><p class="source-line">REFERENCE · NVIDIA ACE for Games · Hybrid workload separation</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="GameContext"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · GAME CONTEXT</span><h2>BOUNDED WORLD FACTS</h2></header><div class="feature-map"><span>LOCATION</span><span>THREAT</span><span>RESOURCE</span><span>WORKSTATION</span><span>CURRENT WORK</span><span>INVENTORY</span><span>TIME</span></div><p class="appendix-keyline">FACTS ONLY · NO AUTHORITY</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="행동 안전 검증"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · ACTION SAFETY</span><h2>제안된 행동을 게임 규칙으로 다시 확인</h2></header><div class="evidence-flow"><article><em>01</em><strong>행동 제안</strong><span>종류 · 대상 · 조건</span></article><i>→</i><article class="evidence-flow__accent"><em>02</em><strong>게임 상태 확인</strong><span>상태 · 거리 · 유효 시간</span></article><i>→</i><article><em>03</em><strong>게임 안에서 실행</strong><span>이동 · 전투 · 작업</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="장애와 Local Fallback"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · FAILURE BOUNDARY</span><h2>LOCAL AI NEVER STOPS</h2></header><div class="failure-band"><span>TIMEOUT</span><span>MALFORMED</span><span>UNAVAILABLE</span><span>LATE CALLBACK</span><strong>→ FOLLOW · COMBAT · SURVIVAL</strong></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="LangGraph"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · LANGGRAPH</span><h2>INTENT-SPECIFIC NODES</h2></header><div class="feature-map"><span>COMMAND</span><span>RECIPE</span><span>ENEMY</span><span>LORE</span><span>CONVERSATION</span><span>UNSUPPORTED</span><span>SANITIZER</span></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="Source 기반 기억"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · MEMORY IS EVIDENCE</span><h2>SOURCE 없는 기억은 저장하지 않는다</h2></header><div class="memory-pipeline"><article><em>01</em><strong>MESSAGE · EVENT</strong></article><i>↓</i><article><em>02</em><strong>CANONICAL SOURCE</strong></article><i>↓</i><article><em>03</em><strong>MEMORY CANDIDATE</strong></article><i>↓</i><article class="memory-pipeline__active"><em>04</em><strong>ACTIVE MEMORY</strong></article></div><p class="source-line">PROJECT EVIDENCE · CAI-P3 Source-backed Memory</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="환각 제어"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · HALLUCINATION CONTROL</span><h2>STORE GATE × RESPONSE GATE</h2></header><div class="split-evidence"><article><em>STORE GATE</em><strong>SOURCE · SCOPE · DUPLICATE</strong><span>유사 · 모순 → Pending Review</span></article><article><em>RESPONSE GATE</em><strong>REFERENCE · NUMBER · DATE</strong><span>NEGATION · COMMAND BOUNDARY</span></article></div><p class="appendix-keyline">FAIL CLOSED · SAFE RESPONSE</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="Bounded RAG"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · BOUNDED RAG</span><h2>필요한 기억만, 제한된 Prompt로</h2></header><div class="rag-layout"><div><strong>USER MESSAGE</strong><span>LOCATION · TIME · THREAT · WORK</span></div><i>↓</i><div><strong>KEYWORD + EMBEDDING</strong><span>SCOPE · TYPE · RELEVANCE</span></div><i>↓</i><div class="rag-layout__limit"><strong>TOP 3 · MAX 360 CHARS</strong><span>PROFILE · SAVE · COMPANION</span></div></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="망각 제어"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · CONTROLLED FORGETTING</span><h2>삭제가 아닌 회상 순위의 감쇠</h2></header><div class="metric-grid metric-grid--four"><article><strong>30 DAY</strong><span>HALF-LIFE</span></article><article><strong>5 USE</strong><span>BONUS CAP</span></article><article><strong>10 MIN</strong><span>CONTEXT COOLDOWN</span></article><article><strong>PINNED</strong><span>KEEP PRIORITY</span></article></div><p class="appendix-keyline">RELEVANCE · IMPORTANCE · RECENCY</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="Memory API"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · USER MEMORY CONTROL</span><h2>SEARCH · CORRECT · PIN · DELETE · RESET</h2></header><div class="endpoint-table"><div><strong>GET</strong><span>/api/v1/memories</span><em>LIST · DETAIL</em></div><div><strong>POST</strong><span>/api/v1/memories/search</span><em>SEARCH</em></div><div><strong>PATCH</strong><span>/api/v1/memories/{id}</span><em>CORRECT · PIN</em></div><div><strong>DELETE</strong><span>/api/v1/memories/{id}</span><em>DELETE</em></div><div><strong>POST</strong><span>/api/v1/memories/reset</span><em>RESET</em></div><div class="endpoint-table__accent"><strong>PATCH</strong><span>/api/v1/memory-candidates/{id}</span><em>APPROVE · REJECT</em></div></div><p class="appendix-keyline">APPEND-ONLY CORRECTION AUDIT</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide appendix-slide--memory" data-scope="appendix" data-title="삭제와 Tombstone"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · DELETE WITHOUT RESURRECTION</span><h2>삭제된 기억은 다시 살아나지 않는다</h2></header><div class="priority-stack priority-stack--horizontal"><strong>ARCHIVE</strong><i>→</i><strong>RETRIEVAL BLOCK</strong><i>→</i><strong>TOMBSTONE</strong><i>→</i><strong>SOURCE PURGE</strong></div><p class="appendix-keyline">PROMPT · CACHE · BACKGROUND QUEUE EXCLUDED</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="플랫폼 기능 매트릭스"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · PLATFORM MATRIX</span><h2>ONE BACKEND · DIFFERENT CAPABILITIES</h2></header><div class="matrix"><div><strong>Surface</strong><span>Chat</span><span>Memory</span><span>Task</span><span>Play</span></div><div><strong>Unreal</strong><span>●</span><span>●</span><span>●</span><span>●</span></div><div><strong>Mobile Web</strong><span>●</span><span>●</span><span>●</span><span>—</span></div><div><strong>Discord</strong><span>●</span><span>●</span><span>●</span><span>—</span></div><div class="matrix__accent"><strong>Kakao</strong><span>●</span><span>—</span><span>—</span><span>—</span></div></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Mobile Web"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · MOBILE WEB</span><h2>CHAT · MEMORY · OFFLINE TASK</h2></header><div class="feature-map"><span>RUNTIME VALIDATION</span><span>TIMEOUT</span><span>ABORT</span><span>SAFE ERROR UI</span><span>MEMORY REVIEW</span><span>SAME-ORIGIN PROXY</span></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Discord"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · DISCORD</span><h2>SLASH COMMAND ADAPTER</h2></header><div class="feature-map"><span>/채팅</span><span>/기억_목록</span><span>/기억_검색</span><span>/작업_생성</span><span>/작업_목록</span><span>/작업_취소</span></div><p class="appendix-keyline">ASYNC HTTP · REQUEST ID · EMBED RESPONSE</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Kakao 구현 완료"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · KAKAO TALK</span><h2>카카오톡 대화 연동</h2></header><div class="evidence-flow"><article><em>01</em><strong>SkillPayload</strong><span>Kakao Open Builder</span></article><i>→</i><article><em>02</em><strong>AIRE Kakao</strong><span>Secret · Timeout · Callback</span></article><i>→</i><article><em>03</em><strong>AIRE Chat</strong><span>MAKO Response</span></article></div><div class="metric-pair metric-pair--compact"><article><strong>4 SEC</strong><span>Direct Response</span></article><article><strong>CALLBACK</strong><span>Long Response</span></article></div><p class="source-line">카카오 대화 연동 및 단위 테스트 완료</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Offline Task"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · OFFLINE TASK</span><h2>SERVER TIME → UE INVENTORY</h2></header><div class="evidence-flow evidence-flow--four"><article><em>01</em><strong>CREATE</strong><span>Web · Discord</span></article><i>→</i><article><em>02</em><strong>PROGRESS</strong><span>Server Time</span></article><i>→</i><article><em>03</em><strong>APPLY</strong><span>Atomic Inventory</span></article><i>→</i><article><em>04</em><strong>CLAIM</strong><span>After Save</span></article></div><p class="appendix-keyline">PROTOTYPE · E2E VERIFICATION TRACKED</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Game State와 Outbox"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · DURABLE SYNC</span><h2>AT-LEAST-ONCE · IDEMPOTENT RESULT</h2></header><div class="feature-map"><span>OPERATION ID</span><span>STATE VERSION</span><span>BODY SHA-256</span><span>OUTBOX REPLAY</span><span>BOUNDED QUEUE</span><span>CONFLICT REJECT</span></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Cross-device 검증 상태"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · VERIFICATION STATUS</span><h2>구현 완료 · 검증 중 · 연동 확인 필요</h2></header><div class="status-ledger"><article><span class="status-dot status-dot--done"></span><strong>구현 완료</strong><p>Web · Discord · Kakao 대화 · Memory API</p></article><article><span class="status-dot status-dot--review"></span><strong>검증 중</strong><p>Offline Task → UE Inventory</p></article><article><span class="status-dot status-dot--pending"></span><strong>연동 확인 필요</strong><p>Web Memory → UE Contextual Recall</p></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="게임과 DLC"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · B2C GAME</span><h2>GAME · CHARACTER · EPISODE</h2></header><div class="evidence-triad"><article><em>BASE</em><strong>PC GAME</strong></article><article><em>EXPAND</em><strong>CHARACTER DLC</strong></article><article><em>CONTINUE</em><strong>EPISODE DLC</strong></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="동료 서비스"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · COMPANION SERVICE</span><h2>MOBILE · VOICE · MEMORY</h2></header><div class="metric-pair"><article><strong>OPTIONAL</strong><span>선택형 구독</span></article><article><strong>$9.99</strong><span>Character.AI benchmark</span></article></div><p class="source-line">BENCHMARK · Character.AI c.ai+ official subscription · 2026</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="비용과 수익성"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · UNIT ECONOMICS</span><h2>RETENTION × INFERENCE COST</h2></header><div class="balance-scale"><article><em>VALUE</em><strong>관계 지속 · 재방문 · 콘텐츠</strong></article><i>×</i><article><em>COST</em><strong>대화 · Embedding · Storage</strong></article></div><p class="appendix-keyline">PRICING · USAGE LIMIT · LOCAL / CLOUD MIX</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="IP와 Framework"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · B2B / B2B2C</span><h2>COMPANION FRAMEWORK · OFFICIAL IP</h2></header><div class="split-evidence"><article><em>TECH</em><strong>Unreal Adapter · Gateway · Memory</strong><span>게임 규칙은 Client 권위</span></article><article><em>IP</em><strong>Official Character Companion</strong><span>권리 · 말투 · 안전 정책</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="Roadmap"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · ROADMAP</span><h2>GAME → SERVICE → IP</h2></header><div class="roadmap-line"><article><em>NOW</em><strong>GAME VALIDATION</strong><span>플레이 · 관계 · 예외</span></article><i>→</i><article><em>NEXT</em><strong>COMPANION SERVICE</strong><span>음성 · 멀티모달</span></article><i>→</i><article><em>EXPAND</em><strong>FRAMEWORK · IP</strong><span>Adapter · Licensing</span></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="생성형 AI 활용 근거"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · GENERATIVE AI</span><h2>HUMAN DIRECTION × AI ITERATION</h2></header><div class="evidence-triad evidence-triad--four"><article><em>MODEL</em><strong>캐릭터 레퍼런스</strong></article><article><em>UI</em><strong>화면 시안</strong></article><article><em>VISUAL</em><strong>콘셉트 이미지</strong></article><article><em>CODE</em><strong>구현·검증 보조</strong></article></div></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="검증 근거"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · VERIFICATION</span><h2>CODE · CONTRACT · TEST</h2></header><div class="metric-grid metric-grid--three"><article><strong>835</strong><span>Backend tests</span></article><article><strong>83</strong><span>mypy source files</span></article><article><strong>OPENAPI</strong><span>Source · Deploy aligned</span></article></div><p class="source-line">PROJECT EVIDENCE · 2026-08-23 Backend full gate · Live Local LLM / Web→UE E2E tracked separately</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide" data-scope="appendix" data-title="시장조사와 출처"><div class="slide-accent"></div><div class="slide-inner appendix-shell"><header class="appendix-header"><span class="kicker">APPENDIX · RESEARCH</span><h2>SOURCE MAP</h2></header><div class="source-map"><article><strong>MARKET</strong><span>Grand View Research</span></article><article><strong>COMPANION AI</strong><span>NVIDIA ACE · PUBG Ally</span></article><article><strong>SUBSCRIPTION</strong><span>Character.AI</span></article><article><strong>PROJECT</strong><span>OpenAPI · Docs · Tests</span></article></div><p class="source-line">RESEARCH BRIEF · share.gemini.google/Ma15pK0tJXLb</p></div><div class="slide-rule"></div></section>
 
-<section class="slide appendix-slide slide--appendix-interface" data-scope="appendix" data-title="Physical AI"><div class="slide-accent"></div><div class="slide-inner appendix-interface"><span class="kicker">APPENDIX · PHYSICAL AI</span><div class="appendix-interface__content"><span>PHYSICAL AI · COMPANION ROBOT</span><h2>화면 밖으로 이어지는 동행</h2></div><div class="appendix-interface__geometry" aria-hidden="true"><i></i><i></i><i></i><strong>AI | RE</strong></div></div></section>
+
+
+
+
+
+
+
   </main>
 
   <div class="deck-footer" aria-label="발표 조작">
-    <span class="progress-label"><strong id="currentNumber">01</strong><i></i><span id="totalNumber">12</span></span>
+    <span class="progress-label"><strong id="currentNumber">01</strong><i></i><span id="totalNumber">11</span></span>
     <div class="controls">
       <button id="prevButton" type="button" aria-label="이전 슬라이드">←</button>
       <button id="nextButton" type="button" aria-label="다음 슬라이드">→</button>
@@ -531,6 +823,6 @@
   </div>
   <div class="progress-track" aria-hidden="true"><span id="progressBar"></span></div>
 
-  <script src="./presentation.js"></script>
+  <script src="./presentation.js?v=20260828-4"></script>
 </body>
 </html>

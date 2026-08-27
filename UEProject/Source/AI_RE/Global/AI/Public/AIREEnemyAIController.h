@@ -15,6 +15,7 @@ UENUM(BlueprintType)
 enum class EAIREEnemyAwarenessState : uint8
 {
 	IdleUnaware,
+	Wandering,
 	Alerted,
 	EngagedChase,
 	EngagedAttack,
@@ -102,6 +103,10 @@ protected:
 
 private:
 	void UpdateAwareness();
+	void UpdateIdleBehavior();
+	void BeginWandering();
+	void CompleteWandering(float WaitDuration);
+	bool ShouldRetreatForLowHealth() const;
 	void UpdateEngagement(AActor* Target);
 	bool UpdateCombatApproach(
 		AActor* Target,
@@ -148,6 +153,13 @@ private:
 	float TacticalApproachDistance = 300.0f;
 	float TacticalLateralOffset = 180.0f;
 	float TacticalMoveDuration = 0.9f;
+	float HomeWanderMinRadius = 250.0f;
+	float HomeWanderMaxRadius = 600.0f;
+	float HomeWanderSpeed = 160.0f;
+	float HomeWanderWaitMin = 2.5f;
+	float HomeWanderWaitMax = 6.0f;
+	float HomeWanderAcceptanceRadius = 60.0f;
+	float RetreatHealthRatio = 0.0f;
 
 	TWeakObjectPtr<AAIREEnemyBase> Enemy;
 	TWeakObjectPtr<AActor> EngagementDecisionTarget;
@@ -155,14 +167,17 @@ private:
 	FVector HomeLocation = FVector::ZeroVector;
 	FVector SearchLocation = FVector::ZeroVector;
 	FVector TacticalMoveDestination = FVector::ZeroVector;
+	FVector WanderDestination = FVector::ZeroVector;
 	double StateDeadline = 0.0;
 	double TacticalMoveDeadline = 0.0;
+	double NextWanderTime = 0.0;
 	EAIREEnemyAwarenessState AwarenessState =
 		EAIREEnemyAwarenessState::IdleUnaware;
 	EAIREEnemyCombatApproachMove CombatApproachMove =
 		EAIREEnemyCombatApproachMove::None;
 	int32 NextLateralSide = 1;
 	bool bReturnRequested = false;
+	bool bUseHomeWander = false;
 	bool bUseCombatApproachActions = false;
 	bool bCooldownRepositionConsumed = false;
 };

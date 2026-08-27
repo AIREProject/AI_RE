@@ -35,14 +35,22 @@ FVector ResolveImpactNormal(
 }
 
 FRotator ResolveSlashRotation(
+	const FHitResult& HitResult,
 	const FVector& ImpactNormal,
 	const AActor* SourceActor,
 	const AActor* TargetActor)
 {
-	FVector StrikeDirection = IsValid(SourceActor) && IsValid(TargetActor)
-		? (TargetActor->GetActorLocation() - SourceActor->GetActorLocation())
-			.GetSafeNormal()
-		: FVector::ForwardVector;
+	// 실제 애니메이션 트레이스(무기가 이동한 궤적) 방향을 우선 사용
+	FVector StrikeDirection = (HitResult.TraceEnd - HitResult.TraceStart).GetSafeNormal();
+	
+	// 트레이스 이동이 거의 없는 경우(Fallback 등) 기존 방식(적을 향하는 방향) 사용
+	if (StrikeDirection.IsNearlyZero())
+	{
+		StrikeDirection = IsValid(SourceActor) && IsValid(TargetActor)
+			? (TargetActor->GetActorLocation() - SourceActor->GetActorLocation())
+				.GetSafeNormal()
+			: FVector::ForwardVector;
+	}
 	StrikeDirection = FVector::VectorPlaneProject(
 		StrikeDirection,
 		ImpactNormal).GetSafeNormal();
@@ -94,6 +102,7 @@ void AIRECompanionCombatVFX::SpawnBossHitSlash(
 			? FRotator::ZeroRotator
 			: WeaponDefinition->BossHitSlashRotationOffset;
 	const FQuat EffectRotation = ResolveSlashRotation(
+			HitResult,
 			ImpactNormal,
 			SourceActor,
 			TargetActor).Quaternion()

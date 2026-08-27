@@ -61,6 +61,21 @@ bool UAIREEnemyConfigDataAsset::IsConfigurationValid(
 		&& MovementSpeed > 0.0f
 		&& FMath::IsFinite(HomeLeashRadius)
 		&& HomeLeashRadius >= 0.0f
+		&& FMath::IsFinite(HomeWanderMinRadius)
+		&& HomeWanderMinRadius >= 0.0f
+		&& FMath::IsFinite(HomeWanderMaxRadius)
+		&& HomeWanderMaxRadius >= HomeWanderMinRadius
+		&& FMath::IsFinite(HomeWanderSpeed)
+		&& HomeWanderSpeed > 0.0f
+		&& FMath::IsFinite(HomeWanderWaitMin)
+		&& HomeWanderWaitMin >= 0.0f
+		&& FMath::IsFinite(HomeWanderWaitMax)
+		&& HomeWanderWaitMax >= HomeWanderWaitMin
+		&& FMath::IsFinite(HomeWanderAcceptanceRadius)
+		&& HomeWanderAcceptanceRadius > 0.0f
+		&& FMath::IsFinite(RetreatHealthRatio)
+		&& RetreatHealthRatio >= 0.0f
+		&& RetreatHealthRatio <= 1.0f
 		&& FMath::IsFinite(CombatSprintSpeed)
 		&& CombatSprintSpeed > 0.0f
 		&& FMath::IsFinite(CombatSprintStartDistance)

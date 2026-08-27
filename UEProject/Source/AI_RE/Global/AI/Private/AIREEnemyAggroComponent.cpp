@@ -2,6 +2,7 @@
 
 #include "AIRECombatDamageTargetInterface.h"
 #include "AIREEnemyBase.h"
+#include "AIREEnemyConfigDataAsset.h"
 #include "Engine/World.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
@@ -30,6 +31,9 @@ bool UAIREEnemyAggroComponent::StartAggroTracking(
 		return false;
 	}
 	Enemy = InEnemy;
+	const UAIREEnemyConfigDataAsset* Config = InEnemy->GetEnemyConfig();
+	bRequiresProvocation = IsValid(Config)
+		&& Config->EngagementPolicy == EAIREEnemyEngagementPolicy::Retaliatory;
 	ConfigureSight();
 	bTracking = true;
 	SetSenseEnabled(UAISense_Sight::StaticClass(), true);
@@ -44,6 +48,7 @@ void UAIREEnemyAggroComponent::StopAggroTracking()
 	ResetAggro();
 	ForgetAll();
 	Enemy.Reset();
+	bRequiresProvocation = false;
 }
 
 void UAIREEnemyAggroComponent::RefreshSelection()
@@ -70,6 +75,10 @@ void UAIREEnemyAggroComponent::RefreshSelection()
 	FAggroEntry* HighestEntry = nullptr;
 	for (FAggroEntry& Entry : Entries)
 	{
+		if (!IsSelectableEntry(Entry))
+		{
+			continue;
+		}
 		if (!HighestEntry || Entry.Threat > HighestEntry->Threat)
 		{
 			HighestEntry = &Entry;
@@ -128,6 +137,7 @@ bool UAIREEnemyAggroComponent::PromoteTargetAboveCurrentMaximum(
 	}
 	FAggroEntry& Entry = FindOrAddEntry(Target);
 	Entry.Threat = MaximumThreat + SwapLeadMargin;
+	Entry.bExplicitlyPromoted = true;
 	Entry.LastKnownLocation = Target->GetActorLocation();
 	SelectTarget(Target);
 	return SelectedTarget.Get() == Target;
@@ -366,6 +376,14 @@ bool UAIREEnemyAggroComponent::HasRecentSightEvidence(
 		&& Entry.LastSightTime >= 0.0
 		&& World->GetTimeSeconds() - Entry.LastSightTime
 			<= SightEvidenceDuration;
+}
+
+bool UAIREEnemyAggroComponent::IsSelectableEntry(
+	const FAggroEntry& Entry) const
+{
+	return !bRequiresProvocation
+		|| Entry.bHasDamageEvidence
+		|| Entry.bExplicitlyPromoted;
 }
 
 void UAIREEnemyAggroComponent::ConfigureSight()

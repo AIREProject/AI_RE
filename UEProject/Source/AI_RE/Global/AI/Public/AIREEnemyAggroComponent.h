@@ -81,6 +81,7 @@ private:
 		float Threat = 0.0f;
 		bool bVisible = false;
 		bool bHasDamageEvidence = false;
+		bool bExplicitlyPromoted = false;
 		FVector LastKnownLocation = FVector::ZeroVector;
 		double LastSightTime = -1.0;
 		double LastDamageTime = -1.0;
@@ -99,6 +100,7 @@ private:
 	void RemoveEntry(AActor* Actor);
 	void SelectTarget(AActor* Target);
 	bool HasRecentSightEvidence(const FAggroEntry& Entry) const;
+	bool IsSelectableEntry(const FAggroEntry& Entry) const;
 	void ConfigureSight();
 
 	UPROPERTY(VisibleAnywhere, Category = "AIRE|Enemy|Aggro")
@@ -134,4 +136,5 @@ private:
 	TArray<FAggroEntry> Entries;
 	int64 TargetRevision = 0;
 	bool bTracking = false;
+	bool bRequiresProvocation = false;
 };

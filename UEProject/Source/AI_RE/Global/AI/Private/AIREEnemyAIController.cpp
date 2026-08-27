@@ -11,6 +11,13 @@
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
+
+namespace
+{
+constexpr int32 MaxHomeWanderSamples = 8;
+constexpr float HomeWanderFailureRetrySeconds = 1.0f;
+}
 
 #if !UE_BUILD_SHIPPING
 DEFINE_LOG_CATEGORY_STATIC(LogAIREEnemyAI, Log, All);
@@ -24,6 +31,8 @@ const TCHAR* GetAwarenessStateName(
 	{
 	case EAIREEnemyAwarenessState::IdleUnaware:
 		return TEXT("IdleUnaware");
+	case EAIREEnemyAwarenessState::Wandering:
+		return TEXT("Wandering");
 	case EAIREEnemyAwarenessState::Alerted:
 		return TEXT("Alerted");
 	case EAIREEnemyAwarenessState::EngagedChase:
@@ -176,6 +185,21 @@ void AAIREEnemyAIController::ReportCombatDamage(
 	{
 		AggroComponent->ReportDamage(Source, Damage);
 	}
+	if (ShouldRetreatForLowHealth())
+	{
+		BeginReturning(TEXT("Low health reached from damage"));
+		return;
+	}
+	if (AwarenessState == EAIREEnemyAwarenessState::Wandering)
+	{
+		StopMovement();
+		SetEngagementMovementSpeed(BaseMovementSpeed);
+		WanderDestination = FVector::ZeroVector;
+		NextWanderTime = GetWorld()->GetTimeSeconds();
+		SetAwarenessState(
+			EAIREEnemyAwarenessState::IdleUnaware,
+			TEXT("Damage interrupted wandering"));
+	}
 }
 
 void AAIREEnemyAIController::HandleEnemyDeath()
@@ -246,11 +270,22 @@ void AAIREEnemyAIController::OnPossess(APawn* InPawn)
 	TacticalLateralOffset = Config->TacticalLateralOffset;
 	TacticalMoveDuration = Config->TacticalMoveDuration;
 	bUseCombatApproachActions = Config->bUseCombatApproachActions;
+	HomeWanderMinRadius = Config->HomeWanderMinRadius;
+	HomeWanderMaxRadius = Config->HomeWanderMaxRadius;
+	HomeWanderSpeed = Config->HomeWanderSpeed;
+	HomeWanderWaitMin = Config->HomeWanderWaitMin;
+	HomeWanderWaitMax = Config->HomeWanderWaitMax;
+	HomeWanderAcceptanceRadius = Config->HomeWanderAcceptanceRadius;
+	RetreatHealthRatio = Config->RetreatHealthRatio;
+	bUseHomeWander = Config->IdlePolicy == EAIREEnemyIdlePolicy::HomeWander;
 	NextLateralSide = 1;
 	ResetEngagementDecision(true);
 	bReturnRequested = false;
 	AwarenessState = EAIREEnemyAwarenessState::IdleUnaware;
 	StateDeadline = 0.0;
+	WanderDestination = FVector::ZeroVector;
+	NextWanderTime = GetWorld()->GetTimeSeconds()
+		+ FMath::FRandRange(HomeWanderWaitMin, HomeWanderWaitMax);
 	AggroComponent->StartAggroTracking(Enemy.Get());
 	StateTreeAIComponent->StartLogic();
 	SetActorTickEnabled(true);
@@ -271,6 +306,8 @@ void AAIREEnemyAIController::OnUnPossess()
 	}
 	Enemy.Reset();
 	bReturnRequested = false;
+	WanderDestination = FVector::ZeroVector;
+	NextWanderTime = 0.0;
 	SetActorTickEnabled(false);
 	Super::OnUnPossess();
 }
@@ -291,6 +328,8 @@ void AAIREEnemyAIController::EndPlay(
 	}
 	Enemy.Reset();
 	bReturnRequested = false;
+	WanderDestination = FVector::ZeroVector;
+	NextWanderTime = 0.0;
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -341,12 +380,16 @@ void AAIREEnemyAIController::UpdateAwareness()
 			CompleteReturnHome();
 		}
 		else if (GetMoveStatus() == EPathFollowingStatus::Idle
-			&& MoveToLocation(
-				HomeLocation,
-				HomeAcceptanceRadius,
-				false) != EPathFollowingRequestResult::RequestSuccessful)
+			&& GetWorld()->GetTimeSeconds() >= StateDeadline)
 		{
-			CompleteReturnHome();
+			if (MoveToLocation(
+					HomeLocation,
+					HomeAcceptanceRadius,
+					false) != EPathFollowingRequestResult::RequestSuccessful)
+			{
+				StateDeadline = GetWorld()->GetTimeSeconds()
+					+ HomeWanderFailureRetrySeconds;
+			}
 		}
 		return;
 	}
@@ -354,6 +397,13 @@ void AAIREEnemyAIController::UpdateAwareness()
 	AggroComponent->RefreshSelection();
 	const FAIREEnemyAttackSnapshot AttackSnapshot =
 		Attack->GetAttackSnapshot();
+	if (ShouldRetreatForLowHealth()
+		&& (AttackSnapshot.bActive
+			|| IsValid(AggroComponent->GetSelectedTarget())))
+	{
+		BeginReturning(TEXT("Low health retreat"));
+		return;
+	}
 	if (AttackSnapshot.bActive)
 	{
 		const AActor* AttackTarget = AttackSnapshot.Target.Get();
@@ -407,8 +457,12 @@ void AAIREEnemyAIController::UpdateAwareness()
 			return;
 		}
 		if (AwarenessState == EAIREEnemyAwarenessState::IdleUnaware
+			|| AwarenessState == EAIREEnemyAwarenessState::Wandering
 			|| AwarenessState == EAIREEnemyAwarenessState::Returning)
 		{
+			StopMovement();
+			SetEngagementMovementSpeed(BaseMovementSpeed);
+			WanderDestination = FVector::ZeroVector;
 			if (bDamageOnlyEngagement && !bSightEngagement)
 			{
 				SetAwarenessState(
@@ -439,12 +493,132 @@ void AAIREEnemyAIController::UpdateAwareness()
 		return;
 	}
 
-	if (AwarenessState != EAIREEnemyAwarenessState::Returning
-		&& AwarenessState != EAIREEnemyAwarenessState::IdleUnaware)
+	if (AwarenessState == EAIREEnemyAwarenessState::IdleUnaware
+		|| AwarenessState == EAIREEnemyAwarenessState::Wandering)
 	{
-		BeginReturning(TEXT("Aggro target lost"));
+		UpdateIdleBehavior();
 		return;
 	}
+	if (AwarenessState != EAIREEnemyAwarenessState::Returning)
+	{
+		BeginReturning(TEXT("Aggro target lost"));
+	}
+}
+
+void AAIREEnemyAIController::UpdateIdleBehavior()
+{
+	if (!bUseHomeWander)
+	{
+		return;
+	}
+
+	const double CurrentTime = GetWorld()->GetTimeSeconds();
+	if (AwarenessState == EAIREEnemyAwarenessState::Wandering)
+	{
+		const bool bReachedDestination = Enemy.IsValid()
+			&& FVector::DistSquared2D(
+				Enemy->GetActorLocation(),
+				WanderDestination)
+				<= FMath::Square(HomeWanderAcceptanceRadius);
+		if (bReachedDestination)
+		{
+			CompleteWandering(
+				FMath::FRandRange(HomeWanderWaitMin, HomeWanderWaitMax));
+		}
+		else if (GetMoveStatus() == EPathFollowingStatus::Idle)
+		{
+			CompleteWandering(HomeWanderFailureRetrySeconds);
+		}
+		return;
+	}
+
+	if (CurrentTime >= NextWanderTime)
+	{
+		BeginWandering();
+	}
+}
+
+void AAIREEnemyAIController::BeginWandering()
+{
+	UNavigationSystemV1* NavigationSystem =
+		UNavigationSystemV1::GetCurrent(GetWorld());
+	if (!IsValid(NavigationSystem))
+	{
+		CompleteWandering(HomeWanderFailureRetrySeconds);
+		return;
+	}
+
+	FNavLocation Candidate;
+	bool bFoundDestination = false;
+	for (int32 SampleIndex = 0;
+		SampleIndex < MaxHomeWanderSamples;
+		++SampleIndex)
+	{
+		if (NavigationSystem->GetRandomReachablePointInRadius(
+				HomeLocation,
+				HomeWanderMaxRadius,
+				Candidate))
+		{
+			const float DistanceSquared = FVector::DistSquared2D(
+				Candidate.Location,
+				HomeLocation);
+			if (DistanceSquared >= FMath::Square(HomeWanderMinRadius)
+				&& DistanceSquared <= FMath::Square(HomeWanderMaxRadius))
+			{
+				bFoundDestination = true;
+				break;
+			}
+		}
+	}
+	if (!bFoundDestination)
+	{
+		CompleteWandering(HomeWanderFailureRetrySeconds);
+		return;
+	}
+
+	SetEngagementMovementSpeed(HomeWanderSpeed);
+	if (MoveToLocation(
+			Candidate.Location,
+			HomeWanderAcceptanceRadius,
+			false) != EPathFollowingRequestResult::RequestSuccessful)
+	{
+		CompleteWandering(HomeWanderFailureRetrySeconds);
+		return;
+	}
+	WanderDestination = Candidate.Location;
+	SetAwarenessState(
+		EAIREEnemyAwarenessState::Wandering,
+		TEXT("Home wander destination selected"));
+}
+
+void AAIREEnemyAIController::CompleteWandering(const float WaitDuration)
+{
+	StopMovement();
+	SetEngagementMovementSpeed(BaseMovementSpeed);
+	WanderDestination = FVector::ZeroVector;
+	NextWanderTime = GetWorld()->GetTimeSeconds()
+		+ FMath::Max(0.0f, WaitDuration);
+	SetAwarenessState(
+		EAIREEnemyAwarenessState::IdleUnaware,
+		TEXT("Home wander waiting"));
+}
+
+bool AAIREEnemyAIController::ShouldRetreatForLowHealth() const
+{
+	if (RetreatHealthRatio <= 0.0f || !Enemy.IsValid())
+	{
+		return false;
+	}
+	const UAIREEnemyVitalityComponent* Vitality =
+		Enemy->GetEnemyVitalityComponent();
+	if (!IsValid(Vitality))
+	{
+		return false;
+	}
+	const FAIREEnemyVitalitySnapshot Snapshot =
+		Vitality->GetVitalitySnapshot();
+	return Snapshot.MaxHealth > 0.0f
+		&& Snapshot.Health / Snapshot.MaxHealth <= RetreatHealthRatio;
 }
 
 void AAIREEnemyAIController::UpdateEngagement(AActor* Target)
@@ -899,16 +1073,20 @@ void AAIREEnemyAIController::BeginReturning(const TCHAR* const Reason)
 	StopMovement();
 	ResetEngagementDecision(true);
 	ClearFocus(EAIFocusPriority::Gameplay);
+	WanderDestination = FVector::ZeroVector;
+	NextWanderTime = 0.0;
 	if (Enemy.IsValid())
 	{
 		Enemy->GetEnemyAttackComponent()->CancelCurrentAttack();
 	}
 	AggroComponent->StopAggroTracking();
 	SetAwarenessState(EAIREEnemyAwarenessState::Returning, Reason);
+	StateDeadline = 0.0;
 	if (MoveToLocation(HomeLocation, HomeAcceptanceRadius, false)
 		== EPathFollowingRequestResult::Failed)
 	{
-		CompleteReturnHome();
+		StateDeadline = GetWorld()->GetTimeSeconds()
+			+ HomeWanderFailureRetrySeconds;
 	}
 }
 
@@ -923,6 +1101,8 @@ void AAIREEnemyAIController::CompleteReturnHome()
 		AggroComponent->StartAggroTracking(Enemy.Get());
 	}
 	bReturnRequested = false;
+	NextWanderTime = GetWorld()->GetTimeSeconds()
+		+ FMath::FRandRange(HomeWanderWaitMin, HomeWanderWaitMax);
 	SetAwarenessState(
 		EAIREEnemyAwarenessState::IdleUnaware,
 		TEXT("Return home complete"));
