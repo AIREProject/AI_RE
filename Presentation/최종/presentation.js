@@ -37,7 +37,7 @@
         '<div><em>16 DAYS</em><strong>2,000,000</strong><span>전 세계 판매</span></div><i></i>' +
         '<div class="market-timeline__latest"><em>FY Q1</em><strong>2,510,000</strong><span>누적 판매</span></div></div>' +
         '<p class="market-evidence__meaning"><strong>2026.04.17 출시 · 완전 신규 IP</strong><span>CAPCOM은 새로운 게임성과 함께 캐릭터·세계관을 초기 판매 동력으로 평가했습니다.</span></p></div>' +
-        '<figure class="market-reference market-reference--pragmata"><img src="./assets/market-pragmata-keyart.png" alt="프래그마타의 휴와 안드로이드 동료 다이애나 공식 키아트"><figcaption>HUGH × DIANA · OFFICIAL KEY ART · ©CAPCOM</figcaption></figure></div>' +
+        '<figure class="market-reference market-reference--pragmata"><img src="./assets/market-pragmata-keyart.png" alt="프래그마타의 휴와 안드로이드 동료 다이애나 공식 키아트"></figure></div>' +
         '<p class="market-evidence__sources"><a href="https://www.capcom.co.jp/ir/english/news/html/e260420.html" target="_blank">CAPCOM · 1M / 2 days</a><span>·</span><a href="https://www.capcom.co.jp/ir/news/pdf/260507.pdf" target="_blank">CAPCOM · 2M / 16 days</a><span>·</span><a href="https://www.capcom.co.jp/ir/english/data/result_2025.html" target="_blank">CAPCOM FY2026 Q1 · 2.51M</a></p></div><div class="slide-rule"></div>'
     },
     {
@@ -45,8 +45,8 @@
       modifier: "ryza",
       html:
         '<div class="market-evidence__wash"></div><div class="slide-inner market-evidence">' +
-        '<header class="market-evidence__header"><span>RYZACHAT:AI · MARKET PROOF</span><h2>출시 직후 일본 App Store 무료 앱 종합 3위</h2><p>사전등록 급증으로 서버 증설까지 이어진, 관계형 캐릭터 서비스의 실제 시장 진입 사례입니다.</p></header>' +
-        '<div class="ryza-market-body"><figure class="market-reference market-reference--ryza"><img src="./assets/market-ryzachat-demo.jpg" alt="라이자챗 AI의 캐릭터 대화와 응답 UI가 보이는 공식 데모 구동 화면"><figcaption>캐릭터 대화 · 음성 · 응답 UI · RYZACHAT:AI 공식 데모</figcaption></figure>' +
+        '<header class="market-evidence__header"><span>RYZACHAT:AI · MARKET PROOF</span><h2>RyzaChat:AI</h2><p>사전등록 급증으로 서버 증설까지 이어진, 관계형 캐릭터 서비스의 실제 시장 진입 사례입니다.</p></header>' +
+        '<div class="ryza-market-body"><figure class="market-reference market-reference--ryza"><img src="./assets/market-ryzachat-demo.jpg" alt="라이자챗 AI의 캐릭터 대화와 응답 UI가 보이는 공식 데모 구동 화면"></figure>' +
         '<div class="ryza-market-data"><div class="ryza-interest"><em>MARKET SIGNAL · 2026.08.26</em><strong>출시 직후 무료 앱 종합 3위</strong><span>사전등록 급증 → 서버 증설 → 일본 출시</span></div>' +
         '<div class="ryza-economics__pricing">' +
         '<div><span>MONTHLY</span><strong>¥980</strong><em>월 구독</em></div>' +
@@ -54,7 +54,6 @@
         '<div><span>TEXT</span><strong>45</strong><em>월 기본 대화 횟수</em></div>' +
         '<div><span>IAP</span><strong>¥190–3,900</strong><em>추가 대화 토큰</em></div>' +
         '<div><span>SKIN</span><strong>¥1,850</strong><em>의상 단품</em></div></div></div></div>' +
-        '<div class="ryza-proof-banner"><strong>관심 → 유입 → 결제</strong><span>출시 직후 상위권 진입 · 월 구독 · 추가 대화 토큰 · 의상 아이템</span></div>' +
         '<p class="market-evidence__sources"><a href="https://ryzachat-ai.go-spiral.ai/" target="_blank">RyzaChat:AI 공식 · 화면</a><span>·</span><a href="https://apps.apple.com/jp/iphone/charts" target="_blank">Apple · 일본 무료 앱 순위</a><span>·</span><a href="https://www.4gamer.net/games/029/G102959/20260825010/" target="_blank">4Gamer · 출시</a><span>·</span><a href="https://dengekionline.com/article/202608/85461" target="_blank">전격온라인 · 가격</a></p></div><div class="slide-rule"></div>'
     },
     {
@@ -64,9 +63,9 @@
         '<div class="market-evidence__wash"></div><div class="slide-inner market-evidence">' +
         '<header class="market-evidence__header"><h2><span>PRAGMATA</span><i>+</i><span>RYZACHAT</span><i>=</i><strong>AIRE</strong></h2></header>' +
         '<div class="aire-market-flow">' +
-        '<section><strong>PRAGMATA</strong><h3>함께 행동하는 동료</h3></section>' +
-        '<b>+</b><section><strong>RYZACHAT</strong><h3>게임 밖에서도 이어지는 관계</h3></section>' +
-        '<b>=</b><section><strong>AIRE</strong><h3>게임 안과 밖의 같은 동료</h3></section></div>' +
+        '<section><h3>함께 행동하는 동료</h3></section>' +
+        '<b>+</b><section><h3>게임 밖에서도 이어지는 관계</h3></section>' +
+        '<b>=</b><section><h3>게임 안과 밖의 같은 동료</h3></section></div>' +
         '<div class="aire-market-rule"><strong>게임 안의 행동과 게임 밖의 관계를 하나의 동료로 연결</strong></div>' +
         '<p class="market-evidence__sources">해석 근거 · CAPCOM 공식 판매자료 · RYZACHAT 공식 기능 · AI : RE 현재 구현 기조</p></div><div class="slide-rule"></div>'
     },
@@ -105,9 +104,9 @@
   });
   const mainOrder = [
     ".slide--cover",
+    ".slide--gameplay-video",
     ".slide--overview-focus",
     ".slide--differentiation",
-    ".slide--gameplay-video",
     ".slide--gameplay-loop",
     ".slide--character-design",
     ".slide--market-fit",
@@ -152,12 +151,13 @@
   let touchStartX = null;
   let chatDemoTimers = [];
   let cursorIdleTimer = null;
+  let printPrepared = false;
   const formatNumber = (value) => String(value).padStart(2, "0");
 
   const labelFor = (slide) => slide.dataset.scope === "appendix"
     ? slide.dataset.appendixIndex === "false"
       ? "INDEX"
-      : "A" + formatNumber(numberedAppendixSlides.indexOf(slide) + 1)
+      : slide.dataset.appendixLabel || "A" + formatNumber(numberedAppendixSlides.indexOf(slide) + 1)
     : formatNumber(mainSlides.indexOf(slide) + 1);
 
   slides.forEach((slide) => slide.setAttribute("aria-label", labelFor(slide) + ". " + slide.dataset.title));
@@ -215,6 +215,26 @@
     if (open) menu.querySelector(".menu-item.is-active")?.focus();
   };
 
+  const preparePrint = () => {
+    if (printPrepared) return;
+    printPrepared = true;
+    document.body.classList.add("is-printing");
+    slides.forEach((slide) => {
+      slide.classList.add("is-active");
+      slide.setAttribute("aria-hidden", "false");
+    });
+  };
+
+  const restoreAfterPrint = () => {
+    if (!printPrepared) return;
+    printPrepared = false;
+    document.body.classList.remove("is-printing");
+    slides.forEach((slide, index) => {
+      slide.classList.toggle("is-active", index === currentIndex);
+      slide.setAttribute("aria-hidden", String(index !== currentIndex));
+    });
+  };
+
   const resetGameplayVideo = () => {
     if (!gameplayVideo) return;
     gameplayVideo.pause();
@@ -260,7 +280,7 @@
     const slide = slides[currentIndex];
     const isAppendix = slide.dataset.scope === "appendix";
     currentNumber.textContent = labelFor(slide);
-    totalNumber.textContent = isAppendix ? "A" + formatNumber(numberedAppendixSlides.length) : formatNumber(mainSlides.length);
+    totalNumber.textContent = isAppendix ? labelFor(numberedAppendixSlides[numberedAppendixSlides.length - 1]) : formatNumber(mainSlides.length);
     progressBar.style.width = ((currentIndex + 1) / slides.length * 100) + "%";
     prevButton.disabled = currentIndex === 0;
     nextButton.disabled = currentIndex === slides.length - 1;
@@ -295,10 +315,12 @@
 
   const addMenuGroup = (title, groupSlides) => {
     if (!groupSlides.length) return;
-    const heading = document.createElement("span");
-    heading.className = "menu-group-title";
-    heading.textContent = title;
-    menuList.appendChild(heading);
+    if (title) {
+      const heading = document.createElement("span");
+      heading.className = "menu-group-title";
+      heading.textContent = title;
+      menuList.appendChild(heading);
+    }
     groupSlides.forEach((slide) => {
       const index = slides.indexOf(slide);
       const button = document.createElement("button");
@@ -311,17 +333,8 @@
     });
   };
 
-  addMenuGroup("MAIN · 7 MIN", mainSlides);
-  [
-    ["기존 본문 자료", "preserved-main"],
-    ["시장 · 사업성", "market"],
-    ["게임플레이 구현", "gameplay"],
-    ["AI 시스템 구조", "ai"],
-    ["장기기억 · 환각 · 망각", "memory"],
-    ["멀티플랫폼 연동", "platform"],
-    ["제작 과정 · 검증", "production"],
-    ["최신 시장 근거", "market-evidence"]
-  ].forEach(([title, key]) => addMenuGroup(title, appendixSlides.filter((slide) => slide.dataset.category === key)));
+  addMenuGroup("MAIN", mainSlides);
+  addMenuGroup("APPENDIX", appendixSlides);
 
   prevButton.addEventListener("click", () => goToSlide(currentIndex - 1));
   nextButton.addEventListener("click", () => goToSlide(currentIndex + 1));
@@ -329,6 +342,12 @@
   menuClose.addEventListener("click", () => setMenuOpen(false));
   menuScrim.addEventListener("click", () => setMenuOpen(false));
   window.addEventListener("resize", syncBrowserFullscreenLayout);
+  window.addEventListener("beforeprint", preparePrint);
+  window.addEventListener("afterprint", restoreAfterPrint);
+  window.matchMedia?.("print").addEventListener?.("change", (event) => {
+    if (event.matches) preparePrint();
+    else restoreAfterPrint();
+  });
   document.addEventListener("fullscreenchange", scheduleCursorHide);
   document.addEventListener("mousemove", scheduleCursorHide, { passive: true });
 
