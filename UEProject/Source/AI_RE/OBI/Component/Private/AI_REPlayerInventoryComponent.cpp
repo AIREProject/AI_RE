@@ -338,27 +338,9 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 		return false;
 	}
 	
-	// 장착 슬롯(EquipmentSlot)에서 직접 해제를 시도한 경우 (SlotIndex가 INDEX_NONE)
 	if (SlotIndex == INDEX_NONE)
 	{
-		if (!EquippedWeaponItemId.IsNone())
-		{
-			AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
-			UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
-			if (CombatComp)
-			{
-				CombatComp->UnequipWeapon();
-				FName UnequippedId = EquippedWeaponItemId;
-				EquippedWeaponItemId = NAME_None;
-				GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, TEXT("[Item Usage] 장착 해제!"));
-				NotifyWeaponEquipResult(UnequippedId, false);
-				++Revision;
-				NotifyPersistenceMutation();
-				OnInventoryChanged.Broadcast();
-				return true;
-			}
-		}
-		return false;
+		return TryUnequipWeapon();
 	}
 
 	int32 Idx = FindStackIndexBySlot(SlotIndex);
@@ -393,35 +375,25 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 					}
 					else if (DA->ItemType == EAI_REItemType::Weapon)
 					{
-						AAI_RECharacterBase* OwnerChar = Cast<AAI_RECharacterBase>(GetOwner());
-						UAI_REPlayerCombatComponent* CombatComp = OwnerChar ? OwnerChar->FindComponentByClass<UAI_REPlayerCombatComponent>() : nullptr;
-						
-						if (CombatComp)
+						UGameInstance* GameInstance = World->GetGameInstance();
+						UAIREGameplayInventorySubsystem* GameplayInventory =
+							IsValid(GameInstance)
+								? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+								: nullptr;
+						UAI_REPlayerCombatComponent* CombatComp = GetOwner()
+							? GetOwner()->FindComponentByClass<UAI_REPlayerCombatComponent>()
+							: nullptr;
+						if (IsValid(GameplayInventory) && IsValid(CombatComp))
 						{
-							// Is it already equipped?
-							if (EquippedWeaponItemId == Items[Idx].ItemId)
-							{
-								CombatComp->UnequipWeapon();
-								EquippedWeaponItemId = NAME_None;
-								GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 해제!"), *DA->DisplayName.ToString()));
-								NotifyWeaponEquipResult(Items[Idx].ItemId, false); // Broadcast unequip
-							}
-							else
-							{
-								if (CombatComp->TryEquipWeapon(DA))
-								{
-									EquippedWeaponItemId = Items[Idx].ItemId;
-									GEngine->AddOnScreenDebugMessage(-1, 3.0f, FColor::Cyan, FString::Printf(TEXT("[Item Usage] %s 장착 완료!"), *DA->DisplayName.ToString()));
-									NotifyWeaponEquipResult(Items[Idx].ItemId, true); // Broadcast equip
-								}
-							}
-							
-							// 무기는 소모되지 않으므로 bConsumed = false 유지
-							// 상태 변경을 저장하기 위해 Revision 갱신 필요
-							++Revision;
-							NotifyPersistenceMutation();
-							OnInventoryChanged.Broadcast();
-							return true; // 무기 처리가 완료되었으므로 종료
+							FAIREPlayerWeaponEquipRequest Request;
+							Request.SessionId = GameplayInventory->GetInventorySessionId();
+							Request.MutationId = FGuid::NewGuid();
+							Request.ExpectedPlayerRevision = GetInventoryRevision();
+							Request.SourceSlotIndex = SlotIndex;
+							return GameplayInventory->TryEquipPlayerWeapon(
+								this,
+								CombatComp,
+								Request).WasApplied();
 						}
 					}
 					else
@@ -447,6 +419,36 @@ bool UAI_REPlayerInventoryComponent::UseItem(int32 SlotIndex)
 	}
 
 	return false;
+}
+
+bool UAI_REPlayerInventoryComponent::TryUnequipWeapon(
+	const int32 DestinationSlotIndex)
+{
+	if (!bPersistenceReadyForGameplay || EquippedWeaponItemId.IsNone())
+	{
+		return false;
+	}
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UAIREGameplayInventorySubsystem* GameplayInventory = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+		: nullptr;
+	UAI_REPlayerCombatComponent* PlayerCombat = GetOwner()
+		? GetOwner()->FindComponentByClass<UAI_REPlayerCombatComponent>()
+		: nullptr;
+	if (!IsValid(GameplayInventory) || !IsValid(PlayerCombat))
+	{
+		return false;
+	}
+
+	FAIREPlayerWeaponUnequipRequest Request;
+	Request.SessionId = GameplayInventory->GetInventorySessionId();
+	Request.MutationId = FGuid::NewGuid();
+	Request.ExpectedPlayerRevision = GetInventoryRevision();
+	Request.DestinationSlotIndex = DestinationSlotIndex;
+	return GameplayInventory->TryUnequipPlayerWeapon(
+		this,
+		PlayerCombat,
+		Request).WasApplied();
 }
 bool UAI_REPlayerInventoryComponent::MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex)
 {

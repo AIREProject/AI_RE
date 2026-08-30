@@ -27,10 +27,16 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> ExitButton;
 
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> DeleteSaveButton;
+
 private:
 	UFUNCTION()
 	void HandleStartClicked();
 
 	UFUNCTION()
 	void HandleExitClicked();
+
+	UFUNCTION()
+	void HandleDeleteSaveClicked();
 };

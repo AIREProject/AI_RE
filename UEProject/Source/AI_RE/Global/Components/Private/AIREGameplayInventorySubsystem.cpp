@@ -606,6 +606,95 @@ UAIREGameplayInventorySubsystem::RequestInventorySave()
 	return TryStartPersistenceSave();
 }
 
+FAIREInventoryPersistenceResult
+UAIREGameplayInventorySubsystem::DeleteGameplayProgress()
+{
+	if (bPersistenceShuttingDown)
+	{
+		return MakePersistenceResult(
+			EAIREInventoryPersistenceOperation::Delete,
+			EAIREInventoryPersistenceResultCode::ShuttingDown);
+	}
+
+	// A pending load or save completion must not restore the deleted generation.
+	++PersistenceEpoch;
+	DeletedThroughSaveEpoch = ActiveSaveEpoch;
+	++ActiveSaveEpoch;
+	bPersistenceSaveInFlight = false;
+
+	const bool bPrimaryDeleted =
+		!UGameplayStatics::DoesSaveGameExist(
+			AIREGameplayInventoryPersistence::PrimarySlotName,
+			AIREGameplayInventoryPersistence::UserIndex)
+		|| UGameplayStatics::DeleteGameInSlot(
+			AIREGameplayInventoryPersistence::PrimarySlotName,
+			AIREGameplayInventoryPersistence::UserIndex);
+	const bool bPreviousDeleted =
+		!UGameplayStatics::DoesSaveGameExist(
+			AIREGameplayInventoryPersistence::PreviousSlotName,
+			AIREGameplayInventoryPersistence::UserIndex)
+		|| UGameplayStatics::DeleteGameInSlot(
+			AIREGameplayInventoryPersistence::PreviousSlotName,
+			AIREGameplayInventoryPersistence::UserIndex);
+	if (!bPrimaryDeleted || !bPreviousDeleted)
+	{
+		return MakePersistenceResult(
+			EAIREInventoryPersistenceOperation::Delete,
+			EAIREInventoryPersistenceResultCode::IoFailure);
+	}
+
+	InventorySessionId = FGuid::NewGuid();
+	AppliedMutations.Reset();
+	AppliedMutationOrder.Reset();
+	TransientAppliedMutations.Reset();
+	TransientAppliedMutationOrder.Reset();
+	AppliedWorkResults.Reset();
+	AppliedWorkResultOrder.Reset();
+	TransientAppliedWorkResults.Reset();
+	TransientAppliedWorkResultOrder.Reset();
+	AppliedImportCandidateIds.Reset();
+	AppliedImportCandidateOrder.Reset();
+	AppliedImportOperationIds.Reset();
+	AppliedImportOperationOrder.Reset();
+	AppliedOfflineTaskIds.Reset();
+	AppliedOfflineTaskOrder.Reset();
+	CreateEmptyContainers();
+
+	CachedPlayerPersistenceState = FAIREInventoryPersistedPlayerState();
+	CachedPlayerPersistenceState.InventoryCapacity =
+		AIREGameplayInventoryPersistence::PlayerInventoryCapacity;
+	bHasPlayerPersistenceState = true;
+	if (UAI_REPlayerInventoryComponent* PlayerInventory =
+		RegisteredPlayerInventory.Get())
+	{
+		bApplyingPlayerPersistenceState = true;
+		PlayerInventory->CommitExactInventoryAndEquipmentState(
+			TArray<FInventoryItemStack>(), NAME_None);
+		PlayerInventory->MaxSlots =
+			AIREGameplayInventoryPersistence::PlayerInventoryCapacity;
+		PlayerInventory->bPersistenceReadyForGameplay = true;
+		bApplyingPlayerPersistenceState = false;
+		PlayerInventory->NotifyExactInventoryMutation();
+	}
+
+	LatestPersistenceGeneration = 0;
+	HighestIssuedPersistenceGeneration = 0;
+	LatestPersistenceSlotName.Reset();
+	LastIssuedPersistenceSlotName.Reset();
+	bPersistenceLoadComplete = true;
+	bPersistenceReady = true;
+	bPersistenceDirty = false;
+	bMakoInventoryInitialized = false;
+	bShouldSeedFreshSharedStorage = true;
+	BroadcastContainerChanged(Containers.FindChecked(GetMakoContainerId()));
+	BroadcastContainerChanged(
+		Containers.FindChecked(GetSharedStorageContainerId()));
+
+	return MakePersistenceResult(
+		EAIREInventoryPersistenceOperation::Delete,
+		EAIREInventoryPersistenceResultCode::Succeeded);
+}
+
 FAIREInventoryPersistenceReady&
 UAIREGameplayInventorySubsystem::OnPersistenceReady()
 {
@@ -1611,6 +1700,93 @@ UAIREGameplayInventorySubsystem::TryEquipPlayerWeapon(
 	RecordAppliedMutation(Result, true);
 	PlayerInventory->NotifyExactInventoryMutation();
 	PlayerInventory->NotifyWeaponEquipResult(NewWeaponItemId, true);
+	return Result;
+}
+
+FAIREInventoryMutationResult
+UAIREGameplayInventorySubsystem::TryUnequipPlayerWeapon(
+	UAI_REPlayerInventoryComponent* PlayerInventory,
+	UAI_REPlayerCombatComponent* PlayerCombat,
+	const FAIREPlayerWeaponUnequipRequest& Request)
+{
+	FAIREInventoryMutationResult PreviousResult;
+	if (FindAppliedMutation(Request.MutationId, PreviousResult))
+	{
+		PreviousResult.Code = EAIREInventoryMutationCode::AlreadyApplied;
+		return PreviousResult;
+	}
+	if (!bPersistenceReady || !InventorySessionId.IsValid())
+	{
+		return MakeResult(EAIREInventoryMutationCode::NotInitialized, Request.MutationId);
+	}
+	if (Request.SessionId != InventorySessionId)
+	{
+		return MakeResult(EAIREInventoryMutationCode::InvalidSession, Request.MutationId);
+	}
+	if (!Request.MutationId.IsValid())
+	{
+		return MakeResult(EAIREInventoryMutationCode::InvalidMutationId, Request.MutationId);
+	}
+	if (!IsValid(PlayerInventory)
+		|| !PlayerInventory->bPersistenceReadyForGameplay
+		|| !IsValid(PlayerCombat))
+	{
+		return MakeResult(EAIREInventoryMutationCode::NotInitialized, Request.MutationId);
+	}
+	if (PlayerInventory->GetInventoryRevision() != Request.ExpectedPlayerRevision)
+	{
+		return MakeResult(
+			EAIREInventoryMutationCode::RevisionConflict,
+			Request.MutationId,
+			PlayerInventory->GetInventoryRevision());
+	}
+
+	const FName EquippedItemId = PlayerInventory->EquippedWeaponItemId;
+	if (EquippedItemId.IsNone())
+	{
+		return MakeResult(
+			EAIREInventoryMutationCode::InvalidOperation,
+			Request.MutationId,
+			PlayerInventory->GetInventoryRevision());
+	}
+
+	int32 DestinationSlotIndex = Request.DestinationSlotIndex;
+	if (DestinationSlotIndex == INDEX_NONE)
+	{
+		DestinationSlotIndex = PlayerInventory->FindFirstEmptySlotIndex();
+	}
+	if (!PlayerInventory->IsSlotIndexValid(DestinationSlotIndex))
+	{
+		return MakeResult(
+			EAIREInventoryMutationCode::CapacityExceeded,
+			Request.MutationId,
+			PlayerInventory->GetInventoryRevision());
+	}
+	if (PlayerInventory->FindStackIndexBySlot(DestinationSlotIndex) != INDEX_NONE)
+	{
+		return MakeResult(
+			EAIREInventoryMutationCode::InvalidSlot,
+			Request.MutationId,
+			PlayerInventory->GetInventoryRevision());
+	}
+
+	TArray<FInventoryItemStack> NewPlayerItems = PlayerInventory->Items;
+	FInventoryItemStack& RestoredStack = NewPlayerItems.AddDefaulted_GetRef();
+	RestoredStack.SlotIndex = DestinationSlotIndex;
+	RestoredStack.ItemId = EquippedItemId;
+	RestoredStack.Count = 1;
+
+	PlayerCombat->UnequipWeapon();
+	PlayerInventory->CommitExactInventoryAndEquipmentState(
+		MoveTemp(NewPlayerItems),
+		NAME_None);
+	FAIREInventoryMutationResult Result = MakeResult(
+		EAIREInventoryMutationCode::Succeeded,
+		Request.MutationId,
+		PlayerInventory->GetInventoryRevision());
+	RecordAppliedMutation(Result, true);
+	PlayerInventory->NotifyExactInventoryMutation();
+	PlayerInventory->NotifyWeaponEquipResult(EquippedItemId, false);
 	return Result;
 }
 
@@ -4090,6 +4266,16 @@ void UAIREGameplayInventorySubsystem::HandlePersistenceSaveCompleted(
 	const int64 Generation,
 	const bool bSucceeded)
 {
+	if (SaveEpoch <= DeletedThroughSaveEpoch)
+	{
+		if (bSucceeded)
+		{
+			UGameplayStatics::DeleteGameInSlot(
+				SlotName,
+				AIREGameplayInventoryPersistence::UserIndex);
+		}
+		return;
+	}
 	if (bPersistenceShuttingDown
 		|| SaveEpoch != ActiveSaveEpoch
 		|| SaveSessionId != InventorySessionId

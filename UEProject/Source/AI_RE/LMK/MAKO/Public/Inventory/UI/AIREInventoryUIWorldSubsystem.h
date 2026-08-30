@@ -10,7 +10,6 @@ class AActor;
 class APlayerController;
 class UAIRECompanionInventoryPanelWidget;
 class UAIREStorageInventoryPanelWidget;
-class UInputComponent;
 
 UCLASS()
 class AI_RE_API UAIREInventoryUIWorldSubsystem : public UWorldSubsystem
@@ -36,11 +35,8 @@ public:
 	bool IsInventoryUIOpen() const;
 
 private:
-	void RegisterEscapeInput(APlayerController* PlayerController);
-	void UnregisterEscapeInput();
 	void RestoreGameInput();
 	void ApplyInventoryInput(APlayerController* PlayerController);
-	void HandleEscapeInput();
 
 	UFUNCTION()
 	void HandleTrackedActorDestroyed(AActor* DestroyedActor);
@@ -50,9 +46,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAIRECompanionInventoryPanelWidget> CompanionPanel;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UInputComponent> EscapeInputComponent;
 
 	TWeakObjectPtr<APlayerController> InputPlayerController;
 	TWeakObjectPtr<AActor> TrackedActor;

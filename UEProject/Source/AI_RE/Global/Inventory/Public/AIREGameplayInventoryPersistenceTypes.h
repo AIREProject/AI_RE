@@ -28,7 +28,8 @@ enum class EAIREInventoryPersistenceOperation : uint8
 {
 	None,
 	Load,
-	Save
+	Save,
+	Delete
 };
 
 UENUM(BlueprintType)

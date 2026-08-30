@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 
-class AAI_REWorkBenchBase;
+class AActor;
 class AAIRECompanionCharacter;
 class UAIRECompanionInventoryComponent;
 class UAIRECompanionWorkOrderComponent;
@@ -14,13 +14,13 @@ class AI_RE_API FAIRECompanionCraftingWorkRequest final
 {
 public:
 	static bool IsValidRequestInputs(
-		const AAI_REWorkBenchBase* Workbench,
+		const AActor* WorkTarget,
 		const UDataTable* RecipeTable,
 		FName RecipeRowId);
 
 	static bool TryRequest(
 		UAIRECompanionWorkOrderComponent* WorkOrderComponent,
-		AAI_REWorkBenchBase* Workbench,
+		AActor* WorkTarget,
 		UDataTable* RecipeTable,
 		FName RecipeRowId,
 		FGuid& OutWorkOrderId,

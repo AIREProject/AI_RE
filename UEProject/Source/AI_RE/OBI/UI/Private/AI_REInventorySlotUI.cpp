@@ -73,6 +73,14 @@ FReply UAI_REInventorySlotUI::NativeOnMouseButtonDown(const FGeometry& InGeometr
 {
 	if (bIsEquipmentSlot)
 	{
+		if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton
+			&& !CurrentItemId.IsNone()
+			&& CurrentItemCount > 0
+			&& InventoryComp)
+		{
+			InventoryComp->TryUnequipWeapon();
+			return FReply::Handled();
+		}
 		if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && !CurrentItemId.IsNone() && CurrentItemCount > 0)
 		{
 			return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
@@ -103,7 +111,14 @@ FReply UAI_REInventorySlotUI::NativeOnMouseButtonDoubleClick(const FGeometry& In
 	{
 		if (InventoryComp)
 		{
-			InventoryComp->UseItem(SlotIndex);
+			if (bIsEquipmentSlot)
+			{
+				InventoryComp->TryUnequipWeapon();
+			}
+			else
+			{
+				InventoryComp->UseItem(SlotIndex);
+			}
 			return FReply::Handled();
 		}
 	}
@@ -162,6 +177,11 @@ bool UAI_REInventorySlotUI::NativeOnDrop(const FGeometry& InGeometry, const FDra
 				InventoryComp,
 				PlayerCombat,
 				Request).WasApplied();
+		}
+
+		if (InventoryComp && DragOp->SourceSlotIndex == INDEX_NONE)
+		{
+			return !bIsQuickSlot && InventoryComp->TryUnequipWeapon(SlotIndex);
 		}
 
 		if (InventoryComp && DragOp->SourceSlotIndex != SlotIndex)

@@ -160,24 +160,10 @@ namespace
 		const float AttackRange,
 		const int32 ApproachAttemptIndex)
 	{
-		FVector InteractionLocation;
-		if (!ResourceActor.TryGetHarvestInteractionLocation(
-				CompanionPawn.GetActorLocation(),
-				InteractionLocation))
-		{
-			InteractionLocation = ResourceActor.GetActorLocation();
-		}
-
-		FVector ResourceToCompanion = InteractionLocation
+		FVector ResourceToCompanion = CompanionPawn.GetActorLocation()
 			- ResourceActor.GetActorLocation();
 		ResourceToCompanion.Z = 0.0f;
 		if (!ResourceToCompanion.Normalize())
-		{
-			ResourceToCompanion = (
-				CompanionPawn.GetActorLocation()
-				- ResourceActor.GetActorLocation()).GetSafeNormal2D();
-		}
-		if (ResourceToCompanion.IsNearlyZero())
 		{
 			ResourceToCompanion =
 				-ResourceActor.GetActorForwardVector().GetSafeNormal2D();
@@ -187,15 +173,38 @@ namespace
 		ResourceToCompanion = ResourceToCompanion.RotateAngleAxis(
 			HarvestApproachAngles[WrappedAttemptIndex],
 			FVector::UpVector);
-		InteractionLocation = ResourceActor.GetActorLocation()
-			+ ResourceToCompanion * ResourceActor.HarvestInteractionRadius;
+
+		FVector BoundsOrigin;
+		FVector BoundsExtent;
+		ResourceActor.GetActorBounds(false, BoundsOrigin, BoundsExtent);
+		const float ProbeDistance = BoundsExtent.Size2D()
+			+ CompanionPawn.GetSimpleCollisionRadius()
+			+ FMath::Max(0.0f, AttackRange)
+			+ WorkApproachAcceptanceRadius;
+		FVector ProbeLocation = BoundsOrigin
+			+ ResourceToCompanion * ProbeDistance;
+		ProbeLocation.Z = CompanionPawn.GetActorLocation().Z;
+
+		FVector InteractionLocation;
+		if (!ResourceActor.TryGetHarvestInteractionLocation(
+				ProbeLocation,
+				InteractionLocation))
+		{
+			InteractionLocation = ResourceActor.GetActorLocation();
+		}
+		FVector SurfaceToCompanion = ProbeLocation - InteractionLocation;
+		SurfaceToCompanion.Z = 0.0f;
+		if (!SurfaceToCompanion.Normalize())
+		{
+			SurfaceToCompanion = ResourceToCompanion;
+		}
 
 		const float DesiredCenterDistance = CompanionPawn.GetSimpleCollisionRadius()
 			+ FMath::Max(
 				0.0f,
 				AttackRange - WorkApproachAcceptanceRadius * 2.0f);
 		return InteractionLocation
-			+ ResourceToCompanion * DesiredCenterDistance;
+			+ SurfaceToCompanion * DesiredCenterDistance;
 	}
 
 	FVector CalculateSupportApproachLocation(
@@ -304,10 +313,8 @@ namespace
 		const UDataTable* RecipeTable,
 		const FName RecipeRowId)
 	{
-		const AAI_REWorkBenchBase* Workbench =
-			Cast<AAI_REWorkBenchBase>(TargetActor);
 		if (!FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
-				Workbench,
+				TargetActor,
 				RecipeTable,
 				RecipeRowId))
 		{
@@ -1778,10 +1785,14 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 			CancelOwnedRequests(InstanceData);
 			return EStateTreeRunStatus::Failed;
 		}
+		const bool bIsHandcraft =
+			Recipe->RequiredWorkbench == EWorkbenchType::None;
 
 		if (Snapshot.State == EAIRECompanionWorkOrderState::Moving)
 		{
-			const FVector ApproachLocation =
+			const FVector ApproachLocation = bIsHandcraft
+				? CompanionPawn->GetActorLocation()
+				:
 				CalculateWorkbenchApproachLocation(
 					*CompanionPawn,
 					*TargetActor,
@@ -1818,10 +1829,13 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 
 			InstanceData.CompanionController->StopMovement();
 			InstanceData.bMoveRequested = false;
-			InstanceData.CompanionController->SetFocus(
-				TargetActor,
-				EAIFocusPriority::Gameplay);
-			FaceWorkTarget(*CompanionPawn, *TargetActor);
+			if (!bIsHandcraft)
+			{
+				InstanceData.CompanionController->SetFocus(
+					TargetActor,
+					EAIFocusPriority::Gameplay);
+				FaceWorkTarget(*CompanionPawn, *TargetActor);
+			}
 
 			UAI_REItemDataAsset* ResultItemAsset = ResolveItemAsset(
 				*InstanceData.CompanionCharacter,
@@ -1856,7 +1870,9 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 			Snapshot = InstanceData.WorkOrderComponent->GetWorkOrderSnapshot();
 		}
 
-		const FVector WorkbenchApproachLocation =
+		const FVector WorkbenchApproachLocation = bIsHandcraft
+			? CompanionPawn->GetActorLocation()
+			:
 			CalculateWorkbenchApproachLocation(
 				*CompanionPawn,
 				*TargetActor,
@@ -1873,10 +1889,13 @@ EStateTreeRunStatus FAIRECompanionExecuteWorkOrderTask::Tick(
 			return EStateTreeRunStatus::Failed;
 		}
 
-		InstanceData.CompanionController->SetFocus(
-			TargetActor,
-			EAIFocusPriority::Gameplay);
-		FaceWorkTarget(*CompanionPawn, *TargetActor);
+		if (!bIsHandcraft)
+		{
+			InstanceData.CompanionController->SetFocus(
+				TargetActor,
+				EAIFocusPriority::Gameplay);
+			FaceWorkTarget(*CompanionPawn, *TargetActor);
+		}
 		if (IsValid(InstanceData.WorkMontage))
 		{
 			UAnimInstance* AnimInstance =

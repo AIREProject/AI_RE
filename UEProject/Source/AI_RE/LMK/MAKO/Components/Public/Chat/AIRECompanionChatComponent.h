@@ -137,6 +137,7 @@ private:
 	FString SessionId;
 	FString ActiveRequestId;
 	FString ActiveMessageId;
+	FString ActiveUserMessage;
 	FString ActiveWebSocketFrame;
 	FString ActiveHttpBody;
 	uint64 Generation = 0;

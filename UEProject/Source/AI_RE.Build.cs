@@ -19,6 +19,7 @@ public class AI_RE : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"Foliage",
 			"Niagara",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
@@ -26,6 +27,7 @@ public class AI_RE : ModuleRules
 			"Json",
 			"UMG",
 			"Slate",
+			"MoviePlayer",
 			"WebSockets"
 		});
 

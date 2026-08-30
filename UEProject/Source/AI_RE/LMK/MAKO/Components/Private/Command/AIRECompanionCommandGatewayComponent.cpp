@@ -1,4 +1,6 @@
 #include "Command/AIRECompanionCommandGatewayComponent.h"
+#include "Command/AIRELocalGatherFallback.h"
+#include "Command/AIRELocalCraftFallback.h"
 
 #include "AI_RECraftingTypes.h"
 #include "AI_REHarvestGameplayTags.h"
@@ -38,16 +40,50 @@ namespace
 	constexpr double FutureToleranceSeconds = 30.0;
 	constexpr double MaxLeaseSeconds = 60.0;
 	constexpr float EvaluationPeriodSeconds = 0.1f;
-	const FName SupportedCraftRecipeRowId(TEXT("IronSword"));
-	const FString SupportedCraftRecipeId(TEXT("recipe-11"));
-
-	bool IsSupportedCraftRecipe(const FAI_RECraftingRecipe& Recipe)
+	struct FSupportedCraftRecipe
 	{
-		if (Recipe.ResultItemId != FName(TEXT("Sword_Iron"))
+		const TCHAR* RecipeId;
+		const TCHAR* RowId;
+		const TCHAR* ResultItemId;
+		EWorkbenchType WorkbenchType;
+		float CraftingTime;
+		TMap<FName, int32> Ingredients;
+	};
+
+	const TArray<FSupportedCraftRecipe>& GetSupportedCraftRecipes()
+	{
+		static const TArray<FSupportedCraftRecipe> Recipes = {
+			{ TEXT("recipe-1"), TEXT("ShoddyBandage"), TEXT("ShoddyBandage"),
+				EWorkbenchType::Basic, 0.0f, {{ TEXT("PlantStem"), 2 }} },
+			{ TEXT("recipe-9"), TEXT("IronIngot"), TEXT("IronIngot"),
+				EWorkbenchType::Smelter, 2.0f, {{ TEXT("IronOre"), 2 }} },
+			{ TEXT("recipe-11"), TEXT("IronSword"), TEXT("Sword_Iron"),
+				EWorkbenchType::Blacksmith, 3.0f,
+				{{ TEXT("IronIngot"), 3 }, { TEXT("WoodHandle"), 1 }} },
+			{ TEXT("recipe-14"), TEXT("WoodHandle"), TEXT("WoodHandle"),
+				EWorkbenchType::Basic, 1.0f, {{ TEXT("PlantStem"), 2 }} },
+		};
+		return Recipes;
+	}
+
+	const FSupportedCraftRecipe* FindSupportedCraftRecipe(const FString& RecipeId)
+	{
+		return GetSupportedCraftRecipes().FindByPredicate(
+			[&RecipeId](const FSupportedCraftRecipe& Recipe)
+			{
+				return RecipeId == Recipe.RecipeId;
+			});
+	}
+
+	bool IsSupportedCraftRecipe(
+		const FAI_RECraftingRecipe& Recipe,
+		const FSupportedCraftRecipe& Expected)
+	{
+		if (Recipe.ResultItemId != FName(Expected.ResultItemId)
 			|| Recipe.ResultAmount != 1
-			|| Recipe.RequiredWorkbench != EWorkbenchType::Blacksmith
-			|| !FMath::IsNearlyEqual(Recipe.CraftingTime, 3.0f)
-			|| Recipe.Ingredients.Num() != 2)
+			|| Recipe.RequiredWorkbench != Expected.WorkbenchType
+			|| !FMath::IsNearlyEqual(Recipe.CraftingTime, Expected.CraftingTime)
+			|| Recipe.Ingredients.Num() != Expected.Ingredients.Num())
 		{
 			return false;
 		}
@@ -61,9 +97,7 @@ namespace
 			}
 			IngredientTotals.FindOrAdd(Ingredient.ItemId) += Ingredient.Amount;
 		}
-		return IngredientTotals.Num() == 2
-			&& IngredientTotals.FindRef(FName(TEXT("IronIngot"))) == 3
-			&& IngredientTotals.FindRef(FName(TEXT("WoodHandle"))) == 1;
+		return IngredientTotals.OrderIndependentCompareEqual(Expected.Ingredients);
 	}
 
 	bool IsStableCommandId(const FString& Value)
@@ -110,6 +144,21 @@ namespace
 		return Candidate.CommandId == ActiveCandidate.CommandId
 			&& Candidate.RequestId == ActiveCandidate.RequestId;
 	}
+
+	FGameplayTag GetGatherResourceTag(const EAIREGatherResourceKind Resource)
+	{
+		switch (Resource)
+		{
+		case EAIREGatherResourceKind::Wood:
+			return AI_REHarvestGameplayTags::Resource_Wood;
+		case EAIREGatherResourceKind::Stone:
+			return AI_REHarvestGameplayTags::Resource_Rock;
+		case EAIREGatherResourceKind::IronOre:
+			return AI_REHarvestGameplayTags::Resource_IronOre;
+		default:
+			return FGameplayTag();
+		}
+	}
 }
 
 UAIRECompanionCommandGatewayComponent::UAIRECompanionCommandGatewayComponent()
@@ -132,19 +181,27 @@ UAIRECompanionCommandGatewayComponent::GetDirectCommandSnapshot() const
 bool UAIRECompanionCommandGatewayComponent::CanAdvertiseCraftItem(
 	const FAIREWorldContextV1& WorldContext) const
 {
-	if (!WorldContext.AvailableWorkstations.Contains(
-			TEXT("Workbench.Blacksmith"))
-		|| !IsValid(CraftingRecipeTable))
+	(void)WorldContext;
+	if (!IsValid(CraftingRecipeTable))
 	{
 		return false;
 	}
 
-	const FAI_RECraftingRecipe* Recipe =
-		CraftingRecipeTable->FindRow<FAI_RECraftingRecipe>(
-			SupportedCraftRecipeRowId,
-			TEXT("AIRECompanionCommandAdvertisement"),
-			false);
-	if (Recipe == nullptr || !IsSupportedCraftRecipe(*Recipe))
+	bool bHasValidRecipe = false;
+	for (const FSupportedCraftRecipe& Supported : GetSupportedCraftRecipes())
+	{
+		const FAI_RECraftingRecipe* Recipe =
+			CraftingRecipeTable->FindRow<FAI_RECraftingRecipe>(
+				FName(Supported.RowId),
+				TEXT("AIRECompanionCommandAdvertisement"),
+				false);
+		if (Recipe != nullptr && IsSupportedCraftRecipe(*Recipe, Supported))
+		{
+			bHasValidRecipe = true;
+			break;
+		}
+	}
+	if (!bHasValidRecipe)
 	{
 		return false;
 	}
@@ -164,6 +221,9 @@ bool UAIRECompanionCommandGatewayComponent::CanAdvertiseCraftItem(
 
 	const FName RequiredItemIds[] =
 	{
+		TEXT("PlantStem"),
+		TEXT("ShoddyBandage"),
+		TEXT("IronOre"),
 		TEXT("IronIngot"),
 		TEXT("WoodHandle"),
 		TEXT("Sword_Iron"),
@@ -204,6 +264,9 @@ void UAIRECompanionCommandGatewayComponent::BeginPlay()
 		ChatComponent->OnResponseReceived.AddUniqueDynamic(
 			this,
 			&UAIRECompanionCommandGatewayComponent::HandleChatResponse);
+		ChatComponent->OnRequestFailed.AddUniqueDynamic(
+			this,
+			&UAIRECompanionCommandGatewayComponent::HandleChatFailure);
 	}
 
 	UAIRECompanionWorkOrderComponent* WorkOrderComponent =
@@ -240,6 +303,14 @@ void UAIRECompanionCommandGatewayComponent::HandleChatResponse(
 		CandidateCount);
 	if (CandidateCount == 0)
 	{
+		const bool bGatherHandled = TryExecuteLocalGatherFallback(
+			Result.RequestId,
+			Result.SubmittedUserMessage);
+		if (!bGatherHandled)
+		{
+			TryExecuteLocalCraftFallback(
+				Result.RequestId, Result.SubmittedUserMessage);
+		}
 		return;
 	}
 
@@ -286,6 +357,84 @@ void UAIRECompanionCommandGatewayComponent::HandleChatResponse(
 	}
 
 	TryExecuteCandidate(Candidate);
+}
+
+void UAIRECompanionCommandGatewayComponent::HandleChatFailure(
+	const FAIREChatError& Error)
+{
+	if (!bIsEndingPlay)
+	{
+		const bool bGatherHandled = TryExecuteLocalGatherFallback(
+			Error.RequestId,
+			Error.SubmittedUserMessage);
+		if (!bGatherHandled)
+		{
+			TryExecuteLocalCraftFallback(
+				Error.RequestId, Error.SubmittedUserMessage);
+		}
+	}
+}
+
+bool UAIRECompanionCommandGatewayComponent::TryExecuteLocalCraftFallback(
+	const FString& RequestId,
+	const FString& SubmittedUserMessage)
+{
+	FString RecipeId;
+	if (!IsStableCommandId(RequestId)
+		|| !FAIRELocalCraftFallback::TryParseRecipeId(
+			SubmittedUserMessage, RecipeId))
+	{
+		return false;
+	}
+
+	FAIRECommandCandidate Candidate;
+	Candidate.CommandId = TEXT("local-craft-") + RequestId.Left(100);
+	Candidate.RequestId = RequestId;
+	Candidate.Type = EAIRECommandType::CraftItem;
+	Candidate.Priority = EAIRECommandPriority::Normal;
+	Candidate.IssuedAtUtc = FDateTime::UtcNow();
+	Candidate.ExpiresAtUtc = Candidate.IssuedAtUtc
+		+ FTimespan::FromSeconds(30.0);
+	Candidate.CraftRecipeId = RecipeId;
+	Candidate.CraftQuantity = 1;
+	Candidate.bHasCraftQuantity = true;
+
+	FAIREChatResult LocalResult;
+	LocalResult.RequestId = RequestId;
+	LocalResult.SubmittedUserMessage = SubmittedUserMessage;
+	LocalResult.CommandCandidates.Add(Candidate);
+	HandleChatResponse(LocalResult);
+	return true;
+}
+
+bool UAIRECompanionCommandGatewayComponent::TryExecuteLocalGatherFallback(
+	const FString& RequestId,
+	const FString& SubmittedUserMessage)
+{
+	EAIREGatherResourceKind Resource = EAIREGatherResourceKind::None;
+	if (!IsStableCommandId(RequestId)
+		|| !FAIRELocalGatherFallback::TryParseResource(
+			SubmittedUserMessage,
+			Resource))
+	{
+		return false;
+	}
+
+	FAIRECommandCandidate Candidate;
+	Candidate.CommandId = TEXT("local-fallback-") + RequestId.Left(96);
+	Candidate.RequestId = RequestId;
+	Candidate.Type = EAIRECommandType::GatherResource;
+	Candidate.Priority = EAIRECommandPriority::Normal;
+	Candidate.IssuedAtUtc = FDateTime::UtcNow();
+	Candidate.ExpiresAtUtc = Candidate.IssuedAtUtc + FTimespan::FromSeconds(30.0);
+	Candidate.GatherResource = Resource;
+
+	FAIREChatResult LocalResult;
+	LocalResult.RequestId = RequestId;
+	LocalResult.SubmittedUserMessage = SubmittedUserMessage;
+	LocalResult.CommandCandidates.Add(Candidate);
+	HandleChatResponse(LocalResult);
+	return true;
 }
 
 void UAIRECompanionCommandGatewayComponent::EvaluateActiveCommand()
@@ -478,8 +627,8 @@ bool UAIRECompanionCommandGatewayComponent::ValidateCandidate(
 
 	if (Candidate.Type == EAIRECommandType::GatherResource)
 	{
-		const bool bResourceIsValid = Candidate.GatherResource
-			== EAIREGatherResourceKind::Wood;
+		const bool bResourceIsValid =
+			GetGatherResourceTag(Candidate.GatherResource).IsValid();
 		const bool bQuantityIsAbsent = !Candidate.bHasGatherQuantity
 			&& Candidate.GatherQuantity == 0;
 		if (!bResourceIsValid || !bQuantityIsAbsent || bHasTargetId)
@@ -830,7 +979,9 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteAttack(
 bool UAIRECompanionCommandGatewayComponent::TryExecuteGatherResource(
 	const FAIRECommandCandidate& Candidate)
 {
-	if (Candidate.GatherResource != EAIREGatherResourceKind::Wood)
+	const FGameplayTag ResourceTag =
+		GetGatherResourceTag(Candidate.GatherResource);
+	if (!ResourceTag.IsValid())
 	{
 		RejectCandidate(Candidate, EAIRECommandResultReason::ResourceUnavailable);
 		return false;
@@ -858,7 +1009,7 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteGatherResource(
 	AAI_REHarvestableResourceActor* ResourceActor =
 		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(
 			*Character,
-			AI_REHarvestGameplayTags::Resource_Wood);
+			ResourceTag);
 	if (!IsValid(ResourceActor))
 	{
 		RejectCandidate(Candidate, EAIRECommandResultReason::ResourceUnavailable);
@@ -914,7 +1065,10 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteGatherResource(
 bool UAIRECompanionCommandGatewayComponent::TryExecuteCraftItem(
 	const FAIRECommandCandidate& Candidate)
 {
-	if (Candidate.CraftRecipeId != SupportedCraftRecipeId)
+	const FSupportedCraftRecipe* Supported =
+		FindSupportedCraftRecipe(Candidate.CraftRecipeId);
+	if (Supported == nullptr || !Candidate.bHasCraftQuantity
+		|| Candidate.CraftQuantity != 1)
 	{
 		RejectCandidate(Candidate, EAIRECommandResultReason::RecipeUnavailable);
 		return false;
@@ -945,24 +1099,26 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteCraftItem(
 
 	const FAI_RECraftingRecipe* Recipe =
 		CraftingRecipeTable->FindRow<FAI_RECraftingRecipe>(
-			SupportedCraftRecipeRowId,
+			FName(Supported->RowId),
 			TEXT("AIRECompanionCommandGateway"),
 			false);
-	if (Recipe == nullptr || !IsSupportedCraftRecipe(*Recipe))
+	if (Recipe == nullptr || !IsSupportedCraftRecipe(*Recipe, *Supported))
 	{
 		RejectCandidate(Candidate, EAIRECommandResultReason::RecipeUnavailable);
 		return false;
 	}
 
-	AAI_REWorkBenchBase* Workbench =
-		FAIRECompanionWorkbenchQuery::FindNearestCompatible(
-			*Character,
-			Recipe->RequiredWorkbench);
-	if (!IsValid(Workbench)
+	AActor* WorkTarget = Character;
+	if (Recipe->RequiredWorkbench != EWorkbenchType::None)
+	{
+		WorkTarget = FAIRECompanionWorkbenchQuery::FindNearestCompatible(
+			*Character, Recipe->RequiredWorkbench);
+	}
+	if (!IsValid(WorkTarget)
 		|| !FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
-			Workbench,
+			WorkTarget,
 			CraftingRecipeTable,
-			SupportedCraftRecipeRowId))
+			FName(Supported->RowId)))
 	{
 		RejectCandidate(Candidate, EAIRECommandResultReason::WorkbenchUnavailable);
 		return false;
@@ -1003,9 +1159,9 @@ bool UAIRECompanionCommandGatewayComponent::TryExecuteCraftItem(
 	FGuid WorkOrderId;
 	if (!FAIRECompanionCraftingWorkRequest::TryRequest(
 			WorkOrderComponent,
-			Workbench,
+			WorkTarget,
 			CraftingRecipeTable,
-			SupportedCraftRecipeRowId,
+			FName(Supported->RowId),
 			WorkOrderId,
 			true))
 	{
@@ -1340,6 +1496,9 @@ void UAIRECompanionCommandGatewayComponent::ShutdownGateway()
 		ChatComponent->OnResponseReceived.RemoveDynamic(
 			this,
 			&UAIRECompanionCommandGatewayComponent::HandleChatResponse);
+		ChatComponent->OnRequestFailed.RemoveDynamic(
+			this,
+			&UAIRECompanionCommandGatewayComponent::HandleChatFailure);
 	}
 	UAIRECompanionWorkOrderComponent* WorkOrderComponent =
 		IsValid(Character) ? Character->GetWorkOrderComponent() : nullptr;

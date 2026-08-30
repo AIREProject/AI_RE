@@ -6,7 +6,12 @@
 #include "AIREHarvestRewardReceiver.h"
 #include "../../OBI/Component/Public/AI_REItemDataAsset.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -28,6 +33,13 @@ AAI_REItemActor::AAI_REItemActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetupAttachment(RootComponent);
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> DropEffectFinder(
+		TEXT("/Game/VFX/DrapEffet/VFX/NE_drop_effects01.NE_drop_effects01"));
+	if (DropEffectFinder.Succeeded())
+	{
+		DropHighlightEffect = DropEffectFinder.Object;
+	}
 }
 
 void AAI_REItemActor::BeginPlay()
@@ -38,15 +50,27 @@ void AAI_REItemActor::BeginPlay()
 	// exact authored transform and existing collision setup.
 	if (!HasAnyFlags(RF_WasLoaded))
 	{
+		bRuntimeDrop = true;
 		bWorldDropSettling = true;
 		WorldDropAngularVelocity = FRotator(
 			FMath::FRandRange(-90.0f, 90.0f),
 			FMath::FRandRange(-90.0f, 90.0f),
 			FMath::FRandRange(-180.0f, 180.0f));
 		SetActorTickEnabled(true);
+		if (IsValid(DropHighlightEffect))
+		{
+			DropHighlightComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+				DropHighlightEffect,
+				MeshComponent,
+				NAME_None,
+				FVector::ZeroVector,
+				FRotator::ZeroRotator,
+				EAttachLocation::SnapToTarget,
+				true);
+		}
 	}
 
-	if (!bHarvestAutoPickupEnabled)
+	if (!bRuntimeDrop && !bHarvestAutoPickupEnabled)
 	{
 		return;
 	}
@@ -58,6 +82,11 @@ void AAI_REItemActor::BeginPlay()
 		FMath::Max(0.05f, CompanionAutoPickupRetryInterval),
 		true,
 		FMath::Max(0.0f, CompanionAutoPickupDelay));
+}
+
+bool AAI_REItemActor::IsRuntimeDrop() const
+{
+	return bRuntimeDrop;
 }
 
 void AAI_REItemActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -211,7 +240,7 @@ void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 			bPickupClaimed = true;
 			if (InvComp->AddItem(ItemAsset->ItemId, ItemCount))
 			{
-				Destroy();
+				StartCompanionPickupPresentation(*PlayerChar);
 				return;
 			}
 
@@ -224,7 +253,7 @@ void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 			ItemCount -= AddedItemCount;
 			if (ItemCount <= 0)
 			{
-				Destroy();
+				StartCompanionPickupPresentation(*PlayerChar);
 				return;
 			}
 			bPickupClaimed = false;
@@ -234,46 +263,66 @@ void AAI_REItemActor::Interact_Implementation(AActor* Interactor)
 
 void AAI_REItemActor::PollHarvestAutoPickup()
 {
-	if (!bHarvestAutoPickupEnabled
-		|| bPickupClaimed
+	if (bPickupClaimed
 		|| !IsValid(ItemAsset)
 		|| ItemAsset->ItemId.IsNone()
 		|| ItemCount <= 0)
 	{
 		return;
 	}
-	if (!PreferredAutoPickupReceiver.IsValid())
+	if (bHarvestAutoPickupEnabled
+		&& PreferredAutoPickupReceiver.IsValid()
+		&& IsPreferredReceiverWithinRange())
+	{
+		AActor* ReceiverActor = PreferredAutoPickupReceiver.Get();
+		bPickupClaimed = true;
+		const bool bCollected =
+			IAIREHarvestRewardReceiver::Execute_TryReceiveHarvestReward(
+				ReceiverActor,
+				HarvestDeliveryId,
+				ItemAsset->ItemId,
+				ItemCount);
+		if (bCollected)
+		{
+			GetWorldTimerManager().ClearTimer(HarvestAutoPickupTimerHandle);
+			if (!IsValid(ReceiverActor))
+			{
+				Destroy();
+				return;
+			}
+			StartCompanionPickupPresentation(*ReceiverActor);
+			return;
+		}
+		bPickupClaimed = false;
+	}
+
+	if (TryCollectForPlayer())
+	{
+		return;
+	}
+	if (bHarvestAutoPickupEnabled
+		&& !PreferredAutoPickupReceiver.IsValid()
+		&& !bRuntimeDrop)
 	{
 		GetWorldTimerManager().ClearTimer(HarvestAutoPickupTimerHandle);
-		return;
 	}
-	if (!IsPreferredReceiverWithinRange())
+}
+
+bool AAI_REItemActor::TryCollectForPlayer()
+{
+	AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(
+		UGameplayStatics::GetPlayerPawn(this, 0));
+	if (!IsValid(PlayerCharacter)
+		|| FVector::DistSquared(
+			GetActorLocation(), PlayerCharacter->GetActorLocation())
+			> FMath::Square(FMath::Max(0.0f, CompanionAutoPickupRadius)))
 	{
-		return;
+		return false;
 	}
 
-	AActor* ReceiverActor = PreferredAutoPickupReceiver.Get();
-	bPickupClaimed = true;
-	const bool bCollected =
-		IAIREHarvestRewardReceiver::Execute_TryReceiveHarvestReward(
-			ReceiverActor,
-			HarvestDeliveryId,
-			ItemAsset->ItemId,
-			ItemCount);
-	if (!bCollected)
-	{
-		bPickupClaimed = false;
-		return;
-	}
-
-	GetWorldTimerManager().ClearTimer(HarvestAutoPickupTimerHandle);
-	if (!IsValid(ReceiverActor))
-	{
-		Destroy();
-		return;
-	}
-
-	StartCompanionPickupPresentation(*ReceiverActor);
+	const int32 PreviousCount = ItemCount;
+	Interact_Implementation(PlayerCharacter);
+	return bPickupClaimed || ItemCount < PreviousCount;
 }
 
 bool AAI_REItemActor::IsPreferredReceiverWithinRange() const

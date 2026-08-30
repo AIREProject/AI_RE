@@ -26,4 +26,10 @@ public:
 		const AActor& Origin,
 		int32& OutCount,
 		float RadiusCentimeters = DefaultRadiusCentimeters);
+
+	static bool GetNearbyResourceCount(
+		const AActor& Origin,
+		FGameplayTag RequiredResourceTag,
+		int32& OutCount,
+		float RadiusCentimeters = DefaultRadiusCentimeters);
 };

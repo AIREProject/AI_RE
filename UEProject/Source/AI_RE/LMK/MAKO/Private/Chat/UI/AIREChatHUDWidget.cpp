@@ -81,6 +81,11 @@ TArray<FString> UAIREChatHUDWidget::GetVisibleResponseTexts() const
 	return VisibleResponseTexts;
 }
 
+void UAIREChatHUDWidget::ShowLocalCompanionMessage(const FString& Message)
+{
+	AddCompanionResponse(Message.TrimStartAndEnd());
+}
+
 void UAIREChatHUDWidget::InitializeChatLogWidget(
 	UAIREChatLogWidget* InChatLogWidget)
 {
@@ -212,7 +217,11 @@ void UAIREChatHUDWidget::NativeDestruct()
 
 void UAIREChatHUDWidget::HandleRuntimeChatResponse(const FAIREChatResult& Result)
 {
-	const FString DisplayText = Result.DisplayText.TrimStartAndEnd();
+	AddCompanionResponse(Result.DisplayText.TrimStartAndEnd());
+}
+
+void UAIREChatHUDWidget::AddCompanionResponse(const FString& DisplayText)
+{
 	if (DisplayText.IsEmpty())
 	{
 		return;

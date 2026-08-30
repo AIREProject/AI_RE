@@ -49,6 +49,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory|Persistence")
 	FAIREInventoryPersistenceResult RequestInventorySave();
 
+	/** Deletes only local gameplay inventory progress. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory|Persistence")
+	FAIREInventoryPersistenceResult DeleteGameplayProgress();
+
 	FAIREInventoryPersistenceReady& OnPersistenceReady();
 	FAIREInventoryPersistenceSaveCompleted& OnPersistenceSaveCompleted();
 
@@ -109,6 +113,12 @@ public:
 		UAI_REPlayerInventoryComponent* PlayerInventory,
 		UAI_REPlayerCombatComponent* PlayerCombat,
 		const FAIREPlayerWeaponEquipRequest& Request);
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Inventory")
+	FAIREInventoryMutationResult TryUnequipPlayerWeapon(
+		UAI_REPlayerInventoryComponent* PlayerInventory,
+		UAI_REPlayerCombatComponent* PlayerCombat,
+		const FAIREPlayerWeaponUnequipRequest& Request);
 
 	/** Validates Player + SharedStorage craft settlement without mutation. */
 	bool CanCompletePlayerCraft(
@@ -336,6 +346,7 @@ private:
 	FAIREInventoryPersistenceResult LastPersistenceSaveResult;
 	uint64 PersistenceEpoch = 0;
 	uint64 ActiveSaveEpoch = 0;
+	uint64 DeletedThroughSaveEpoch = 0;
 	int64 LatestPersistenceGeneration = 0;
 	int64 HighestIssuedPersistenceGeneration = 0;
 	FString LatestPersistenceSlotName;

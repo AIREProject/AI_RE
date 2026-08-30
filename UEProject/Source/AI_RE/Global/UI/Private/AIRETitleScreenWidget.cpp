@@ -28,6 +28,13 @@ void UAIRETitleScreenWidget::NativeOnInitialized()
 			this,
 			&UAIRETitleScreenWidget::HandleExitClicked);
 	}
+
+	if (IsValid(DeleteSaveButton))
+	{
+		DeleteSaveButton->OnClicked.AddUniqueDynamic(
+			this,
+			&UAIRETitleScreenWidget::HandleDeleteSaveClicked);
+	}
 }
 
 void UAIRETitleScreenWidget::NativeDestruct()
@@ -44,6 +51,13 @@ void UAIRETitleScreenWidget::NativeDestruct()
 		ExitButton->OnClicked.RemoveDynamic(
 			this,
 			&UAIRETitleScreenWidget::HandleExitClicked);
+	}
+
+	if (IsValid(DeleteSaveButton))
+	{
+		DeleteSaveButton->OnClicked.RemoveDynamic(
+			this,
+			&UAIRETitleScreenWidget::HandleDeleteSaveClicked);
 	}
 
 	Super::NativeDestruct();
@@ -88,5 +102,14 @@ void UAIRETitleScreenWidget::HandleExitClicked()
 		Cast<AAIRETitlePlayerController>(GetOwningPlayer()))
 	{
 		TitleController->RequestExitGame();
+	}
+}
+
+void UAIRETitleScreenWidget::HandleDeleteSaveClicked()
+{
+	if (AAIRETitlePlayerController* TitleController =
+		Cast<AAIRETitlePlayerController>(GetOwningPlayer()))
+	{
+		TitleController->RequestDeleteGameplayProgress();
 	}
 }

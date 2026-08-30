@@ -7,7 +7,7 @@
 
 UAI_REStatusComponent::UAI_REStatusComponent()
 {
-	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bCanEverTick = false;
 }
 
 void UAI_REStatusComponent::BeginPlay()
@@ -16,6 +16,48 @@ void UAI_REStatusComponent::BeginPlay()
 
 	// 생존 스탯(허기, 목마름) 자동 감소 타이머 실행 (2초 주기)
 	GetWorld()->GetTimerManager().SetTimer(SurvivalTimerHandle, this, &UAI_REStatusComponent::HandleSurvivalStats, SurvivalTickRate, true);
+
+	if (IAbilitySystemInterface* AbilityOwner = Cast<IAbilitySystemInterface>(GetOwner()))
+	{
+		CachedAbilitySystem = AbilityOwner->GetAbilitySystemComponent();
+		if (CachedAbilitySystem.IsValid())
+		{
+			StaminaChangedDelegateHandle = CachedAbilitySystem->
+				GetGameplayAttributeValueChangeDelegate(
+					UAI_REAttributeSet::GetSPAttribute()).AddUObject(
+						this,
+						&UAI_REStatusComponent::HandleStaminaChanged);
+			HealthChangedDelegateHandle = CachedAbilitySystem->
+				GetGameplayAttributeValueChangeDelegate(
+					UAI_REAttributeSet::GetHPAttribute()).AddUObject(
+						this,
+						&UAI_REStatusComponent::HandleHealthChanged);
+		}
+	}
+}
+
+void UAI_REStatusComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopStaminaRecovery();
+	if (CachedAbilitySystem.IsValid() && StaminaChangedDelegateHandle.IsValid())
+	{
+		CachedAbilitySystem->GetGameplayAttributeValueChangeDelegate(
+			UAI_REAttributeSet::GetSPAttribute()).Remove(StaminaChangedDelegateHandle);
+		StaminaChangedDelegateHandle.Reset();
+	}
+	if (CachedAbilitySystem.IsValid() && HealthChangedDelegateHandle.IsValid())
+	{
+		CachedAbilitySystem->GetGameplayAttributeValueChangeDelegate(
+			UAI_REAttributeSet::GetHPAttribute()).Remove(HealthChangedDelegateHandle);
+		HealthChangedDelegateHandle.Reset();
+	}
+	CachedAbilitySystem.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SurvivalTimerHandle);
+		World->GetTimerManager().ClearTimer(RecoveryTimerHandle);
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void UAI_REStatusComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -42,7 +84,13 @@ void UAI_REStatusComponent::RecoverHP(float Amount)
 
 void UAI_REStatusComponent::RecoverSP(float Amount)
 {
-    // Deprecated: Use GAS (ApplyGameplayEffect) instead.
+	if (Amount > 0.0f && CachedAbilitySystem.IsValid())
+	{
+		CachedAbilitySystem->ApplyModToAttributeUnsafe(
+			UAI_REAttributeSet::GetSPAttribute(),
+			EGameplayModOp::Additive,
+			Amount);
+	}
 }
 
 void UAI_REStatusComponent::RecoverHunger(float Amount)
@@ -83,6 +131,101 @@ bool UAI_REStatusComponent::IsOwnerRunning() const
 		return Owner->GetVelocity().SizeSquared() > 600.f;
 	}
 	return false;
+}
+
+void UAI_REStatusComponent::HandleStaminaChanged(
+	const FOnAttributeChangeData& ChangeData)
+{
+	if (ChangeData.NewValue >= ChangeData.OldValue)
+	{
+		if (CachedAbilitySystem.IsValid()
+			&& ChangeData.NewValue >= CachedAbilitySystem->GetNumericAttribute(
+				UAI_REAttributeSet::GetMaxSPAttribute()))
+		{
+			StopStaminaRecovery();
+		}
+		return;
+	}
+
+	StopStaminaRecovery();
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			StaminaRecoveryDelayTimerHandle,
+			this,
+			&UAI_REStatusComponent::StartStaminaRecovery,
+			StaminaRecoveryDelay,
+			false);
+	}
+}
+
+void UAI_REStatusComponent::HandleHealthChanged(
+	const FOnAttributeChangeData& ChangeData)
+{
+	if (ChangeData.NewValue <= 0.0f)
+	{
+		StopStaminaRecovery();
+	}
+}
+
+void UAI_REStatusComponent::StartStaminaRecovery()
+{
+	if (!CachedAbilitySystem.IsValid()
+		|| CachedAbilitySystem->GetNumericAttribute(
+			UAI_REAttributeSet::GetHPAttribute()) <= 0.0f)
+	{
+		StopStaminaRecovery();
+		return;
+	}
+
+	ApplyStaminaRecovery();
+	if (UWorld* World = GetWorld(); IsValid(World) && CachedAbilitySystem.IsValid()
+		&& CachedAbilitySystem->GetNumericAttribute(
+			UAI_REAttributeSet::GetSPAttribute())
+			< CachedAbilitySystem->GetNumericAttribute(
+				UAI_REAttributeSet::GetMaxSPAttribute()))
+	{
+		World->GetTimerManager().SetTimer(
+			StaminaRecoveryTimerHandle,
+			this,
+			&UAI_REStatusComponent::ApplyStaminaRecovery,
+			StaminaRecoveryInterval,
+			true);
+	}
+}
+
+void UAI_REStatusComponent::ApplyStaminaRecovery()
+{
+	if (!CachedAbilitySystem.IsValid()
+		|| CachedAbilitySystem->GetNumericAttribute(
+			UAI_REAttributeSet::GetHPAttribute()) <= 0.0f)
+	{
+		StopStaminaRecovery();
+		return;
+	}
+
+	const float CurrentSP = CachedAbilitySystem->GetNumericAttribute(
+		UAI_REAttributeSet::GetSPAttribute());
+	const float MaximumSP = CachedAbilitySystem->GetNumericAttribute(
+		UAI_REAttributeSet::GetMaxSPAttribute());
+	if (CurrentSP >= MaximumSP)
+	{
+		StopStaminaRecovery();
+		return;
+	}
+	CachedAbilitySystem->ApplyModToAttributeUnsafe(
+		UAI_REAttributeSet::GetSPAttribute(),
+		EGameplayModOp::Additive,
+		StaminaRecoveryRate * StaminaRecoveryInterval);
+}
+
+void UAI_REStatusComponent::StopStaminaRecovery()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(StaminaRecoveryDelayTimerHandle);
+		World->GetTimerManager().ClearTimer(StaminaRecoveryTimerHandle);
+	}
 }
 
 void UAI_REStatusComponent::AddGradualRecovery(float HP, float SP, float Hunger, float Thirsty, float Duration)

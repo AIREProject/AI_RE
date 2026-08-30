@@ -25,6 +25,7 @@ public:
 		const FVector& FromLocation,
 		FVector& OutInteractionLocation) const;
 
+	/** Used only when no collision component can provide a harvest surface point. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AI_RE|Harvest", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "cm"))
 	float HarvestInteractionRadius = 50.0f;
 

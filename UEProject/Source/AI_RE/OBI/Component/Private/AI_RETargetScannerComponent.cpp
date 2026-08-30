@@ -5,6 +5,7 @@
 #include "Engine/Engine.h"
 #include "TimerManager.h"
 #include "AI_REInteractableInterface.h"
+#include "AI_REItemActor.h"
 #include "AIRECombatDamageTargetInterface.h"
 #include "AbilitySystemGlobals.h"
 #include "AbilitySystemComponent.h"
@@ -54,7 +55,6 @@ void UAI_RETargetScannerComponent::BeginPlay()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().SetTimer(InteractionScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformInteractionPrecheck, ScanInterval, true);
-		World->GetTimerManager().SetTimer(CombatScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformCombatTargetCheck, ScanInterval, true);
 	}
 }
 
@@ -131,6 +131,11 @@ AActor* UAI_RETargetScannerComponent::ScanForward(
 	{
 		if (AActor* HitActor = Hit.GetActor())
 		{
+			if (const AAI_REItemActor* ItemActor = Cast<AAI_REItemActor>(HitActor);
+				IsValid(ItemActor) && ItemActor->IsRuntimeDrop())
+			{
+				continue;
+			}
 			if (bRequireInteractable
 				&& !HitActor->Implements<UAI_REInteractableInterface>())
 			{
@@ -201,66 +206,149 @@ void UAI_RETargetScannerComponent::PerformCombatTargetCheck()
 
 	if (!CurrentTarget)
 	{
-		// 탐색 모드: 8m(800) 범위 내 적 탐색
-		AActor* HitEnemy = ScanForwardForPlayerTarget(80.0f, 1000.0f, ECC_Pawn, false);
-		if (HitEnemy)
+		ClearCombatTarget();
+		return;
+	}
+
+	// 유지 모드: 최대 유지 거리(기본 10m)를 벗어나거나 죽으면 해제합니다.
+	const float DistSq = FVector::DistSquared(
+		OwnerActor->GetActorLocation(),
+		CurrentTarget->GetActorLocation());
+	const bool bIsDead = !IsPlayerTargetCandidate(CurrentTarget);
+	if (bIsDead || DistSq > FMath::Square(MaxCombatLockDistance))
+	{
+		ClearCombatTarget();
+	}
+}
+
+AActor* UAI_RETargetScannerComponent::FindBestCombatTarget() const
+{
+	const AActor* OwnerActor = GetOwner();
+	const UWorld* World = GetWorld();
+	if (!IsValid(OwnerActor) || !IsValid(World))
+	{
+		return nullptr;
+	}
+
+	FVector ForwardDirection = OwnerActor->GetActorForwardVector();
+	if (const APawn* OwnerPawn = Cast<APawn>(OwnerActor))
+	{
+		ForwardDirection = OwnerPawn->GetControlRotation().Vector();
+	}
+	ForwardDirection = ForwardDirection.GetSafeNormal();
+
+	const FVector Start = OwnerActor->GetActorLocation()
+		+ FVector(0.0f, 0.0f, 30.0f);
+	const FVector End = Start + ForwardDirection * MaxCombatLockDistance;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(OwnerActor);
+
+	TArray<FHitResult> HitResults;
+	World->SweepMultiByChannel(
+		HitResults,
+		Start,
+		End,
+		FQuat::Identity,
+		ECC_Pawn,
+		FCollisionShape::MakeSphere(80.0f),
+		QueryParams);
+
+	TSet<AActor*> ScoredActors;
+	AActor* BestTarget = nullptr;
+	float BestScore = -1.0f;
+	for (const FHitResult& HitResult : HitResults)
+	{
+		AActor* Candidate = HitResult.GetActor();
+		if (!IsPlayerTargetCandidate(Candidate)
+			|| ScoredActors.Contains(Candidate))
 		{
-			bIsCombatState = true;
-			CurrentCombatTarget = HitEnemy;
-			OnCombatStateChanged.Broadcast(true, HitEnemy);
+			continue;
+		}
+		ScoredActors.Add(Candidate);
+
+		const FBox CandidateBounds = Candidate->GetComponentsBoundingBox(true);
+		const FVector CandidatePoint = CandidateBounds.IsValid
+			? CandidateBounds.GetCenter()
+			: Candidate->GetActorLocation();
+		const FVector ToCandidate = CandidatePoint - Start;
+		const float Distance = ToCandidate.Size();
+		if (Distance > MaxCombatLockDistance)
+		{
+			continue;
+		}
+
+		const float ViewAlignment = FVector::DotProduct(
+			ForwardDirection,
+			ToCandidate.GetSafeNormal());
+		const float DistanceScore = 1.0f
+			- Distance / MaxCombatLockDistance;
+		const float Score = ViewAlignment * 0.8f
+			+ DistanceScore * 0.2f;
+		if (Score > BestScore)
+		{
+			BestScore = Score;
+			BestTarget = Candidate;
 		}
 	}
-	else
+
+	return BestTarget;
+}
+
+void UAI_RETargetScannerComponent::ClearCombatTarget()
+{
+	if (UWorld* World = GetWorld())
 	{
-		// 유지 모드: 최대 유지 거리(기본 10m)를 벗어나거나 죽으면 해제
-		float DistSq = FVector::DistSquared(OwnerActor->GetActorLocation(), CurrentTarget->GetActorLocation());
-		bool bIsDead = !IsPlayerTargetCandidate(CurrentTarget);
-		
-		if (bIsDead || DistSq > FMath::Square(MaxCombatLockDistance))
-		{
-			bIsCombatState = false;
-			CurrentCombatTarget.Reset();
-			OnCombatStateChanged.Broadcast(false, nullptr);
-		}
+		World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
+	}
+
+	const bool bWasLocked = bIsCombatState || CurrentCombatTarget.IsValid();
+	bIsCombatScanEnabled = false;
+	bIsCombatState = false;
+	CurrentCombatTarget.Reset();
+	if (bWasLocked)
+	{
+		OnCombatStateChanged.Broadcast(false, nullptr);
 	}
 }
 
 void UAI_RETargetScannerComponent::ToggleCombatScanner()
 {
-	SetCombatScannerEnabled(!bIsCombatScanEnabled);
+	SetCombatScannerEnabled(!bIsCombatState);
 }
 
 void UAI_RETargetScannerComponent::SetCombatScannerEnabled(bool bEnable)
 {
-	if (bIsCombatScanEnabled == bEnable)
+	if (!bEnable)
+	{
+		ClearCombatTarget();
+		return;
+	}
+
+	if (bIsCombatState && CurrentCombatTarget.IsValid())
 	{
 		return;
 	}
 
-	bIsCombatScanEnabled = bEnable;
-
-	if (bIsCombatScanEnabled)
+	AActor* TargetActor = FindBestCombatTarget();
+	if (!IsValid(TargetActor))
 	{
-		// 켜졌을 때 즉시 한 번 체크하도록 타이머 재시작
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(CombatScanTimerHandle, this, &UAI_RETargetScannerComponent::PerformCombatTargetCheck, ScanInterval, true);
-		}
+		ClearCombatTarget();
+		return;
 	}
-	else
-	{
-		// 꺼졌을 때 타이머 중지 및 록온 해제
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
-		}
 
-		if (bIsCombatState)
-		{
-			bIsCombatState = false;
-			CurrentCombatTarget.Reset();
-			OnCombatStateChanged.Broadcast(false, nullptr);
-		}
+	bIsCombatScanEnabled = true;
+	bIsCombatState = true;
+	CurrentCombatTarget = TargetActor;
+	OnCombatStateChanged.Broadcast(true, TargetActor);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			CombatScanTimerHandle,
+			this,
+			&UAI_RETargetScannerComponent::PerformCombatTargetCheck,
+			ScanInterval,
+			true);
 	}
 }
 
@@ -286,12 +374,7 @@ void UAI_RETargetScannerComponent::StopScanning()
 		World->GetTimerManager().ClearTimer(CombatScanTimerHandle);
 	}
 	
-	if (bIsCombatState)
-	{
-		bIsCombatState = false;
-		CurrentCombatTarget.Reset();
-		OnCombatStateChanged.Broadcast(false, nullptr);
-	}
+	ClearCombatTarget();
 	
 	SetCachedInteractableTarget(nullptr);
 }
@@ -324,6 +407,11 @@ AActor* UAI_RETargetScannerComponent::FindBestInteractableInFront(
 		if (!IsValid(Candidate)
 			|| Candidate == OwnerActor
 			|| !Candidate->Implements<UAI_REInteractableInterface>())
+		{
+			continue;
+		}
+		if (const AAI_REItemActor* ItemActor = Cast<AAI_REItemActor>(Candidate);
+			IsValid(ItemActor) && ItemActor->IsRuntimeDrop())
 		{
 			continue;
 		}

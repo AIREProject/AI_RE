@@ -12,12 +12,12 @@
 #include "Work/AIRECompanionWorkOrderTypes.h"
 
 bool FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
-	const AAI_REWorkBenchBase* Workbench,
+	const AActor* WorkTarget,
 	const UDataTable* RecipeTable,
 	FName RecipeRowId)
 {
-	if (!IsValid(Workbench)
-		|| Workbench->IsActorBeingDestroyed()
+	if (!IsValid(WorkTarget)
+		|| WorkTarget->IsActorBeingDestroyed()
 		|| !IsValid(RecipeTable)
 		|| RecipeRowId.IsNone()
 		|| RecipeTable->GetRowStruct() != FAI_RECraftingRecipe::StaticStruct())
@@ -29,10 +29,19 @@ bool FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
 		RecipeRowId,
 		TEXT("AIRECompanionCraftingWorkRequest"),
 		false);
+	const AAI_REWorkBenchBase* Workbench =
+		Cast<AAI_REWorkBenchBase>(WorkTarget);
+	const bool bValidHandcraftTarget =
+		Recipe != nullptr
+		&& Recipe->RequiredWorkbench == EWorkbenchType::None
+		&& Workbench == nullptr;
+	const bool bValidWorkbenchTarget =
+		Recipe != nullptr
+		&& Recipe->RequiredWorkbench != EWorkbenchType::None
+		&& IsValid(Workbench)
+		&& Workbench->WorkbenchType == Recipe->RequiredWorkbench;
 	if (Recipe == nullptr
-		|| Recipe->RequiredWorkbench == EWorkbenchType::None
-		|| Workbench->WorkbenchType == EWorkbenchType::None
-		|| Recipe->RequiredWorkbench != Workbench->WorkbenchType
+		|| (!bValidHandcraftTarget && !bValidWorkbenchTarget)
 		|| Recipe->ResultItemId.IsNone()
 		|| Recipe->ResultAmount <= 0
 		|| !FMath::IsFinite(Recipe->CraftingTime)
@@ -55,7 +64,7 @@ bool FAIRECompanionCraftingWorkRequest::IsValidRequestInputs(
 
 bool FAIRECompanionCraftingWorkRequest::TryRequest(
 	UAIRECompanionWorkOrderComponent* WorkOrderComponent,
-	AAI_REWorkBenchBase* Workbench,
+	AActor* WorkTarget,
 	UDataTable* RecipeTable,
 	FName RecipeRowId,
 	FGuid& OutWorkOrderId,
@@ -64,14 +73,14 @@ bool FAIRECompanionCraftingWorkRequest::TryRequest(
 	OutWorkOrderId.Invalidate();
 	if (!IsValid(WorkOrderComponent)
 		|| WorkOrderComponent->HasActiveWorkOrder()
-		|| !IsValidRequestInputs(Workbench, RecipeTable, RecipeRowId))
+		|| !IsValidRequestInputs(WorkTarget, RecipeTable, RecipeRowId))
 	{
 		return false;
 	}
 
 	FAIRECompanionWorkOrderRequest Request;
 	Request.WorkType = EAIRECompanionWorkOrderType::Crafting;
-	Request.TargetActor = Workbench;
+	Request.TargetActor = WorkTarget;
 	Request.RecipeTable = RecipeTable;
 	Request.RecipeRowId = RecipeRowId;
 	Request.bRequireMakoDestination = bRequireMakoDestination;
