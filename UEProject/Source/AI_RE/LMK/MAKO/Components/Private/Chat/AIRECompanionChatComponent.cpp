@@ -1,6 +1,5 @@
 #include "Chat/AIRECompanionChatComponent.h"
 
-#include "AIREWorldTimeSubsystem.h"
 #include "Chat/Context/AIREWorldContextBuilder.h"
 #include "Chat/Transport/AIREChatJsonAdapter.h"
 #include "Chat/Contracts/AIREChatSettings.h"
@@ -61,28 +60,6 @@ namespace
 			return TEXT("ws://") + HttpUrl.RightChop(7);
 		}
 		return HttpUrl;
-	}
-
-	EAIREGameWorldPeriod GetGameWorldPeriod(const float Hour)
-	{
-		const int32 WholeHour = FMath::FloorToInt(Hour);
-		if (WholeHour >= 5 && WholeHour < 8)
-		{
-			return EAIREGameWorldPeriod::Dawn;
-		}
-		if (WholeHour >= 8 && WholeHour < 12)
-		{
-			return EAIREGameWorldPeriod::Morning;
-		}
-		if (WholeHour >= 12 && WholeHour < 18)
-		{
-			return EAIREGameWorldPeriod::Afternoon;
-		}
-		if (WholeHour >= 18 && WholeHour < 22)
-		{
-			return EAIREGameWorldPeriod::Evening;
-		}
-		return EAIREGameWorldPeriod::Night;
 	}
 
 	bool SerializeObject(const TSharedRef<FJsonObject>& Object, FString& OutJson)
@@ -184,15 +161,30 @@ bool UAIRECompanionChatComponent::SendPlayerMessage(const FString& UserMessage)
 	ActiveUserMessage = UserMessage.TrimStartAndEnd();
 
 	FAIREInGameChatContext EffectiveContext = ChatContext;
-	if (UWorld* World = GetWorld())
+	const FDateTime Now = FDateTime::Now();
+	EffectiveContext.Day = Now.GetDay();
+	EffectiveContext.Hour = static_cast<float>(Now.GetHour())
+		+ static_cast<float>(Now.GetMinute()) / 60.0f;
+	const int32 HourInt = Now.GetHour();
+	if (HourInt >= 5 && HourInt < 8)
 	{
-		if (const UAIREWorldTimeSubsystem* WorldTime =
-			World->GetSubsystem<UAIREWorldTimeSubsystem>())
-		{
-			EffectiveContext.Day = WorldTime->GetCurrentDay();
-			EffectiveContext.Hour = WorldTime->GetCurrentTimeOfDay();
-			EffectiveContext.Period = GetGameWorldPeriod(EffectiveContext.Hour);
-		}
+		EffectiveContext.Period = EAIREGameWorldPeriod::Dawn;
+	}
+	else if (HourInt >= 8 && HourInt < 12)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Morning;
+	}
+	else if (HourInt >= 12 && HourInt < 18)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Afternoon;
+	}
+	else if (HourInt >= 18 && HourInt < 22)
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Evening;
+	}
+	else
+	{
+		EffectiveContext.Period = EAIREGameWorldPeriod::Night;
 	}
 
 	const FAIREWorldContextV1 WorldContext = FAIREWorldContextBuilder::Build(

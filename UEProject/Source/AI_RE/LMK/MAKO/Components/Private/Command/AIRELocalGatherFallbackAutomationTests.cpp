@@ -14,6 +14,10 @@ bool FAIRELocalGatherFallbackTest::RunTest(const FString& Parameters)
 	(void)Parameters;
 	EAIREGatherResourceKind Resource = EAIREGatherResourceKind::None;
 	TestTrue(
+		TEXT("Explicit wood request is accepted"),
+		FAIRELocalGatherFallback::TryParseResource(TEXT("나무 캐줘"), Resource));
+	TestEqual(TEXT("Wood is selected"), Resource, EAIREGatherResourceKind::Wood);
+	TestTrue(
 		TEXT("Explicit stone request is accepted"),
 		FAIRELocalGatherFallback::TryParseResource(TEXT("돌 캐줘"), Resource));
 	TestEqual(TEXT("Stone is selected"), Resource, EAIREGatherResourceKind::Stone);
@@ -27,9 +31,9 @@ bool FAIRELocalGatherFallbackTest::RunTest(const FString& Parameters)
 		TEXT("돌이 예쁘다"),
 		TEXT("철광석은 어디 있어?"),
 		TEXT("돌이랑 철광석 캐줘"),
+		TEXT("나무랑 돌 캐줘"),
 		TEXT("돌 캐지 마"),
 		TEXT("철광석 말고 나무 캐줘"),
-		TEXT("나무 캐줘"),
 		TEXT("채집해줘"),
 		TEXT(""),
 	};

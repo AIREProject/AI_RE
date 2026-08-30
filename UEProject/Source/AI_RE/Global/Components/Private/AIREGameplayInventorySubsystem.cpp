@@ -663,7 +663,10 @@ UAIREGameplayInventorySubsystem::DeleteGameplayProgress()
 	CachedPlayerPersistenceState = FAIREInventoryPersistedPlayerState();
 	CachedPlayerPersistenceState.InventoryCapacity =
 		AIREGameplayInventoryPersistence::PlayerInventoryCapacity;
-	bHasPlayerPersistenceState = true;
+	// Title-screen deletion has no registered player. Leave the state
+	// uninitialized so the next gameplay player seeds its configured defaults,
+	// exactly like a first run with no save slots.
+	bHasPlayerPersistenceState = false;
 	if (UAI_REPlayerInventoryComponent* PlayerInventory =
 		RegisteredPlayerInventory.Get())
 	{
@@ -675,6 +678,9 @@ UAIREGameplayInventorySubsystem::DeleteGameplayProgress()
 		PlayerInventory->bPersistenceReadyForGameplay = true;
 		bApplyingPlayerPersistenceState = false;
 		PlayerInventory->NotifyExactInventoryMutation();
+		// Preserve the safe empty reset if this API is ever invoked while a
+		// gameplay player is still registered.
+		bHasPlayerPersistenceState = true;
 	}
 
 	LatestPersistenceGeneration = 0;

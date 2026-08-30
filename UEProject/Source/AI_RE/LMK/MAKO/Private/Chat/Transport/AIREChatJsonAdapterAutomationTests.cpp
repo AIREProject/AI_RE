@@ -159,22 +159,22 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	}
 	FString TimeSource;
 	TestTrue(
-		TEXT("In-game time context source is GameWorld"),
+		TEXT("In-game Chat time context source is RealWorld"),
 		(*TimeContext)->TryGetStringField(TEXT("source"), TimeSource));
 	TestEqual(
-		TEXT("In-game time context never serializes as RealWorld"),
+		TEXT("In-game Chat preserves the PC real-world time source"),
 		TimeSource,
-		FString(TEXT("GameWorld")));
+		FString(TEXT("RealWorld")));
 	double SerializedDay = 0.0;
 	double SerializedHour = 0.0;
 	TestTrue(
-		TEXT("In-game time context preserves the game day"),
+		TEXT("In-game Chat time context preserves the supplied real-world day"),
 		(*TimeContext)->TryGetNumberField(TEXT("day"), SerializedDay));
 	TestTrue(
-		TEXT("In-game time context preserves the game hour"),
+		TEXT("In-game Chat time context preserves the supplied real-world hour"),
 		(*TimeContext)->TryGetNumberField(TEXT("hour"), SerializedHour));
-	TestEqual(TEXT("Serialized game day matches context"), SerializedDay, 1.0);
-	TestEqual(TEXT("Serialized game hour matches context"), SerializedHour, 12.0);
+	TestEqual(TEXT("Serialized real-world day matches context"), SerializedDay, 1.0);
+	TestEqual(TEXT("Serialized real-world hour matches context"), SerializedHour, 12.0);
 	const TArray<TSharedPtr<FJsonValue>>* AllowedCommands = nullptr;
 	TestTrue(
 		TEXT("allowed_commands is an array"),

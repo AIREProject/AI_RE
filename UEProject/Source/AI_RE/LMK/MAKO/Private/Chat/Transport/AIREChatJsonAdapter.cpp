@@ -988,7 +988,7 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 	}
 
 	const TSharedRef<FJsonObject> TimeContext = MakeShared<FJsonObject>();
-	TimeContext->SetStringField(TEXT("source"), TEXT("GameWorld"));
+	TimeContext->SetStringField(TEXT("source"), TEXT("RealWorld"));
 	TimeContext->SetNumberField(TEXT("day"), Context.Day);
 	TimeContext->SetNumberField(TEXT("hour"), FMath::FloorToInt(Context.Hour));
 	TimeContext->SetStringField(TEXT("period"), PeriodName);
