@@ -14,6 +14,16 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 
 class UDataTable;
 
+/**
+ * 외부 대화 서비스가 제안한 행동을 Unreal Gameplay 명령으로 변환하는 검증 경계입니다.
+ *
+ * 명령의 식별자, 요청 상관관계, 수명, 지원 범위를 검증한 뒤 DirectCommand,
+ * 전투 또는 WorkOrder로 전달합니다. 외부 AI는 후보만 제안하고 실제 상태 변경과
+ * 행동 우선순위는 게임 클라이언트가 소유하도록 책임을 분리했습니다.
+ *
+ * 처리된 CommandId와 Generation을 함께 관리해 중복 후보와 늦게 도착한
+ * 비동기 완료 신호가 같은 명령을 두 번 종료하지 못하게 합니다.
+ */
 UCLASS(ClassGroup = AIRE, meta = (BlueprintSpawnableComponent))
 class AI_RE_API UAIRECompanionCommandGatewayComponent final
 	: public UActorComponent

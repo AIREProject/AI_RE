@@ -1,5 +1,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+/*
+ * 근접 Trace Resolver가 Geometry와 이동 조건에 관계없이 같은 판정 규칙을 유지하는지 검증합니다.
+ * 빈 입력과 Miss, World Blocker, 부착 액터 무시, Pawn 적중, 프레임 사이 Tunnelling,
+ * Capsule 방향과 입력 보정을 Transient World의 실제 Collision Query로 고정합니다.
+ */
 #include "AIRECombatMeleeTraceResolver.h"
 
 #include "Components/BoxComponent.h"

@@ -1,5 +1,11 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
+/*
+ * Command Gateway의 수명주기 계약을 실제 Transient World에서 검증합니다.
+ * Clock Skew, 만료·중복 후보, 교체 명령, 늦게 도착한 Generation Callback,
+ * WorkOrder 전환, 취소와 Shutdown을 한 흐름으로 실행해 명령이 정확히 한 번만
+ * 활성화되고 종료되는지를 회귀 조건으로 고정합니다.
+ */
 #include "Command/AIRECompanionCommandGatewayComponent.h"
 
 #include "AI_REHarvestGameplayTags.h"
