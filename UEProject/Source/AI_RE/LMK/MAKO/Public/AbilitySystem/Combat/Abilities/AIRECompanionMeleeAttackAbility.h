@@ -12,6 +12,17 @@ class UAbilityTask_WaitGameplayEvent;
 class UAnimMontage;
 class USkeletalMeshComponent;
 
+/**
+ * 무기 Data Asset을 기반으로 MAKO의 근접 콤보와 채집 타격을 실행하는 GAS Ability입니다.
+ *
+ * Montage Event가 Combo Window와 Trace Window를 열고 닫으며, 각 공격 단계의
+ * 피해·경직·Targeting Mode·Socket 정보를 현재 무기 정의에서 읽습니다. 이전 프레임과
+ * 현재 프레임의 Socket 구간을 추적해 빠른 이동 중 누락을 줄이고, ExecutionId와
+ * 소비 상태로 한 공격 단계가 피해를 중복 적용하지 않도록 합니다.
+ *
+ * 대상 소멸, Montage 중단, 전투 스킬 전환에서도 Task, Timer, Gameplay Tag와
+ * 임시 장비 표현을 한 경로로 정리하는 것이 Ability 수명주기의 핵심 불변식입니다.
+ */
 UCLASS()
 class AI_RE_API UAIRECompanionMeleeAttackAbility : public UAIRECompanionGameplayAbility
 {

@@ -1,3 +1,11 @@
+/*
+ * Command Gateway 구현 원칙
+ * - Backend 응답은 신뢰하지 않고 모든 후보를 현재 WorldContext로 다시 검증한다.
+ * - 검증이 끝난 후보만 StateTree, GAS, WorkOrder가 이해하는 명시적 요청으로 바꾼다.
+ * - CommandId와 Generation으로 중복 처리와 오래된 Callback을 차단하고,
+ *   성공·실패·취소 중 하나의 Terminal Result만 발행한다.
+ * - 외부 서비스가 없어도 가능한 채집·제작 요청은 로컬 규칙으로 복구한다.
+ */
 #include "Command/AIRECompanionCommandGatewayComponent.h"
 #include "Command/AIRELocalGatherFallback.h"
 #include "Command/AIRELocalCraftFallback.h"

@@ -1,3 +1,10 @@
+/*
+ * Gameplay Inventory 구현 원칙
+ * - 요청 전체를 먼저 검증하고 모든 Container 변경이 가능한 경우에만 원자적으로 Commit한다.
+ * - Revision과 Mutation Ledger로 오래된 UI 요청 및 재전송된 작업의 중복 반영을 거부한다.
+ * - 장착은 Reserve, Runtime 적용, Commit 또는 Recovery 단계로 나눠 비동기 부분 성공을 복구한다.
+ * - 저장 Callback은 Session과 Epoch를 확인해 삭제·종료 이후의 늦은 결과가 상태를 되살리지 못하게 한다.
+ */
 #include "AIREGameplayInventorySubsystem.h"
 
 #include "AI_REItemDataAsset.h"

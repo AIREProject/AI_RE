@@ -1,3 +1,10 @@
+/*
+ * Melee Attack 구현 원칙
+ * - 콤보 수치와 Montage Section은 무기 정의에서 읽어 Ability 코드를 무기별로 분기하지 않는다.
+ * - AnimNotify가 제공하는 Window 안에서 이전·현재 Socket을 Substep Trace해 프레임 사이를 보간한다.
+ * - Trace 결과와 피해 Commit을 분리하고 Step 소비 상태를 기록해 동일 타격의 중복 적용을 막는다.
+ * - Combat과 Harvest는 같은 수명주기를 공유하되 대상 검증과 결과 적용은 각각의 규칙을 따른다.
+ */
 #include "AbilitySystem/Combat/Abilities/AIRECompanionMeleeAttackAbility.h"
 
 #include "AbilitySystem/Combat/AIRECompanionCombatVFX.h"

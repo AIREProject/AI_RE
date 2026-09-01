@@ -9,6 +9,16 @@
 class UAIRESyncOutboxSaveGame;
 class USaveGame;
 
+/**
+ * 게임 상태 변경을 외부 Backend로 안전하게 전달하기 위한 영속 Outbox입니다.
+ *
+ * OperationId, Sequence, Scope와 BodyHash를 가진 요청을 먼저 SaveGame에 기록한 뒤
+ * 한 건씩 전송합니다. Snapshot은 Coalescing할 수 있지만 Event 순서는 유지하며,
+ * ACK의 OperationId와 BodyHash가 현재 Attempt와 일치할 때만 완료로 확정합니다.
+ *
+ * Timeout·전송 실패는 항목을 Pending으로 돌려 재시도하고, AttemptToken과
+ * LifecycleEpoch로 종료 이후 또는 이전 시도의 늦은 Callback을 무시합니다.
+ */
 UCLASS()
 class AI_RE_API UAIRESyncOutboxSubsystem : public UGameInstanceSubsystem
 {

@@ -28,6 +28,17 @@ DECLARE_MULTICAST_DELEGATE_OneParam(
 	FAIREInventoryPersistenceSaveCompleted,
 	const FAIREInventoryPersistenceResult&);
 
+/**
+ * Player, MAKO, Shared Storage의 아이템 상태와 SaveGame을 소유하는 권위 Subsystem입니다.
+ *
+ * UI와 개별 Actor는 Snapshot만 소비하며 모든 변경은 SessionId, MutationId,
+ * ExpectedRevision 검증을 통과한 뒤 Commit됩니다. 이동·제작·장착처럼 여러 상태를
+ * 바꾸는 요청은 부분 성공을 남기지 않고, 같은 Mutation이나 Offline Task가 재전송되면
+ * 기록된 결과를 반환해 멱등성을 유지합니다.
+ *
+ * 비동기 저장은 Generation과 Epoch로 오래된 Callback을 무시하고, Primary/Previous
+ * 슬롯과 Mutation Ledger를 함께 보존해 손상 복구 후에도 중복 적용을 막습니다.
+ */
 UCLASS()
 class AI_RE_API UAIREGameplayInventorySubsystem : public UGameInstanceSubsystem
 {

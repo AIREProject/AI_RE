@@ -1,3 +1,10 @@
+/*
+ * Sync Outbox 구현 원칙
+ * - Queue 변경과 InFlight 전환을 먼저 저장해 프로세스 종료 후에도 재전송 근거를 남긴다.
+ * - 동시에 하나의 Attempt만 허용하고 Token, OperationId, BodyHash가 모두 일치한 ACK만 수락한다.
+ * - Timeout과 실패는 Pending으로 복귀시키며 ACK 항목은 저장 완료 후 Compact한다.
+ * - Generation과 Epoch로 오래된 Load/Save/Transport Callback이 최신 상태를 덮지 못하게 한다.
+ */
 #include "AIRESyncOutboxSubsystem.h"
 
 #include "AIRESyncOutboxSaveGame.h"
