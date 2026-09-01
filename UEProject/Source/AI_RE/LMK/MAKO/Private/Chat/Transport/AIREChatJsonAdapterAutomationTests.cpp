@@ -115,7 +115,7 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	Context.SaveSlotId = TEXT("slot-1");
 	Context.Day = 1;
 	Context.Hour = 12.0f;
-	Context.Period = EAIREGameWorldPeriod::Morning;
+	Context.Period = EAIREGameWorldPeriod::Afternoon;
 	FAIREWorldContextV1 WorldContext;
 	WorldContext.LocationId = TEXT("forest_camp");
 	WorldContext.NearbyResources.Add({TEXT("wood"), 1});
@@ -147,6 +147,34 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 	{
 		return false;
 	}
+	const TSharedPtr<FJsonObject>* TimeContext = nullptr;
+	TestTrue(
+		TEXT("In-game request contains a time context"),
+		Request->TryGetObjectField(TEXT("time_context"), TimeContext)
+			&& TimeContext != nullptr
+			&& TimeContext->IsValid());
+	if (TimeContext == nullptr || !TimeContext->IsValid())
+	{
+		return false;
+	}
+	FString TimeSource;
+	TestTrue(
+		TEXT("In-game Chat time context source is RealWorld"),
+		(*TimeContext)->TryGetStringField(TEXT("source"), TimeSource));
+	TestEqual(
+		TEXT("In-game Chat preserves the PC real-world time source"),
+		TimeSource,
+		FString(TEXT("RealWorld")));
+	double SerializedDay = 0.0;
+	double SerializedHour = 0.0;
+	TestTrue(
+		TEXT("In-game Chat time context preserves the supplied real-world day"),
+		(*TimeContext)->TryGetNumberField(TEXT("day"), SerializedDay));
+	TestTrue(
+		TEXT("In-game Chat time context preserves the supplied real-world hour"),
+		(*TimeContext)->TryGetNumberField(TEXT("hour"), SerializedHour));
+	TestEqual(TEXT("Serialized real-world day matches context"), SerializedDay, 1.0);
+	TestEqual(TEXT("Serialized real-world hour matches context"), SerializedHour, 12.0);
 	const TArray<TSharedPtr<FJsonValue>>* AllowedCommands = nullptr;
 	TestTrue(
 		TEXT("allowed_commands is an array"),
@@ -366,10 +394,33 @@ bool FAIREChatJsonAdapterCommandCandidatesTest::RunTest(const FString& Parameter
 		Correlation,
 		false);
 	TestTrue(
-		TEXT("Stone Gather is marked unsupported"),
+		TEXT("Stone Gather is supported"),
 		Parsed.Kind == EAIREParsedChatFrameKind::Response
 			&& Parsed.Result.CommandCandidates.Num() == 1
-			&& Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters);
+			&& !Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters
+			&& Parsed.Result.CommandCandidates[0].GatherResource
+				== EAIREGatherResourceKind::Stone);
+
+	TSharedPtr<FJsonObject> IronParameters = MakeShared<FJsonObject>();
+	IronParameters->SetStringField(TEXT("resource"), TEXT("iron_ore"));
+	Response = MakeResponse();
+	SetCandidates(
+		Response,
+		{MakeCandidate(
+			TEXT("command-gather-iron"),
+			TEXT("Command.GatherResource"),
+			IronParameters)});
+	Parsed = FAIREChatJsonAdapter::ParseHttpBody(
+		SerializeObject(Response),
+		Correlation,
+		false);
+	TestTrue(
+		TEXT("Iron ore Gather is supported"),
+		Parsed.Kind == EAIREParsedChatFrameKind::Response
+			&& Parsed.Result.CommandCandidates.Num() == 1
+			&& !Parsed.Result.CommandCandidates[0].bHasUnsupportedParameters
+			&& Parsed.Result.CommandCandidates[0].GatherResource
+				== EAIREGatherResourceKind::IronOre);
 
 	TSharedPtr<FJsonObject> CraftParameters = MakeShared<FJsonObject>();
 	CraftParameters->SetStringField(TEXT("recipe_id"), TEXT("recipe-11"));

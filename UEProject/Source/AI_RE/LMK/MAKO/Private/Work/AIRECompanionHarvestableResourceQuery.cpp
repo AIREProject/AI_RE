@@ -3,6 +3,7 @@
 #include "AI_REHarvestGameplayTags.h"
 #include "AI_REHarvestableResourceActor.h"
 #include "AI_REHarvestableResourceComponent.h"
+#include "AI_REItemDataAsset.h"
 #include "CollisionQueryParams.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -23,6 +24,25 @@ namespace
 			&& IsValid(Resource->GetHarvestableResourceComponent())
 			&& Resource->GetHarvestableResourceComponent()->GetRequiredWorkTag().IsValid()
 			&& FAIRECompanionHarvestWorkRequest::IsValidRequestInputs(Resource);
+	}
+
+	FGameplayTag GetEffectiveResourceTag(
+		const UAI_REHarvestableResourceComponent& ResourceComponent)
+	{
+		const UAI_REItemDataAsset* RewardItem =
+			ResourceComponent.GetRewardItemAsset();
+		if (IsValid(RewardItem))
+		{
+			if (RewardItem->ItemId == FName(TEXT("Rock")))
+			{
+				return AI_REHarvestGameplayTags::Resource_Rock;
+			}
+			if (RewardItem->ItemId == FName(TEXT("IronOre")))
+			{
+				return AI_REHarvestGameplayTags::Resource_IronOre;
+			}
+		}
+		return ResourceComponent.GetRequiredWorkTag();
 	}
 
 	bool CollectNearbyResourcesInternal(
@@ -82,7 +102,7 @@ namespace
 			const UAI_REHarvestableResourceComponent* ResourceComponent =
 				Resource->GetHarvestableResourceComponent();
 			if (RequiredResourceTag.IsValid()
-				&& ResourceComponent->GetRequiredWorkTag() != RequiredResourceTag)
+				&& GetEffectiveResourceTag(*ResourceComponent) != RequiredResourceTag)
 			{
 				continue;
 			}
@@ -168,13 +188,30 @@ bool FAIRECompanionHarvestableResourceQuery::GetNearbyWoodCount(
 	int32& OutCount,
 	const float RadiusCentimeters)
 {
+	return GetNearbyResourceCount(
+		Origin,
+		AI_REHarvestGameplayTags::Resource_Wood,
+		OutCount,
+		RadiusCentimeters);
+}
+
+bool FAIRECompanionHarvestableResourceQuery::GetNearbyResourceCount(
+	const AActor& Origin,
+	const FGameplayTag RequiredResourceTag,
+	int32& OutCount,
+	const float RadiusCentimeters)
+{
 	OutCount = 0;
+	if (!RequiredResourceTag.IsValid())
+	{
+		return false;
+	}
 	TArray<TWeakObjectPtr<AAI_REHarvestableResourceActor>> Resources;
 	if (!CollectNearbyResourcesInternal(
 			Origin,
 			Resources,
 			RadiusCentimeters,
-			AI_REHarvestGameplayTags::Resource_Wood))
+			RequiredResourceTag))
 	{
 		return false;
 	}

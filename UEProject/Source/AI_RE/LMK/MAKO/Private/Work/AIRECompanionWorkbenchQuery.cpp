@@ -22,6 +22,8 @@ namespace
 			return AI_REWorkbenchGameplayTags::Workbench_Basic;
 		case EWorkbenchType::Blacksmith:
 			return AI_REWorkbenchGameplayTags::Workbench_Blacksmith;
+		case EWorkbenchType::Smelter:
+			return AI_REWorkbenchGameplayTags::Workbench_Smelter;
 		case EWorkbenchType::Alchemy:
 			return AI_REWorkbenchGameplayTags::Workbench_Alchemy;
 		case EWorkbenchType::Cook:

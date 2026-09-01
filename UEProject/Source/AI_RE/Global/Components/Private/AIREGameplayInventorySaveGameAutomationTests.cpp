@@ -201,6 +201,7 @@ public:
 		Inventory.bPersistenceLoadComplete = true;
 		Inventory.bMakoInventoryInitialized = false;
 		Inventory.bShouldSeedFreshSharedStorage = true;
+		Inventory.bHasPlayerPersistenceState = false;
 		Inventory.PendingCompanionConfig.Reset();
 		Inventory.FinalizeFreshPersistenceStateIfPossible();
 	}
@@ -327,6 +328,23 @@ bool FAIREGameplayInventoryFreshStateActorOrderTest::RunTest(
 	TestTrue(
 		TEXT("Fresh persistence becomes ready before MAKO BeginPlay"),
 		Inventory->IsPersistenceReady());
+
+	TStrongObjectPtr<UAI_REPlayerInventoryComponent> PlayerInventory(
+		NewObject<UAI_REPlayerInventoryComponent>());
+	FInventoryItemStack& StartingItem =
+		PlayerInventory->Items.AddDefaulted_GetRef();
+	StartingItem.SlotIndex = 0;
+	StartingItem.ItemId = FName(TEXT("AIRE.Test.Stack2"));
+	StartingItem.Count = 2;
+	TestTrue(
+		TEXT("Fresh player can register after persistence became ready"),
+		FAIREGameplayInventoryPersistenceTestAccess::RegisterPlayerForRestore(
+			*Inventory,
+			*PlayerInventory));
+	TestEqual(
+		TEXT("Fresh player keeps its configured starting items"),
+		PlayerInventory->GetItemCount(StartingItem.ItemId),
+		2);
 
 	FAIREInventoryContainerSnapshot StorageBeforeCompanion;
 	TestTrue(

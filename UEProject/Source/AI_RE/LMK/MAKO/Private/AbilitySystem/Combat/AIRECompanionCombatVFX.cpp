@@ -1,6 +1,7 @@
 #include "AbilitySystem/Combat/AIRECompanionCombatVFX.h"
 
 #include "AIREBossEnemy.h"
+#include "AIREWildAnimalEnemy.h"
 #include "Equipment/AIRECompanionWeaponDefinitionDataAsset.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -78,11 +79,15 @@ void AIRECompanionCombatVFX::SpawnBossHitSlash(
 	const FHitResult& HitResult)
 {
 	const AAIREBossEnemy* Boss = Cast<AAIREBossEnemy>(TargetActor);
+	const AAIREWildAnimalEnemy* WildAnimal =
+		Cast<AAIREWildAnimalEnemy>(TargetActor);
 	UNiagaraSystem* SlashEffect = IsValid(WeaponDefinition)
 		? WeaponDefinition->BossHitSlashEffect.LoadSynchronous()
 		: nullptr;
 	UWorld* World = IsValid(SourceActor) ? SourceActor->GetWorld() : nullptr;
-	if (!IsValid(Boss) || !IsValid(SlashEffect) || !IsValid(World))
+	if ((!IsValid(Boss) && !IsValid(WildAnimal))
+		|| !IsValid(SlashEffect)
+		|| !IsValid(World))
 	{
 		return;
 	}

@@ -279,6 +279,25 @@ struct AI_RE_API FAIREPlayerWeaponEquipRequest
 };
 
 USTRUCT(BlueprintType)
+struct AI_RE_API FAIREPlayerWeaponUnequipRequest
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid SessionId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	FGuid MutationId;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int64 ExpectedPlayerRevision = INDEX_NONE;
+
+	/** INDEX_NONE selects the first empty Player inventory slot. */
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "AIRE|Inventory")
+	int32 DestinationSlotIndex = INDEX_NONE;
+};
+
+USTRUCT(BlueprintType)
 struct AI_RE_API FAIREInventoryEquipRequest
 {
 	GENERATED_BODY()

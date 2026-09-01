@@ -63,6 +63,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Scanner")
 	bool IsCombatScannerEnabled() const { return bIsCombatScanEnabled; }
 
+	UFUNCTION(BlueprintPure, Category = "Scanner|Combat")
+	AActor* GetCurrentCombatTarget() const { return CurrentCombatTarget.Get(); }
+
 
 protected:
 	AActor* ScanForward(
@@ -91,6 +94,11 @@ protected:
 	/** 전투 락온 타겟 체크 타이머 루프 */
 	void PerformCombatTargetCheck();
 
+	/** Selects one valid Enemy for the current explicit lock request. */
+	AActor* FindBestCombatTarget() const;
+
+	void ClearCombatTarget();
+
 	FTimerHandle InteractionScanTimerHandle;
 	FTimerHandle CombatScanTimerHandle;
 
@@ -110,6 +118,6 @@ private:
 	bool bInteractionOutlineVisible = true;
 
 	bool bIsCombatState = false;
-	bool bIsCombatScanEnabled = true;
+	bool bIsCombatScanEnabled = false;
 	TWeakObjectPtr<AActor> CurrentCombatTarget;
 };

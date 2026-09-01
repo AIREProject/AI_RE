@@ -5,6 +5,7 @@
 #include "AIRETitlePlayerController.generated.h"
 
 class UAIRETitleScreenWidget;
+class UAIREQuitConfirmationWidget;
 
 UCLASS(Abstract, Blueprintable)
 class AI_RE_API AAIRETitlePlayerController : public APlayerController
@@ -12,8 +13,13 @@ class AI_RE_API AAIRETitlePlayerController : public APlayerController
 	GENERATED_BODY()
 
 public:
+	AAIRETitlePlayerController();
+
 	void RequestStartGame();
 	void RequestExitGame();
+	void RequestDeleteGameplayProgress();
+	void ConfirmDeleteGameplayProgress();
+	void CancelDeleteGameplayProgress();
 
 protected:
 	virtual void BeginPlay() override;
@@ -21,6 +27,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Title|UI")
 	TSubclassOf<UAIRETitleScreenWidget> TitleScreenClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|Title|UI")
+	TSubclassOf<UAIREQuitConfirmationWidget>
+		DeleteSaveConfirmationWidgetClass;
 
 private:
 	void CreateTitleScreen();
@@ -30,6 +40,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAIRETitleScreenWidget> TitleScreen;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREQuitConfirmationWidget>
+		DeleteSaveConfirmationWidget;
 
 	FName GameplayLevelName = TEXT("/Game/Levels/MainLevel_Top");
 	bool bTransitionRequested = false;

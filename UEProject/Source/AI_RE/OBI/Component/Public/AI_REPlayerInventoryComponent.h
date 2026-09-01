@@ -61,6 +61,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool UseItem(int32 SlotIndex);
 
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Equipment")
+	bool TryUnequipWeapon(int32 DestinationSlotIndex = -1);
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItemSlot(int32 FromSlotIndex, int32 ToSlotIndex);
 
@@ -81,6 +84,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
 	FName GetEquippedWeaponItemId() const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Persistence")
+	bool IsPersistenceReadyForGameplay() const
+	{
+		return bPersistenceReadyForGameplay;
+	}
 
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory")
 	int32 MaxSlots = 30;
@@ -121,5 +130,5 @@ private:
 
 	int64 Revision = 0;
 	FName EquippedWeaponItemId;
-	bool bPersistenceReadyForGameplay = true;
+	bool bPersistenceReadyForGameplay = false;
 };

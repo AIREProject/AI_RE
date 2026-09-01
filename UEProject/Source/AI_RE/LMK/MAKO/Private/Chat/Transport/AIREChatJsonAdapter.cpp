@@ -38,8 +38,13 @@ namespace
 	};
 	const TCHAR* const GatherResourceCommand = TEXT("Command.GatherResource");
 	const TCHAR* const CraftItemCommand = TEXT("Command.CraftItem");
-	const TCHAR* const RequiredCraftWorkbench = TEXT("Workbench.Blacksmith");
-	const TCHAR* const RequiredGatherResource = TEXT("wood");
+
+	bool IsSupportedGatherResourceKind(const FString& Kind)
+	{
+		return Kind == TEXT("wood")
+			|| Kind == TEXT("stone")
+			|| Kind == TEXT("iron_ore");
+	}
 
 	FString GetPeriodName(const EAIREGameWorldPeriod Period)
 	{
@@ -556,6 +561,14 @@ namespace
 				{
 					OutCandidate.GatherResource = EAIREGatherResourceKind::Wood;
 				}
+				else if (Resource == TEXT("stone"))
+				{
+					OutCandidate.GatherResource = EAIREGatherResourceKind::Stone;
+				}
+				else if (Resource == TEXT("iron_ore"))
+				{
+					OutCandidate.GatherResource = EAIREGatherResourceKind::IronOre;
+				}
 				else
 				{
 					OutCandidate.bHasUnsupportedParameters = true;
@@ -999,12 +1012,10 @@ bool FAIREChatJsonAdapter::BuildInGameRequest(
 		WorldContext.NearbyResources.ContainsByPredicate(
 			[](const FAIREWorldContextNearbyResource& Resource)
 			{
-				return Resource.Kind == RequiredGatherResource
+				return IsSupportedGatherResourceKind(Resource.Kind)
 					&& Resource.Count > 0;
 			});
-	const bool bCanAdvertiseCraftItem =
-		bCraftItemRuntimeAvailable
-		&& WorldContext.AvailableWorkstations.Contains(RequiredCraftWorkbench);
+	const bool bCanAdvertiseCraftItem = bCraftItemRuntimeAvailable;
 	AllowedCommands.Reserve(
 		UE_ARRAY_COUNT(FixedAllowedCommands)
 			+ (bCanAdvertiseGatherResource ? 1 : 0)

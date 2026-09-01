@@ -84,7 +84,8 @@ enum class EAIREGatherResourceKind : uint8
 {
 	None,
 	Wood,
-	Stone
+	Stone,
+	IronOre
 };
 
 USTRUCT(BlueprintType)

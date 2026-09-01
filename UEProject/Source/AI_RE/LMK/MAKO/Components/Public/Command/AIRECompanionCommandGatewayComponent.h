@@ -57,6 +57,9 @@ private:
 	void HandleChatResponse(const FAIREChatResult& Result);
 
 	UFUNCTION()
+	void HandleChatFailure(const FAIREChatError& Error);
+
+	UFUNCTION()
 	void HandleWorkOrderChanged(
 		FAIRECompanionWorkOrderSnapshot PreviousSnapshot,
 		FAIRECompanionWorkOrderSnapshot CurrentSnapshot);
@@ -72,6 +75,12 @@ private:
 	bool TryExecuteCancelCurrent(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteAttack(const FAIRECommandCandidate& Candidate);
 	bool TryExecuteGatherResource(const FAIRECommandCandidate& Candidate);
+	bool TryExecuteLocalGatherFallback(
+		const FString& RequestId,
+		const FString& SubmittedUserMessage);
+	bool TryExecuteLocalCraftFallback(
+		const FString& RequestId,
+		const FString& SubmittedUserMessage);
 	bool TryExecuteCraftItem(const FAIRECommandCandidate& Candidate);
 	void RejectCandidate(
 		const FAIRECommandCandidate& Candidate,

@@ -5,6 +5,7 @@
 #include "AIRECompanionItemDefinitionDataAsset.generated.h"
 
 class UAIRECompanionWeaponDefinitionDataAsset;
+class UNiagaraSystem;
 
 UCLASS(BlueprintType)
 class AI_RE_API UAIRECompanionItemDefinitionDataAsset : public UAI_REItemDataAsset
@@ -29,6 +30,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Consumable", meta = (ClampMin = "0.0", UIMin = "0.0", Units = "s"))
 	float CooldownDuration = 5.0f;
+
+	/** Optional VFX spawned on the Target only after healing is applied successfully. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Consumable")
+	TSoftObjectPtr<UNiagaraSystem> HealingEffect;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "AIRE|Companion|Weapon")
 	TObjectPtr<UAIRECompanionWeaponDefinitionDataAsset> WeaponDefinition;

@@ -23,9 +23,6 @@ public:
 	UWidget* GetLogFocusTarget();
 
 protected:
-	virtual FReply NativeOnPreviewKeyDown(
-		const FGeometry& InGeometry,
-		const FKeyEvent& InKeyEvent) override;
 	virtual void NativeDestruct() override;
 
 private:

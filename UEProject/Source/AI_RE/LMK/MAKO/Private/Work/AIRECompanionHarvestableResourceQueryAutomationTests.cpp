@@ -48,8 +48,16 @@ namespace
 		Collision->SetBoxExtent(FVector(30.0f));
 		Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 		Collision->SetCollisionObjectType(ECC_WorldDynamic);
-		Collision->SetCollisionResponseToAllChannels(ECR_Overlap);
+		Collision->SetCollisionResponseToAllChannels(ECR_Block);
 		Collision->RegisterComponent();
+		UBoxComponent* SensorCollision = NewObject<UBoxComponent>(Resource);
+		Resource->AddInstanceComponent(SensorCollision);
+		SensorCollision->SetupAttachment(Resource->GetRootComponent());
+		SensorCollision->SetBoxExtent(FVector(60.0f));
+		SensorCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		SensorCollision->SetCollisionObjectType(ECC_WorldDynamic);
+		SensorCollision->SetCollisionResponseToAllChannels(ECR_Overlap);
+		SensorCollision->RegisterComponent();
 		return Resource;
 	}
 }
@@ -102,6 +110,13 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		SpawnParameters);
 	UAI_REItemDataAsset* RewardItem = NewObject<UAI_REItemDataAsset>(TestWorld);
 	RewardItem->ItemId = FName(TEXT("AIRE.Test.Wood"));
+	UAI_REItemDataAsset* RockRewardItem = NewObject<UAI_REItemDataAsset>(TestWorld);
+	RockRewardItem->ItemId = FName(TEXT("Rock"));
+	AAI_REHarvestableResourceActor* LegacyRock = SpawnResource(
+		*TestWorld,
+		FVector(75.0f, 0.0f, 0.0f),
+		AI_REHarvestGameplayTags::Resource_IronOre,
+		RockRewardItem);
 	AAI_REHarvestableResourceActor* WrongTag = SpawnResource(
 		*TestWorld,
 		FVector(50.0f, 0.0f, 0.0f),
@@ -140,6 +155,11 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		FVector(5050.0f, 0.0f, 0.0f),
 		AI_REHarvestGameplayTags::Resource_Wood,
 		RewardItem);
+	AAI_REHarvestableResourceActor* FallbackResource =
+		TestWorld->SpawnActor<AAI_REHarvestableResourceActor>(
+			FVector(30000.0f, 0.0f, 0.0f),
+			FRotator::ZeroRotator,
+			SpawnParameters);
 	AActor* FilterOrigin = TestWorld->SpawnActor<AActor>(
 		FVector::ZeroVector,
 		FRotator::ZeroRotator,
@@ -166,12 +186,14 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		AI_REHarvestGameplayTags::Resource_Wood,
 		RewardItem);
 	if (!TestNotNull(TEXT("Origin exists"), Origin)
+		|| !TestNotNull(TEXT("Legacy rock exists"), LegacyRock)
 		|| !TestNotNull(TEXT("Wrong tag exists"), WrongTag)
 		|| !TestNotNull(TEXT("Invalid reward exists"), InvalidReward)
 		|| !TestNotNull(TEXT("Destroyed resource exists"), Destroyed)
 		|| !TestNotNull(TEXT("Nearest wood exists"), NearestWood)
 		|| !TestNotNull(TEXT("Depleted resource exists"), Depleted)
 		|| !TestNotNull(TEXT("Outside resource exists"), Outside)
+		|| !TestNotNull(TEXT("Fallback resource exists"), FallbackResource)
 		|| !TestNotNull(TEXT("Filter origin exists"), FilterOrigin)
 		|| !TestNotNull(TEXT("Wood behind wrong tags exists"), WoodBehindWrongTags))
 	{
@@ -199,6 +221,11 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(
 			*Origin,
 			AI_REHarvestGameplayTags::Resource_Wood) == NearestWood);
+	TestTrue(
+		TEXT("Rock reward repairs the legacy rock tag for queries"),
+		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(
+			*Origin,
+			AI_REHarvestGameplayTags::Resource_Rock) == LegacyRock);
 	FVector HarvestInteractionLocation = FVector::ZeroVector;
 	TestTrue(
 		TEXT("Harvest interaction location is available"),
@@ -206,12 +233,25 @@ bool FAIRECompanionHarvestableResourceQueryAutomationTest::RunTest(
 			Origin->GetActorLocation(),
 			HarvestInteractionLocation));
 	TestTrue(
-		TEXT("Harvest interaction radius is independent of mesh collision bounds"),
+		TEXT("Harvest interaction uses the nearest blocking collision surface"),
 		FMath::IsNearlyEqual(
 			FVector::Dist2D(
 				NearestWood->GetActorLocation(),
 				HarvestInteractionLocation),
-			50.0));
+			30.0));
+	FVector FallbackInteractionLocation = FVector::ZeroVector;
+	TestTrue(
+		TEXT("Harvest interaction falls back when collision geometry is unavailable"),
+		FallbackResource->TryGetHarvestInteractionLocation(
+			FallbackResource->GetActorLocation() + FVector(-100.0f, 0.0f, 0.0f),
+			FallbackInteractionLocation));
+	TestTrue(
+		TEXT("Legacy fallback keeps the configured interaction radius"),
+		FMath::IsNearlyEqual(
+			FVector::Dist2D(
+				FallbackResource->GetActorLocation(),
+				FallbackInteractionLocation),
+			FallbackResource->HarvestInteractionRadius));
 	TestTrue(
 		TEXT("Tag filtering happens before the eight-resource cap"),
 		FAIRECompanionHarvestableResourceQuery::FindNearestCompatible(

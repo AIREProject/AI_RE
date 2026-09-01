@@ -7,6 +7,8 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 UCLASS()
 class AI_RE_API AAI_REItemActor : public AActor, public IAI_REInteractableInterface
@@ -22,6 +24,8 @@ public:
 	bool InitializeHarvestAutoPickup(
 		const FGuid& InDeliveryId,
 		AActor* InPreferredReceiver);
+
+	bool IsRuntimeDrop() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item")
 	TObjectPtr<class UAI_REItemDataAsset> ItemAsset;
@@ -44,6 +48,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<USphereComponent> SphereComponent;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|World Drop")
+	TObjectPtr<UNiagaraSystem> DropHighlightEffect;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> DropHighlightComponent;
 
 	UPROPERTY(
 		EditDefaultsOnly,
@@ -83,6 +93,7 @@ protected:
 private:
 	void TickWorldDropSettling(float DeltaSeconds);
 	void PollHarvestAutoPickup();
+	bool TryCollectForPlayer();
 	bool IsPreferredReceiverWithinRange() const;
 	void StartCompanionPickupPresentation(AActor& ReceiverActor);
 
@@ -104,4 +115,5 @@ private:
 	bool bWorldDropSettling = false;
 	bool bHarvestAutoPickupEnabled = false;
 	bool bPickupClaimed = false;
+	bool bRuntimeDrop = false;
 };

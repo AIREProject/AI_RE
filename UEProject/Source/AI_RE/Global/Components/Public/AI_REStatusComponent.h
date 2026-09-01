@@ -30,6 +30,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:	
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -48,6 +49,15 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "Status|Survival")
 	float RunMultiplier = 2.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status|Stamina")
+	float StaminaRecoveryDelay = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status|Stamina")
+	float StaminaRecoveryRate = 15.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status|Stamina")
+	float StaminaRecoveryInterval = 0.1f;
 
 	FTimerHandle SurvivalTimerHandle;
 
@@ -81,12 +91,22 @@ public:
 private:
 	void HandleSurvivalStats();
 	bool IsOwnerRunning() const;
+	void HandleStaminaChanged(const struct FOnAttributeChangeData& ChangeData);
+	void HandleHealthChanged(const struct FOnAttributeChangeData& ChangeData);
+	void StartStaminaRecovery();
+	void ApplyStaminaRecovery();
+	void StopStaminaRecovery();
 
 	// Gradual Recovery (HoT)
 	UPROPERTY()
 	TArray<FGradualRecovery> ActiveRecoveries;
 
 	FTimerHandle RecoveryTimerHandle;
+	FTimerHandle StaminaRecoveryDelayTimerHandle;
+	FTimerHandle StaminaRecoveryTimerHandle;
+	FDelegateHandle StaminaChangedDelegateHandle;
+	FDelegateHandle HealthChangedDelegateHandle;
+	TWeakObjectPtr<class UAbilitySystemComponent> CachedAbilitySystem;
 	
 	void ProcessGradualRecovery();
 };

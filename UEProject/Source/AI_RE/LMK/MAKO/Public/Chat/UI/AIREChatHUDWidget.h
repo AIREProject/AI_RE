@@ -28,6 +28,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "AIRE|Companion|Chat")
 	TArray<FString> GetVisibleResponseTexts() const;
+
+	/** Displays a trusted local MAKO line without creating a server request. */
+	UFUNCTION(BlueprintCallable, Category = "AIRE|Companion|Chat")
+	void ShowLocalCompanionMessage(const FString& Message);
 	void HandlePlayerMessageCommitted(const FString& String);
 	void CloseChatLog();
 
@@ -62,6 +66,7 @@ private:
 
 	UFUNCTION()
 	void HandleRuntimeChatResponse(const FAIREChatResult& Result);
+	void AddCompanionResponse(const FString& DisplayText);
 
 	UFUNCTION()
 	void HandleRuntimeChatFailure(const FAIREChatError& Error);

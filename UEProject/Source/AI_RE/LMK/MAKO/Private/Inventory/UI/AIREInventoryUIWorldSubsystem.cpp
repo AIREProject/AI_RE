@@ -6,12 +6,10 @@
 #include "AI_REPlayerController.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
-#include "Components/InputComponent.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
-#include "InputCoreTypes.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Inventory/UI/AIRECompanionInventoryPanelWidget.h"
 #include "Inventory/UI/AIREStorageInventoryPanelWidget.h"
@@ -91,7 +89,6 @@ void UAIREInventoryUIWorldSubsystem::OpenStorageInventory(
 	Interactor->OnDestroyed.AddUniqueDynamic(
 		this,
 		&UAIREInventoryUIWorldSubsystem::HandleTrackedActorDestroyed);
-	RegisterEscapeInput(PlayerController);
 	ApplyInventoryInput(PlayerController);
 }
 
@@ -174,7 +171,6 @@ void UAIREInventoryUIWorldSubsystem::OpenCompanionInventory(
 	Interactor->OnDestroyed.AddUniqueDynamic(
 		this,
 		&UAIREInventoryUIWorldSubsystem::HandleTrackedActorDestroyed);
-	RegisterEscapeInput(PlayerController);
 	ApplyInventoryInput(PlayerController);
 }
 
@@ -209,55 +205,11 @@ void UAIREInventoryUIWorldSubsystem::CloseInventoryUI()
 	}
 
 	RestoreGameInput();
-	UnregisterEscapeInput();
 }
 
 bool UAIREInventoryUIWorldSubsystem::IsInventoryUIOpen() const
 {
 	return IsValid(StoragePanel) || IsValid(CompanionPanel);
-}
-
-void UAIREInventoryUIWorldSubsystem::RegisterEscapeInput(
-	APlayerController* PlayerController)
-{
-	if (!IsValid(PlayerController) || IsValid(EscapeInputComponent))
-	{
-		return;
-	}
-
-	EscapeInputComponent = NewObject<UInputComponent>(
-		PlayerController,
-		TEXT("AIREInventoryUIInputComponent"));
-	if (!IsValid(EscapeInputComponent))
-	{
-		return;
-	}
-
-	EscapeInputComponent->Priority = 130;
-	EscapeInputComponent->bBlockInput = false;
-	EscapeInputComponent->RegisterComponent();
-	FInputKeyBinding& EscapeBinding = EscapeInputComponent->BindKey(
-		EKeys::Escape,
-		IE_Pressed,
-		this,
-		&UAIREInventoryUIWorldSubsystem::HandleEscapeInput);
-	EscapeBinding.bConsumeInput = true;
-	PlayerController->PushInputComponent(EscapeInputComponent);
-	InputPlayerController = PlayerController;
-}
-
-void UAIREInventoryUIWorldSubsystem::UnregisterEscapeInput()
-{
-	if (InputPlayerController.IsValid() && IsValid(EscapeInputComponent))
-	{
-		InputPlayerController->PopInputComponent(EscapeInputComponent);
-	}
-	if (IsValid(EscapeInputComponent))
-	{
-		EscapeInputComponent->DestroyComponent();
-		EscapeInputComponent = nullptr;
-	}
-	InputPlayerController.Reset();
 }
 
 void UAIREInventoryUIWorldSubsystem::ApplyInventoryInput(
@@ -267,6 +219,8 @@ void UAIREInventoryUIWorldSubsystem::ApplyInventoryInput(
 	{
 		return;
 	}
+
+	InputPlayerController = PlayerController;
 
 	if (!bOwnsInputSuppression)
 	{
@@ -303,11 +257,7 @@ void UAIREInventoryUIWorldSubsystem::RestoreGameInput()
 	FInputModeGameOnly InputMode;
 	PlayerController->SetInputMode(InputMode);
 	PlayerController->SetShowMouseCursor(bPreviousShowMouseCursor);
-}
-
-void UAIREInventoryUIWorldSubsystem::HandleEscapeInput()
-{
-	CloseInventoryUI();
+	InputPlayerController.Reset();
 }
 
 void UAIREInventoryUIWorldSubsystem::HandleTrackedActorDestroyed(

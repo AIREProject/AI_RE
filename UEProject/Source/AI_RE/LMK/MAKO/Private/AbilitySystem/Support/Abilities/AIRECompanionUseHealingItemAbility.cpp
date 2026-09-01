@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "Components/SceneComponent.h"
 #include "AbilitySystem/Core/AIRECompanionGameplayTags.h"
 #include "AbilitySystem/Support/Effects/AIRECompanionHealingGameplayEffect.h"
 #include "AbilitySystem/Support/Effects/AIRECompanionSupportCooldownGameplayEffect.h"
@@ -9,6 +10,8 @@
 #include "Core/AIRECompanionConfigDataAsset.h"
 #include "Inventory/AIRECompanionInventoryComponent.h"
 #include "Inventory/AIRECompanionItemDefinitionDataAsset.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "LocalAI/Support/AIREHealingTargetInterface.h"
 #include "Support/AIRECompanionSupportComponent.h"
 #include "Engine/World.h"
@@ -297,6 +300,27 @@ void UAIRECompanionUseHealingItemAbility::ApplyHealingItem()
 		Support->CancelSupportRequest();
 		FinishAbility(true);
 		return;
+	}
+
+	UNiagaraSystem* HealingEffect = HealingItem->HealingEffect.LoadSynchronous();
+	USceneComponent* TargetRootComponent = TargetActor->GetRootComponent();
+	if (IsValid(HealingEffect) && IsValid(TargetRootComponent))
+	{
+		FFXSystemSpawnParameters SpawnParams;
+		SpawnParams.SystemTemplate = HealingEffect;
+		SpawnParams.AttachToComponent = TargetRootComponent;
+		SpawnParams.LocationType = EAttachLocation::KeepRelativeOffset;
+		SpawnParams.bAutoDestroy = true;
+		UNiagaraFunctionLibrary::SpawnSystemAttachedWithParams(SpawnParams);
+	}
+	else
+	{
+		UE_LOG(
+			LogAIRECompanionHealingItem,
+			Warning,
+			TEXT("Companion healing succeeded without its optional VFX. Target=%s ItemId=%s"),
+			*GetNameSafe(TargetActor),
+			*ActiveConfig->DefaultHealingItemId.ToString());
 	}
 
 	Support->CompleteSupportRequest(TargetActor);

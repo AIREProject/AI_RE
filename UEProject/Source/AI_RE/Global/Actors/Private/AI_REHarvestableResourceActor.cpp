@@ -1,4 +1,5 @@
 #include "AI_REHarvestableResourceActor.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 // Component 헤더 경로는 프로젝트 설정에 맞게 조정될 수 있습니다.
 #include "AI_REHarvestableResourceComponent.h" 
@@ -29,8 +30,54 @@ bool AAI_REHarvestableResourceActor::TryGetHarvestInteractionLocation(
 	const FVector& FromLocation,
 	FVector& OutInteractionLocation) const
 {
-	if (FromLocation.ContainsNaN()
-		|| !FMath::IsFinite(HarvestInteractionRadius)
+	if (FromLocation.ContainsNaN())
+	{
+		return false;
+	}
+
+	TInlineComponentArray<UPrimitiveComponent*> PrimitiveComponents(this);
+	double ClosestDistanceSquared = TNumericLimits<double>::Max();
+	bool bFoundCollisionSurface = false;
+	for (const UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+	{
+		// Overlap-only sensors do not define the surface that blocks MAKO's approach.
+		if (!IsValid(PrimitiveComponent)
+			|| PrimitiveComponent->GetCollisionEnabled() == ECollisionEnabled::NoCollision
+			|| PrimitiveComponent->GetCollisionResponseToChannel(ECC_Pawn)
+				!= ECR_Block)
+		{
+			continue;
+		}
+
+		FVector SurfaceLocation;
+		const float SurfaceDistance =
+			PrimitiveComponent->GetClosestPointOnCollision(
+				FromLocation,
+				SurfaceLocation);
+		if (!FMath::IsFinite(SurfaceDistance)
+			|| SurfaceDistance < 0.0f
+			|| SurfaceLocation.ContainsNaN())
+		{
+			continue;
+		}
+
+		const double DistanceSquared = FVector::DistSquared(
+			FromLocation,
+			SurfaceLocation);
+		if (FMath::IsFinite(DistanceSquared)
+			&& DistanceSquared < ClosestDistanceSquared)
+		{
+			ClosestDistanceSquared = DistanceSquared;
+			OutInteractionLocation = SurfaceLocation;
+			bFoundCollisionSurface = true;
+		}
+	}
+	if (bFoundCollisionSurface)
+	{
+		return true;
+	}
+
+	if (!FMath::IsFinite(HarvestInteractionRadius)
 		|| HarvestInteractionRadius < 0.0f)
 	{
 		return false;

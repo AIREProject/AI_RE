@@ -19,6 +19,10 @@ class UAIRECompanionStatusWidget;
 class UAIRECompanionInventoryPanelWidget;
 class UAIREStorageInventoryPanelWidget;
 class UAIREBossHUDWidget;
+class UAIREGameOverWidget;
+class UAIREQuitConfirmationWidget;
+class UAIRETargetLockMarkerWidget;
+class UAI_RETargetScannerComponent;
 class AAIRECompanionCharacter;
 class AAIREBossEnemy;
 class AActor;
@@ -29,7 +33,9 @@ enum class EAIRELocalUIInputMode : uint8
 	Gameplay,
 	ChatInput,
 	ChatLog,
-	PolicySelection
+	PolicySelection,
+	QuitConfirmation,
+	GameOver
 };
 
 /**
@@ -51,6 +57,19 @@ public:
 		GetStorageInventoryPanelClass() const;
 	TSubclassOf<UAIRECompanionInventoryPanelWidget>
 		GetCompanionInventoryPanelClass() const;
+
+	void HandlePlayerDeath();
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|UI|Game Over")
+	void ReturnToVillageAfterDeath();
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|UI|Travel")
+	void ConfirmExitGame();
+
+	UFUNCTION(BlueprintCallable, Category = "AIRE|UI|Quit")
+	void CancelExitConfirmation();
+
+	bool CanProcessGameplayActionInput() const;
 	
 protected:
 
@@ -91,6 +110,7 @@ protected:
 	bool ShouldUseTouchControls() const;
 
 	void HandleAggroSwapInput();
+	void HandleEscapeInput();
 	void HandleChatEnterInput();
 	void HandleChatLogInput();
 	void HandlePolicyInputStarted();
@@ -98,6 +118,7 @@ protected:
 	void HandlePolicyInputCanceled();
 	void HandleChatUIStateChanged();
 	void CreateLocalHUD();
+	void TryShowDeathReturnGuidance();
 	void RefreshPlayerHUD();
 	void FindAndBindCompanion();
 	void BindCompanion(AAIRECompanionCharacter* Companion);
@@ -107,10 +128,16 @@ protected:
 	void UnbindBoss();
 	void HandleActorSpawned(AActor* SpawnedActor);
 	void ShutdownLocalHUD();
+	void OpenExitConfirmation();
+	void BindPlayerTargetScanner(APawn* PlayerPawn);
+	void UnbindPlayerTargetScanner();
 	void ApplyLocalUIInputMode(
 		EAIRELocalUIInputMode NewMode,
 		UWidget* FocusTarget = nullptr);
 	bool IsCharacterModalUIOpen() const;
+
+	UFUNCTION()
+	void HandlePlayerCombatStateChanged(bool bIsCombat, AActor* CombatTarget);
 
 	UFUNCTION()
 	void HandleCompanionDestroyed(AActor* DestroyedActor);
@@ -129,6 +156,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Input")
 	TObjectPtr<UInputAction> CompanionPolicyAction;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Input")
+	TObjectPtr<UInputAction> EscapeAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
 	TSubclassOf<UAI_REMainUI> MainHUDClass;
@@ -154,6 +184,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
 	TSubclassOf<UAIRECompanionInventoryPanelWidget> CompanionInventoryPanelClass;
 
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIREGameOverWidget> GameOverWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIREQuitConfirmationWidget> QuitConfirmationWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "AIRE|UI|Widgets")
+	TSubclassOf<UAIRETargetLockMarkerWidget> TargetLockMarkerWidgetClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UAI_REMainUI> MainHUD;
 
@@ -172,13 +211,25 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UAIRECompanionPolicyPanelWidget> CompanionPolicyWidget;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREGameOverWidget> GameOverWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAIREQuitConfirmationWidget> QuitConfirmationWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAIRETargetLockMarkerWidget> TargetLockMarkerWidget;
+
 	TWeakObjectPtr<AAIRECompanionCharacter> BoundCompanion;
 	TWeakObjectPtr<AAIREBossEnemy> BoundBoss;
+	TWeakObjectPtr<UAI_RETargetScannerComponent> BoundTargetScanner;
 	FDelegateHandle ActorSpawnedDelegateHandle;
 	EAIRELocalUIInputMode LocalUIInputMode =
 		EAIRELocalUIInputMode::Gameplay;
 	bool bOwnsUIInputSuppression = false;
 	bool bPreviousShowMouseCursor = false;
+	bool bWasGamePausedBeforeQuitConfirmation = false;
+	FTimerHandle DeathReturnGuidanceTimer;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AIRE|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAIREAggroSwapComponent> AggroSwapComponent;

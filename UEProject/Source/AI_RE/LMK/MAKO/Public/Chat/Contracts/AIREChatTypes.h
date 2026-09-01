@@ -89,6 +89,14 @@ struct AI_RE_API FAIREChatResult
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	FString DisplayText;
 
+	/** Unmodified server display text retained for local diagnostics only. */
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat|Diagnostics")
+	FString RawDisplayText;
+
+	/** Local-only correlation used by compatibility and presentation guards. */
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
+	FString SubmittedUserMessage;
+
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	TArray<FAIRECommandCandidate> CommandCandidates;
 };
@@ -106,6 +114,10 @@ struct AI_RE_API FAIREChatError
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	FString Message;
+
+	/** Local-only correlation used by compatibility fallbacks. */
+	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
+	FString SubmittedUserMessage;
 
 	UPROPERTY(BlueprintReadOnly, Category = "AIRE|Companion|Chat")
 	bool bRetryable = false;

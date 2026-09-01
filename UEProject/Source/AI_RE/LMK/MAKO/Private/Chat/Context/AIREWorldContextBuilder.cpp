@@ -2,6 +2,7 @@
 
 #include "AIREGameplayInventorySubsystem.h"
 #include "AIREGameplayInventoryTypes.h"
+#include "AI_REHarvestGameplayTags.h"
 #include "Core/AIRECompanionAIController.h"
 #include "Core/AIRECompanionCharacter.h"
 #include "Engine/GameInstance.h"
@@ -263,16 +264,31 @@ FAIREWorldContextV1 FAIREWorldContextBuilder::Build(
 	FAIRECompanionWorkbenchQuery::GetNearbyCapabilityIds(
 		*Companion,
 		Context.AvailableWorkstations);
-	int32 NearbyWoodCount = 0;
-	if (FAIRECompanionHarvestableResourceQuery::GetNearbyWoodCount(
-			*Companion,
-			NearbyWoodCount)
-		&& NearbyWoodCount > 0)
+	struct FNearbyResourceDefinition
 	{
-		FAIREWorldContextNearbyResource& Resource =
-			Context.NearbyResources.AddDefaulted_GetRef();
-		Resource.Kind = TEXT("wood");
-		Resource.Count = NearbyWoodCount;
+		const TCHAR* Kind;
+		FGameplayTag Tag;
+	};
+	const FNearbyResourceDefinition ResourceDefinitions[] =
+	{
+		{TEXT("wood"), AI_REHarvestGameplayTags::Resource_Wood},
+		{TEXT("stone"), AI_REHarvestGameplayTags::Resource_Rock},
+		{TEXT("iron_ore"), AI_REHarvestGameplayTags::Resource_IronOre},
+	};
+	for (const FNearbyResourceDefinition& Definition : ResourceDefinitions)
+	{
+		int32 NearbyCount = 0;
+		if (FAIRECompanionHarvestableResourceQuery::GetNearbyResourceCount(
+				*Companion,
+				Definition.Tag,
+				NearbyCount)
+			&& NearbyCount > 0)
+		{
+			FAIREWorldContextNearbyResource& Resource =
+				Context.NearbyResources.AddDefaulted_GetRef();
+			Resource.Kind = Definition.Kind;
+			Resource.Count = NearbyCount;
+		}
 	}
 	return Context;
 }

@@ -1,6 +1,8 @@
 #include "AIRELevelTravelPortal.h"
 
+#include "AIRELevelTransitionSubsystem.h"
 #include "Components/BoxComponent.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraComponent.h"
@@ -32,10 +34,39 @@ AAIRELevelTravelPortal::AAIRELevelTravelPortal()
 	PortalEffect->SetAutoActivate(true);
 }
 
+void AAIRELevelTravelPortal::BeginPlay()
+{
+	Super::BeginPlay();
+	if (!DestinationLevel.IsNull())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAIRELevelTransitionSubsystem* Transition =
+				GameInstance->GetSubsystem<UAIRELevelTransitionSubsystem>())
+			{
+				Transition->PreloadLevel(
+					DestinationLevel.ToSoftObjectPath().GetLongPackageFName());
+			}
+		}
+	}
+}
+
 void AAIRELevelTravelPortal::EndPlay(
 	const EEndPlayReason::Type EndPlayReason)
 {
 	ClearHoldTimer();
+	if (!bTravelRequested && !DestinationLevel.IsNull())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAIRELevelTransitionSubsystem* Transition =
+				GameInstance->GetSubsystem<UAIRELevelTransitionSubsystem>())
+			{
+				Transition->CancelPreload(
+					DestinationLevel.ToSoftObjectPath().GetLongPackageFName());
+			}
+		}
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -56,6 +87,18 @@ void AAIRELevelTravelPortal::HandleTriggerBeginOverlap(
 	if (bTravelRequested || !IsLocalPlayerPawn(OtherActor))
 	{
 		return;
+	}
+	if (!DestinationLevel.IsNull())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAIRELevelTransitionSubsystem* Transition =
+				GameInstance->GetSubsystem<UAIRELevelTransitionSubsystem>())
+			{
+				Transition->PreloadLevel(
+					DestinationLevel.ToSoftObjectPath().GetLongPackageFName());
+			}
+		}
 	}
 
 	if (HoldDuration <= 0.0f)
@@ -95,6 +138,15 @@ void AAIRELevelTravelPortal::HandleTriggerEndOverlap(
 	if (!bTravelRequested && IsLocalPlayerPawn(OtherActor))
 	{
 		ClearHoldTimer();
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAIRELevelTransitionSubsystem* Transition =
+				GameInstance->GetSubsystem<UAIRELevelTransitionSubsystem>())
+			{
+				Transition->CancelPreload(
+					DestinationLevel.ToSoftObjectPath().GetLongPackageFName());
+			}
+		}
 	}
 }
 
@@ -123,12 +175,16 @@ void AAIRELevelTravelPortal::HandleHoldCompleted()
 		return;
 	}
 
-	bTravelRequested = true;
-	UGameplayStatics::OpenLevelBySoftObjectPtr(
-		this,
-		DestinationLevel,
-		true,
-		FString());
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UAIRELevelTransitionSubsystem* Transition =
+			GameInstance->GetSubsystem<UAIRELevelTransitionSubsystem>())
+		{
+			bTravelRequested = Transition->RequestTravel(
+				this,
+				DestinationLevel.ToSoftObjectPath().GetLongPackageFName());
+		}
+	}
 }
 
 void AAIRELevelTravelPortal::ClearHoldTimer()

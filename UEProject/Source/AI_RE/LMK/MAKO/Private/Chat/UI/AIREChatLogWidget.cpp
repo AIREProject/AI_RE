@@ -6,7 +6,6 @@
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "InputCoreTypes.h"
 #include "UObject/SoftObjectPath.h"
 
 namespace
@@ -101,20 +100,6 @@ void UAIREChatLogWidget::RefreshEntries(
 UWidget* UAIREChatLogWidget::GetLogFocusTarget()
 {
 	return this;
-}
-
-FReply UAIREChatLogWidget::NativeOnPreviewKeyDown(
-	const FGeometry& InGeometry,
-	const FKeyEvent& InKeyEvent)
-{
-	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Escape && IsValid(OwnerHUD))
-	{
-		OwnerHUD->CloseChatLog();
-		return FReply::Handled();
-	}
-
-	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void UAIREChatLogWidget::NativeDestruct()

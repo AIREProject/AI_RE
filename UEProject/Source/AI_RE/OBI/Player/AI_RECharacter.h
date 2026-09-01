@@ -178,6 +178,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Input")
 	void ToggleInventory();
 
+	UFUNCTION(BlueprintCallable, Category="UI")
+	void CloseInventoryUI();
+
+	/** Closes the highest-priority Character-owned modal without toggling it open. */
+	bool TryCloseActiveModalUI();
+
 	UFUNCTION(BlueprintCallable, Category="Input|QuickMenu")
 	void UseQuickSlot(int32 SlotIndex);
 	
@@ -276,6 +282,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "UI")
 	bool IsCraftingUIOpen() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool IsDead() const { return bIsDead; }
 
 	
 	// FOCEINLINE -> Function Call 방식이 아니라 사용 위치에서 코드를 받아 붙여넣어(inline) 실행

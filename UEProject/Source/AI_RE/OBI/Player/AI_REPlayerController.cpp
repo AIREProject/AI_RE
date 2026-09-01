@@ -6,8 +6,18 @@
 #include "AIREAggroSwapComponent.h"
 #include "AIREBossEnemy.h"
 #include "AI_RECharacter.h"
+#include "AI_REItemSubsystem.h"
 #include "AI_REMainUI.h"
+#include "AI_REPlayerCombatComponent.h"
+#include "AI_REPlayerInventoryComponent.h"
 #include "AIREBossHUDWidget.h"
+#include "AIREGameOverWidget.h"
+#include "AIREGameplayGuidanceSubsystem.h"
+#include "AIREGameplayInventorySubsystem.h"
+#include "AIRELevelTransitionSubsystem.h"
+#include "AIREQuitConfirmationWidget.h"
+#include "AIRETargetLockMarkerWidget.h"
+#include "AI_RETargetScannerComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Chat/AIRECompanionChatComponent.h"
 #include "Chat/UI/AIREChatHUDWidget.h"
@@ -21,8 +31,10 @@
 #include "EngineUtils.h"
 #include "InputMappingContext.h"
 #include "Inventory/UI/AIRECompanionInventoryPanelWidget.h"
+#include "Inventory/UI/AIREInventoryUIWorldSubsystem.h"
 #include "Inventory/UI/AIREStorageInventoryPanelWidget.h"
 #include "LocalAI/UI/AIRECompanionPolicyPanelWidget.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UI/AIRECompanionStatusWidget.h"
 #include "UObject/ConstructorHelpers.h"
@@ -36,6 +48,9 @@ constexpr int32 BossHUDZOrder = 20;
 constexpr int32 ChatHUDZOrder = 100;
 constexpr int32 ChatLogZOrder = 110;
 constexpr int32 PolicyHUDZOrder = 120;
+constexpr int32 TargetLockMarkerZOrder = 150;
+constexpr int32 QuitConfirmationZOrder = 190;
+constexpr int32 GameOverZOrder = 200;
 }
 
 AAI_REPlayerController::AAI_REPlayerController()
@@ -65,6 +80,14 @@ AAI_REPlayerController::AAI_REPlayerController()
 	if (BossHUDWidgetFinder.Succeeded())
 	{
 		BossHUDClass = BossHUDWidgetFinder.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<UAIREQuitConfirmationWidget>
+		QuitConfirmationWidgetFinder(
+			TEXT("/Game/Work/Global/UI/Quit/WBP_AIREQuitConfirmation"));
+	if (QuitConfirmationWidgetFinder.Succeeded())
+	{
+		QuitConfirmationWidgetClass = QuitConfirmationWidgetFinder.Class;
 	}
 }
 
@@ -108,6 +131,13 @@ void AAI_REPlayerController::BeginPlay()
 	}
 
 	CreateLocalHUD();
+	TryShowDeathReturnGuidance();
+	if (UAIRELevelTransitionSubsystem* Transition =
+		GetGameInstance()->GetSubsystem<UAIRELevelTransitionSubsystem>())
+	{
+		Transition->PreloadLevel(FName(TEXT("/Game/Levels/AIRE_TitleLevel")));
+	}
+	BindPlayerTargetScanner(GetPawn());
 	RefreshPlayerHUD();
 	FindAndBindCompanion();
 	FindAndBindBoss();
@@ -127,6 +157,7 @@ void AAI_REPlayerController::BeginPlay()
 
 void AAI_REPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(DeathReturnGuidanceTimer);
 	if (ActorSpawnedDelegateHandle.IsValid())
 	{
 		if (UWorld* World = GetWorld())
@@ -146,6 +177,7 @@ void AAI_REPlayerController::OnPossess(APawn* InPawn)
 
 	if (IsLocalPlayerController())
 	{
+		BindPlayerTargetScanner(InPawn);
 		CreateLocalHUD();
 		RefreshPlayerHUD();
 	}
@@ -157,6 +189,7 @@ void AAI_REPlayerController::AcknowledgePossession(APawn* InPawn)
 
 	if (IsLocalPlayerController())
 	{
+		BindPlayerTargetScanner(InPawn);
 		CreateLocalHUD();
 		RefreshPlayerHUD();
 	}
@@ -176,6 +209,15 @@ void AAI_REPlayerController::SetupInputComponent()
 				ETriggerEvent::Started,
 				this,
 				&AAI_REPlayerController::HandleAggroSwapInput);
+		}
+
+		if (IsValid(EscapeAction))
+		{
+			EnhancedInput->BindAction(
+				EscapeAction,
+				ETriggerEvent::Started,
+				this,
+				&AAI_REPlayerController::HandleEscapeInput);
 		}
 
 		if (IsValid(ChatEnterAction))
@@ -263,9 +305,64 @@ void AAI_REPlayerController::HandleAggroSwapInput()
 	}
 }
 
+void AAI_REPlayerController::HandleEscapeInput()
+{
+	if (!IsLocalPlayerController() || IsValid(GameOverWidget))
+	{
+		return;
+	}
+
+	if (IsValid(QuitConfirmationWidget))
+	{
+		CancelExitConfirmation();
+		return;
+	}
+
+	if (AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn()))
+	{
+		if (PlayerCharacter->TryCloseActiveModalUI())
+		{
+			return;
+		}
+	}
+	if (UWorld* World = GetWorld())
+	{
+		if (UAIREInventoryUIWorldSubsystem* InventoryUISubsystem =
+			World->GetSubsystem<UAIREInventoryUIWorldSubsystem>();
+			IsValid(InventoryUISubsystem)
+			&& InventoryUISubsystem->IsInventoryUIOpen())
+		{
+			InventoryUISubsystem->CloseInventoryUI();
+			return;
+		}
+	}
+
+	if (IsValid(CompanionPolicyWidget)
+		&& CompanionPolicyWidget->IsPanelOpen())
+	{
+		CompanionPolicyWidget->SetPanelOpen(false);
+		ApplyLocalUIInputMode(EAIRELocalUIInputMode::Gameplay);
+		return;
+	}
+
+	if (IsValid(ChatHUD)
+		&& (ChatHUD->IsChatInputOpen() || ChatHUD->IsChatLogOpen()))
+	{
+		ChatHUD->CloseAllChatUI();
+		ApplyLocalUIInputMode(EAIRELocalUIInputMode::Gameplay);
+		return;
+	}
+
+	OpenExitConfirmation();
+}
+
 void AAI_REPlayerController::HandleChatEnterInput()
 {
-	if (!IsValid(ChatHUD) || IsCharacterModalUIOpen() || ChatHUD->IsChatInputOpen())
+	if (LocalUIInputMode == EAIRELocalUIInputMode::QuitConfirmation
+		|| LocalUIInputMode == EAIRELocalUIInputMode::GameOver
+		|| !IsValid(ChatHUD)
+		|| IsCharacterModalUIOpen()
+		|| ChatHUD->IsChatInputOpen())
 	{
 		return;
 	}
@@ -280,7 +377,10 @@ void AAI_REPlayerController::HandleChatEnterInput()
 
 void AAI_REPlayerController::HandleChatLogInput()
 {
-	if (!IsValid(ChatHUD) || IsCharacterModalUIOpen())
+	if (LocalUIInputMode == EAIRELocalUIInputMode::QuitConfirmation
+		|| LocalUIInputMode == EAIRELocalUIInputMode::GameOver
+		|| !IsValid(ChatHUD)
+		|| IsCharacterModalUIOpen())
 	{
 		return;
 	}
@@ -295,7 +395,10 @@ void AAI_REPlayerController::HandleChatLogInput()
 
 void AAI_REPlayerController::HandlePolicyInputStarted()
 {
-	if (!IsValid(CompanionPolicyWidget) || IsCharacterModalUIOpen())
+	if (LocalUIInputMode == EAIRELocalUIInputMode::QuitConfirmation
+		|| LocalUIInputMode == EAIRELocalUIInputMode::GameOver
+		|| !IsValid(CompanionPolicyWidget)
+		|| IsCharacterModalUIOpen())
 	{
 		return;
 	}
@@ -444,6 +547,21 @@ void AAI_REPlayerController::CreateLocalHUD()
 			CompanionPolicyWidget->SetPanelOpen(false);
 		}
 	}
+
+	if (!IsValid(TargetLockMarkerWidget) && TargetLockMarkerWidgetClass)
+	{
+		TargetLockMarkerWidget = CreateWidget<UAIRETargetLockMarkerWidget>(
+			this,
+			TargetLockMarkerWidgetClass);
+		if (IsValid(TargetLockMarkerWidget))
+		{
+			TargetLockMarkerWidget->AddToPlayerScreen(TargetLockMarkerZOrder);
+			TargetLockMarkerWidget->SetLockedTarget(
+				BoundTargetScanner.IsValid()
+					? BoundTargetScanner->GetCurrentCombatTarget()
+					: nullptr);
+		}
+	}
 }
 
 void AAI_REPlayerController::RefreshPlayerHUD()
@@ -456,6 +574,286 @@ void AAI_REPlayerController::RefreshPlayerHUD()
 	AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn());
 	MainHUD->InitializeHUD(
 		IsValid(PlayerCharacter) ? PlayerCharacter->GetStatusComponent().Get() : nullptr);
+}
+
+void AAI_REPlayerController::HandlePlayerDeath()
+{
+	if (!IsLocalPlayerController() || IsValid(GameOverWidget))
+	{
+		return;
+	}
+	if (IsValid(QuitConfirmationWidget))
+	{
+		CancelExitConfirmation();
+	}
+	if (AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn()))
+	{
+		PlayerCharacter->TryCloseActiveModalUI();
+	}
+	if (IsValid(ChatHUD))
+	{
+		ChatHUD->CloseAllChatUI();
+	}
+	if (IsValid(CompanionPolicyWidget))
+	{
+		CompanionPolicyWidget->SetPanelOpen(false);
+	}
+	if (!GameOverWidgetClass)
+	{
+		UE_LOG(LogAI_RE, Error, TEXT("GameOverWidgetClass is not configured."));
+		return;
+	}
+
+	GameOverWidget = CreateWidget<UAIREGameOverWidget>(this, GameOverWidgetClass);
+	if (!IsValid(GameOverWidget))
+	{
+		UE_LOG(LogAI_RE, Error, TEXT("Could not create the game-over widget."));
+		return;
+	}
+	GameOverWidget->AddToPlayerScreen(GameOverZOrder);
+	ApplyLocalUIInputMode(
+		EAIRELocalUIInputMode::GameOver,
+		GameOverWidget->GetInitialFocusWidget());
+}
+
+void AAI_REPlayerController::ReturnToVillageAfterDeath()
+{
+	if (IsLocalPlayerController())
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UAIREGameplayGuidanceSubsystem* Guidance =
+				GameInstance->GetSubsystem<UAIREGameplayGuidanceSubsystem>())
+			{
+				Guidance->QueueDeathReturnGuidance();
+			}
+		}
+		if (UAIRELevelTransitionSubsystem* Transition =
+			GetGameInstance()->GetSubsystem<UAIRELevelTransitionSubsystem>())
+		{
+			Transition->RequestTravel(
+				this, FName(TEXT("/Game/Levels/MainLevel_Top")));
+		}
+	}
+}
+
+void AAI_REPlayerController::TryShowDeathReturnGuidance()
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	UAIREGameplayGuidanceSubsystem* Guidance = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREGameplayGuidanceSubsystem>()
+		: nullptr;
+	UAIREGameplayInventorySubsystem* InventorySubsystem = IsValid(GameInstance)
+		? GameInstance->GetSubsystem<UAIREGameplayInventorySubsystem>()
+		: nullptr;
+	AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn());
+	UAI_REPlayerInventoryComponent* PlayerInventory = IsValid(PlayerCharacter)
+		? PlayerCharacter->GetInventoryComponent()
+		: nullptr;
+
+	if (!IsValid(Guidance) || !IsValid(InventorySubsystem)
+		|| !InventorySubsystem->IsPersistenceReady()
+		|| !IsValid(ChatHUD) || !IsValid(PlayerInventory)
+		|| !PlayerInventory->IsPersistenceReadyForGameplay())
+	{
+		GetWorldTimerManager().SetTimer(
+			DeathReturnGuidanceTimer,
+			this,
+			&AAI_REPlayerController::TryShowDeathReturnGuidance,
+			0.1f,
+			false);
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(DeathReturnGuidanceTimer);
+	if (!Guidance->ConsumeDeathReturnGuidance())
+	{
+		return;
+	}
+
+	UAI_REPlayerCombatComponent* PlayerCombat =
+		PlayerCharacter->GetCombatComponent();
+	bool bHasWeapon = !PlayerInventory->GetEquippedWeaponItemId().IsNone()
+		|| (IsValid(PlayerCombat)
+			&& IsValid(PlayerCombat->EquippedWeapon)
+			&& PlayerCombat->EquippedWeapon
+				!= PlayerCombat->DefaultUnarmedWeapon);
+	if (!bHasWeapon)
+	{
+		if (UAI_REItemSubsystem* ItemSubsystem =
+			GameInstance->GetSubsystem<UAI_REItemSubsystem>())
+		{
+			for (const FInventoryItemStack& Stack : PlayerInventory->Items)
+			{
+				const UAI_REItemDataAsset* Item =
+					ItemSubsystem->GetItemDataAsset(Stack.ItemId);
+				if (IsValid(Item) && Item->ItemType == EAI_REItemType::Weapon)
+				{
+					bHasWeapon = true;
+					break;
+				}
+			}
+		}
+	}
+
+	ChatHUD->ShowLocalCompanionMessage(
+		bHasWeapon
+			? TEXT("무기는 준비됐네. 다음 전투를 위해 기본 제작대에서 붕대를 만들거나, 나한테 붕대 제작을 부탁해 봐.")
+			: TEXT("무기가 없네. 창고를 확인하거나 나한테 무기를 만들어 달라고 해 봐."));
+}
+
+void AAI_REPlayerController::OpenExitConfirmation()
+{
+	if (!IsLocalPlayerController()
+		|| IsValid(GameOverWidget)
+		|| IsValid(QuitConfirmationWidget))
+	{
+		return;
+	}
+
+	if (!QuitConfirmationWidgetClass)
+	{
+		QuitConfirmationWidgetClass = LoadClass<UAIREQuitConfirmationWidget>(
+			nullptr,
+			TEXT("/Game/Work/Global/UI/Quit/WBP_AIREQuitConfirmation.WBP_AIREQuitConfirmation_C"));
+	}
+	if (!QuitConfirmationWidgetClass)
+	{
+		UE_LOG(
+			LogAI_RE,
+			Error,
+			TEXT("QuitConfirmationWidgetClass is not configured."));
+		return;
+	}
+
+	QuitConfirmationWidget = CreateWidget<UAIREQuitConfirmationWidget>(
+		this,
+		QuitConfirmationWidgetClass);
+	if (!IsValid(QuitConfirmationWidget))
+	{
+		UE_LOG(
+			LogAI_RE,
+			Error,
+			TEXT("Could not create the quit-confirmation widget."));
+		return;
+	}
+
+	bWasGamePausedBeforeQuitConfirmation = UGameplayStatics::IsGamePaused(this);
+	if (!bWasGamePausedBeforeQuitConfirmation)
+	{
+		UGameplayStatics::SetGamePaused(this, true);
+	}
+
+	QuitConfirmationWidget->AddToPlayerScreen(QuitConfirmationZOrder);
+	ApplyLocalUIInputMode(
+		EAIRELocalUIInputMode::QuitConfirmation,
+		QuitConfirmationWidget->GetInitialFocusWidget());
+	QuitConfirmationWidget->SetUserFocus(this);
+}
+
+void AAI_REPlayerController::ConfirmExitGame()
+{
+	if (!IsLocalPlayerController() || !IsValid(QuitConfirmationWidget))
+	{
+		return;
+	}
+
+	QuitConfirmationWidget->SetIsEnabled(false);
+	UGameplayStatics::SetGamePaused(this, false);
+	if (UAIRELevelTransitionSubsystem* Transition =
+		GetGameInstance()->GetSubsystem<UAIRELevelTransitionSubsystem>())
+	{
+		Transition->RequestTravel(
+			this, FName(TEXT("/Game/Levels/AIRE_TitleLevel")));
+	}
+}
+
+void AAI_REPlayerController::CancelExitConfirmation()
+{
+	if (!IsValid(QuitConfirmationWidget))
+	{
+		return;
+	}
+
+	QuitConfirmationWidget->RemoveFromParent();
+	QuitConfirmationWidget = nullptr;
+	if (!bWasGamePausedBeforeQuitConfirmation)
+	{
+		UGameplayStatics::SetGamePaused(this, false);
+	}
+	bWasGamePausedBeforeQuitConfirmation = false;
+	ApplyLocalUIInputMode(EAIRELocalUIInputMode::Gameplay);
+}
+
+void AAI_REPlayerController::BindPlayerTargetScanner(APawn* PlayerPawn)
+{
+	AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(PlayerPawn);
+	UAI_RETargetScannerComponent* TargetScanner = IsValid(PlayerCharacter)
+		? PlayerCharacter->GetTargetScannerComponent()
+		: nullptr;
+	if (BoundTargetScanner.Get() == TargetScanner)
+	{
+		return;
+	}
+
+	UnbindPlayerTargetScanner();
+	if (!IsValid(TargetScanner))
+	{
+		return;
+	}
+
+	BoundTargetScanner = TargetScanner;
+	TargetScanner->OnCombatStateChanged.AddUniqueDynamic(
+		this,
+		&AAI_REPlayerController::HandlePlayerCombatStateChanged);
+	HandlePlayerCombatStateChanged(
+		IsValid(TargetScanner->GetCurrentCombatTarget()),
+		TargetScanner->GetCurrentCombatTarget());
+}
+
+void AAI_REPlayerController::UnbindPlayerTargetScanner()
+{
+	if (UAI_RETargetScannerComponent* TargetScanner = BoundTargetScanner.Get())
+	{
+		TargetScanner->OnCombatStateChanged.RemoveDynamic(
+			this,
+			&AAI_REPlayerController::HandlePlayerCombatStateChanged);
+	}
+	BoundTargetScanner.Reset();
+
+	if (IsValid(TargetLockMarkerWidget))
+	{
+		TargetLockMarkerWidget->SetLockedTarget(nullptr);
+	}
+}
+
+void AAI_REPlayerController::HandlePlayerCombatStateChanged(
+	const bool bIsCombat,
+	AActor* CombatTarget)
+{
+	if (IsValid(TargetLockMarkerWidget))
+	{
+		TargetLockMarkerWidget->SetLockedTarget(
+			bIsCombat ? CombatTarget : nullptr);
+	}
+}
+
+bool AAI_REPlayerController::CanProcessGameplayActionInput() const
+{
+	const AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn());
+	const bool bChatOpen = IsValid(ChatHUD)
+		&& (ChatHUD->IsChatInputOpen() || ChatHUD->IsChatLogOpen());
+	const bool bPolicyOpen = IsValid(CompanionPolicyWidget)
+		&& CompanionPolicyWidget->IsPanelOpen();
+	return IsLocalPlayerController()
+		&& IsValid(PlayerCharacter)
+		&& !PlayerCharacter->IsDead()
+		&& LocalUIInputMode == EAIRELocalUIInputMode::Gameplay
+		&& !IsCharacterModalUIOpen()
+		&& !bChatOpen
+		&& !bPolicyOpen
+		&& !IsValid(QuitConfirmationWidget)
+		&& !IsValid(GameOverWidget);
 }
 
 void AAI_REPlayerController::FindAndBindCompanion()
@@ -656,7 +1054,19 @@ void AAI_REPlayerController::HandleBossDestroyed(AActor* DestroyedActor)
 
 void AAI_REPlayerController::ShutdownLocalHUD()
 {
+	if (IsValid(QuitConfirmationWidget))
+	{
+		QuitConfirmationWidget->RemoveFromParent();
+		QuitConfirmationWidget = nullptr;
+		if (!bWasGamePausedBeforeQuitConfirmation)
+		{
+			UGameplayStatics::SetGamePaused(this, false);
+		}
+		bWasGamePausedBeforeQuitConfirmation = false;
+	}
+
 	ApplyLocalUIInputMode(EAIRELocalUIInputMode::Gameplay);
+	UnbindPlayerTargetScanner();
 	UnbindCompanion();
 	UnbindBoss();
 
@@ -703,6 +1113,18 @@ void AAI_REPlayerController::ShutdownLocalHUD()
 		MobileControlsWidget->RemoveFromParent();
 		MobileControlsWidget = nullptr;
 	}
+
+	if (IsValid(GameOverWidget))
+	{
+		GameOverWidget->RemoveFromParent();
+		GameOverWidget = nullptr;
+	}
+
+	if (IsValid(TargetLockMarkerWidget))
+	{
+		TargetLockMarkerWidget->RemoveFromParent();
+		TargetLockMarkerWidget = nullptr;
+	}
 }
 
 void AAI_REPlayerController::ApplyLocalUIInputMode(
@@ -747,7 +1169,9 @@ void AAI_REPlayerController::ApplyLocalUIInputMode(
 		SetInputMode(InputMode);
 		SetShowMouseCursor(
 			NewMode == EAIRELocalUIInputMode::ChatLog
-			|| NewMode == EAIRELocalUIInputMode::PolicySelection);
+			|| NewMode == EAIRELocalUIInputMode::PolicySelection
+			|| NewMode == EAIRELocalUIInputMode::QuitConfirmation
+			|| NewMode == EAIRELocalUIInputMode::GameOver);
 	}
 
 	LocalUIInputMode = NewMode;
@@ -756,6 +1180,12 @@ void AAI_REPlayerController::ApplyLocalUIInputMode(
 bool AAI_REPlayerController::IsCharacterModalUIOpen() const
 {
 	const AAI_RECharacter* PlayerCharacter = Cast<AAI_RECharacter>(GetPawn());
-	return IsValid(PlayerCharacter) &&
-		(PlayerCharacter->IsInventoryUIOpen() || PlayerCharacter->IsCraftingUIOpen());
+	const UAIREInventoryUIWorldSubsystem* InventoryUISubsystem = GetWorld()
+		? GetWorld()->GetSubsystem<UAIREInventoryUIWorldSubsystem>()
+		: nullptr;
+	return (IsValid(PlayerCharacter)
+			&& (PlayerCharacter->IsInventoryUIOpen()
+				|| PlayerCharacter->IsCraftingUIOpen()))
+		|| (IsValid(InventoryUISubsystem)
+			&& InventoryUISubsystem->IsInventoryUIOpen());
 }

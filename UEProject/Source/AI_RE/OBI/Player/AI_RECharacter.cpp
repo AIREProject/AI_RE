@@ -15,6 +15,7 @@
 #include "AI_REStatusComponent.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AI_REPlayerInventoryComponent.h"
+#include "AI_REPlayerController.h"
 #include "AI_REPlayerCombatComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AI_REAttributeSet.h"
@@ -323,6 +324,12 @@ void AAI_RECharacter::Die()
 	{
 		PlayAnimMontage(DeathMontage);
 	}
+
+	if (AAI_REPlayerController* PlayerController =
+		Cast<AAI_REPlayerController>(GetController()))
+	{
+		PlayerController->HandlePlayerDeath();
+	}
 	
 	// 블루프린트에서 UI 띄우기 등의 추가 연출 처리를 위해 호출합니다.
 	OnPlayerDied();
@@ -362,17 +369,19 @@ void AAI_RECharacter::ToggleInventory()
 		
 		if (InventoryUIInstance->IsInViewport())
 		{
-			InventoryUIInstance->RemoveFromParent();
-
-			if (PC)
-			{
-				FInputModeGameOnly InputMode;
-				PC->SetInputMode(InputMode);
-				PC->SetShowMouseCursor(false);
-			}
+			CloseInventoryUI();
 		}
 		else
 		{
+			if (const AAI_REPlayerController* AIREPlayerController =
+				Cast<AAI_REPlayerController>(PC))
+			{
+				if (!AIREPlayerController->CanProcessGameplayActionInput())
+				{
+					return;
+				}
+			}
+
 			InventoryUIInstance->AddToViewport(10);
 
 			if (PC)
@@ -384,6 +393,40 @@ void AAI_RECharacter::ToggleInventory()
 			}
 		}
 	}
+}
+
+void AAI_RECharacter::CloseInventoryUI()
+{
+	if (!IsInventoryUIOpen())
+	{
+		return;
+	}
+
+	InventoryUIInstance->RemoveFromParent();
+	if (APlayerController* PlayerController =
+		Cast<APlayerController>(GetController()))
+	{
+		FInputModeGameOnly InputMode;
+		PlayerController->SetInputMode(InputMode);
+		PlayerController->SetShowMouseCursor(false);
+	}
+}
+
+bool AAI_RECharacter::TryCloseActiveModalUI()
+{
+	if (IsCraftingUIOpen())
+	{
+		CloseCraftingUI();
+		return true;
+	}
+
+	if (IsInventoryUIOpen())
+	{
+		CloseInventoryUI();
+		return true;
+	}
+
+	return false;
 }
 
 void AAI_RECharacter::OpenCraftingUI(EWorkbenchType WorkbenchType)
@@ -400,6 +443,15 @@ void AAI_RECharacter::OpenCraftingUI(EWorkbenchType WorkbenchType)
 	{
 		if (!CraftingUIInstance->IsInViewport())
 		{
+			if (const AAI_REPlayerController* AIREPlayerController =
+				Cast<AAI_REPlayerController>(PC))
+			{
+				if (!AIREPlayerController->CanProcessGameplayActionInput())
+				{
+					return;
+				}
+			}
+
 			// 크래프팅 UI 띄우기
 			CraftingUIInstance->AddToViewport();
 			
@@ -503,6 +555,20 @@ void AAI_RECharacter::DoAttack()
 
 void AAI_RECharacter::ToggleScanner()
 {
+	if (bIsDead || !IsValid(TargetScannerComponent))
+	{
+		return;
+	}
+
+	if (const AAI_REPlayerController* PlayerController =
+		Cast<AAI_REPlayerController>(GetController()))
+	{
+		if (!PlayerController->CanProcessGameplayActionInput())
+		{
+			return;
+		}
+	}
+
 	if (IsValid(TargetScannerComponent))
 	{
 		TargetScannerComponent->ToggleCombatScanner();
